@@ -2,7 +2,8 @@
 
 `docs/product-brief.md` is the authority on pipeline, architecture, and decisions. Do not
 re-litigate what it records as decided or disproven (notably: there is no official Claude Design
-MCP; Design is the manual-assisted compositor, the in-app animatic is the automated path).
+MCP, and Claude Design is out of the pipeline entirely by owner decision — Fabula's own runtime
+is the only compositor, driven from Claude Code on the same models).
 
 Invariants that shape every change:
 

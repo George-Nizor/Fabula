@@ -13,7 +13,9 @@ local hardware.
 
 - A 10-second clip uploaded to Claude Design as a video layer survived a shrink-to-corner
   transition with a chart animating beside it, kept its audio, and exported to MP4 at the clip's
-  exact duration. Claude Design can composite real footage.
+  exact duration. What that actually proved is the **composition model**: footage as a layer,
+  everything animated as a pure function of one time value, exported frame by frame. Fabula
+  implements that model natively (see Compositor); Design itself is not in the loop.
 - The development machine has an RTX 4080 SUPER (16 GB) visible from WSL2, Python 3.12, Node.
   ffmpeg and WhisperX are not yet installed; `scripts/setup-tools.sh` installs both without sudo.
 
@@ -23,10 +25,10 @@ local hardware.
   (`api.anthropic.com/v1/design/mcp`) does not exist. The only bridge in circulation is a
   third-party project driving a real Chrome via CDP against claude.ai's internal endpoints — no
   video upload, no export trigger, fragile, and not something to point at the owner's account.
-- Consequence: Design cannot be driven programmatically today. It remains the proven *manual*
-  compositor — Fabula prepares a per-segment package (clean clip, transcript excerpt, shot-plan
-  prompt) that the owner drags into Design in the browser. The app's own animatic renderer is the
-  planned *automated* path (see Compositor below).
+- Consequence, decided by the owner the same day: **Claude Design is out of the pipeline
+  entirely.** The same models are available through Claude Code on the same subscription, and
+  Design's value is those models plus a composition runtime and a renderer — both of which Fabula
+  owns. One interface, no uploads, footage never leaves the machine.
 - The Claude Agent SDK, on this machine with the owner's own Claude Code login, bills against the
   Max subscription. That holds for a personal first-party tool; distributing Fabula to other users
   would require API keys and is out of scope.
@@ -60,15 +62,17 @@ review gates. Nothing renders until a gate is approved.
    to conceal jumps — the single biggest perceived-quality win in the pipeline.
 5. **Re-transcribe clean.mp4.** Timestamps now match the footage the compositor receives. Never
    re-time the raw transcript.
-6. **Chunk.** 1080p ~3 Mbps re-encode, split at topic breaks the transcript reveals, 2–4 minutes
-   per segment.
+6. **Chunk (optional).** With no upload ceiling to respect, chunking is purely render and
+   iteration granularity: splitting at the topic breaks the transcript reveals means a shot-plan
+   tweak re-renders one 2–4 minute segment, not the whole video. Worth keeping for that reason
+   alone; no longer a compliance requirement.
 7. **Shot plan.** Claude writes, per segment, what visual appears, when, and in what layout —
    anchored to *word IDs*, not seconds (see Invariants). Reviewed at the second gate.
-8. **Compose.** Per segment, through the active compositor (below). The shot plan drives a
-   composition where every frame is a pure function of a single time value.
-9. **Stitch.** Concatenate segments, then one final normalize pass — independently rendered
-   segments will not share bit-identical codec parameters, so `-c copy` concat is not trusted; the
-   final re-encode also applies −14 LUFS loudness normalization.
+8. **Compose.** Through Fabula's own runtime (below). The shot plan drives a composition where
+   every frame is a pure function of a single time value; preview and export are the same code.
+9. **Stitch.** Concatenate segments, then one final normalize pass — even our own renders are not
+   trusted to `-c copy` concat; the final re-encode also applies −14 LUFS loudness normalization.
+   A single unchunked render skips this stage entirely.
 10. **Free wins.** `.srt` captions from the word timestamps; chapter markers from the topic breaks.
 
 ## Invariants
@@ -91,13 +95,21 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
 - **Renderer** is the review UI: transcript editor, skip-preview player, shot-plan lanes.
 - **Sidecar:** WhisperX in a local venv on CUDA; static ffmpeg binary; both installed by
   `scripts/setup-tools.sh`, no sudo.
-- **Compositor is a pluggable stage** with two implementations sharing the shot-plan schema:
-  1. *Design (manual-assisted, proven):* Fabula writes a segment package — clean clip, transcript
-     excerpt, prompt built from the shot plan and a once-configured design-system preamble — and
-     the owner drags it into claude.ai/design and exports MP4.
-  2. *Animatic (automated, planned):* the in-app preview — an HTML composition over the video
-     driven by one time value — captured headlessly (Chromium frame capture + ffmpeg mux). The
-     preview needed for the second gate is 80% of this compositor; export is the remaining 20%.
+- **Compositor: Fabula's own runtime, and only that.** Three parts:
+  1. *Scene kit* — layout primitives (full frame, corner pin, split, the video layer with border
+     and radius), animation primitives (springs and easings over the one time value), content
+     components (title, list, chart, diagram), and design tokens configured once so every segment
+     matches. This is the "design system in Design" idea, owned locally.
+  2. *Shot plans are declarative JSON against the kit*, word-anchored, so the second review gate
+     can edit them directly without a Claude round trip. A Claude-authored custom component is the
+     escape hatch when the kit cannot express a shot (later slice, sandboxed to the runtime's
+     time-function contract).
+  3. *Preview and export share the runtime.* Preview plays live over the `<video>` element.
+     Export steps the same composition at a fixed timestep in an offscreen window: the video layer
+     is fed frame-exact (WebCodecs decode of clean.mp4, sequential, no per-frame seeking), each
+     composed frame is captured and piped to ffmpeg, and the audio is muxed straight from
+     clean.mp4 — the video is never re-timed, so audio alignment is free. What you previewed is
+     literally what renders.
 
 ## Build order
 
@@ -105,14 +117,26 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
   deterministic cut proposal → transcript editor with skip preview → approve → clean render with
   fades and punch-ins → re-transcribe. `core/cut-engine.mjs` (pure, tested) is the start.
 - **Slice 2 — Claude in the loop.** Agent SDK embedding, in-process tools, the semantic cut pass.
-- **Slice 3 — the compose half.** Shot-plan schema and lanes, animatic preview, the Design segment
-  package, stitch and normalize. Promote the animatic to exporter when preview quality earns it.
+- **Slice 3 — the compose half.** Scene kit, shot-plan schema and lanes, live preview, the
+  offscreen frame-capture exporter, stitch and normalize. The render spike (offscreen Electron
+  capture on this WSL machine) is the first task here because it is the only unproven mechanism.
 
 ## Open questions
 
-- Design upload ceiling and per-render cost on Max for a real 2–4 minute segment — measure with
-  one real segment before depending on it. (Chat is 500 MB/file; Design's own limit is unpublished.
-  A 3-minute 1080p segment at ~3 Mbps is ~70 MB, comfortably under any plausible ceiling.)
+- Export throughput: frames per second of offscreen capture at 1080p. Even 5–10 fps capture is
+  acceptable — a 10-minute video renders in under an hour, unattended — but measure early.
+  **Spike findings (2026-09-04, `scripts/spike-offscreen-capture.cjs`):** the mechanism works —
+  two full runs produced correct stepped frames — with these hard-won specifics: `capturePage`
+  stalls on offscreen windows (use the CDP `Page.captureScreenshot` through
+  `webContents.debugger`, the Puppeteer path); paint events throttle to ~1 fps regardless of
+  `backgroundThrottling`; and this WSL host developed a persistent Chromium shared-memory flake
+  mid-session (ESRCH creating shm in both `/dev/shm` and `/tmp` while the same syscalls succeed
+  from Python — likely cured by `wsl --shutdown`, and irrelevant on the Windows target). Re-run
+  the spike after a WSL restart to get a clean CDP throughput number.
+- WebCodecs demux: `VideoDecoder` needs the H.264 samples handed to it; use mp4box.js for demux or
+  fall back to `<video>` seek-per-frame if it fights back.
+- The John Van Sickle static ffmpeg has no NVENC. libx264 is fine to start; if encode becomes the
+  bottleneck, swap the setup script to a BtbN GPL build for `h264_nvenc` on the 4080.
 - WhisperX on this 4080/WSL2 (fallback: faster-whisper with `word_timestamps=True`).
 - Whether `large-v3` hallucination on long silences needs VAD tightening before the gap detector
   runs (WhisperX applies VAD by default; verify on a real recording).
