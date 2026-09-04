@@ -9,10 +9,13 @@
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
     #frame { position: fixed; inset: 0; }
     #head { position: absolute; }
+    /* Layer capture: a transparent frame with only one layer's pieces. */
+    #frame.is-layer { background: transparent; }
+    #frame.is-layer .stage-glow { display: none; }
   </style>
 </head>
 <body>
-  <div id="frame" class="stage-field">
+  <div id="frame" class="stage-field stage-frame">
     <video id="head" class="stage-video" muted preload="auto"></video>
     <video id="screen" class="stage-screen" muted preload="auto" hidden></video>
     <div id="stage" class="ov-layer is-static"></div>

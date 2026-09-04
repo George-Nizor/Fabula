@@ -2,13 +2,18 @@
 
 // Driven by scripts/export-compose.cjs over executeJavaScript. The driver
 // computes each frame's layout with the same core engine the preview uses
-// and passes it in; this page only seeks the layers and paints. Every
-// returned promise resolves after the seeks land and a paint has happened.
+// and passes it in. Two modes: the whole stage at one instant (the probe's
+// path, head and screen seeked and painted) and single layers on a
+// transparent frame (the render's path — no video, only the pieces that
+// change). Every promise resolves after the DOM has painted.
 
 let compose = null;
+const frame = document.getElementById("frame");
 const head = document.getElementById("head");
 const screen = document.getElementById("screen");
 const stage = document.getElementById("stage");
+
+const painted = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 function loaded(video) {
   return new Promise((resolve, reject) => {
@@ -24,8 +29,9 @@ function seekTo(video, t) {
   return seeked;
 }
 
-window.__setCompose = async (data) => {
+window.__setCompose = async (data, { media = true } = {}) => {
   compose = data;
+  if (!media) return true;
   head.src = data.videoUrl;
   const waits = [loaded(head)];
   if (data.screenUrl) {
@@ -42,13 +48,48 @@ function screenActiveAt(t) {
   );
 }
 
+// The whole composition at t: field, media, both layers.
 window.__renderAt = async (t, layout) => {
   if (!compose) throw new Error("compose data not set");
+  frame.classList.remove("is-layer");
+  frame.classList.add("stage-field");
+  head.hidden = false;
   const seeks = [seekTo(head, t)];
   const useScreen = Boolean(compose.screenUrl) && screenActiveAt(t);
   if (useScreen) seeks.push(seekTo(screen, t));
   await Promise.all(seeks);
   window.FabulaStage.update(stage, head, compose, t, layout, compose.screenUrl ? screen : null);
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  await painted();
+  return true;
+};
+
+// The empty stage: the field alone, for the render's base plate.
+window.__fieldOnly = async () => {
+  frame.classList.remove("is-layer");
+  frame.classList.add("stage-field");
+  head.hidden = true;
+  screen.hidden = true;
+  stage.replaceChildren();
+  delete stage.dataset.state;
+  await painted();
+  return true;
+};
+
+// Layer signatures for a run of frames: one round trip per chunk.
+window.__keysRange = (ts, layouts) => ts.map((t, i) => {
+  const plan = window.FabulaStage.plan(compose, t, layouts[i]);
+  const keys = window.FabulaStage.keys(plan);
+  return { under: keys.under, over: keys.over, screen: plan.screen };
+});
+
+// One layer at t on a transparent frame, nothing else visible.
+window.__renderLayer = async (t, layout, layer) => {
+  frame.classList.add("is-layer");
+  frame.classList.remove("stage-field");
+  head.hidden = true;
+  screen.hidden = true;
+  const plan = window.FabulaStage.plan(compose, t, layout);
+  window.FabulaStage.paint(stage, plan, layer);
+  await painted();
   return true;
 };

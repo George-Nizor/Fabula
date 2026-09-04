@@ -2,15 +2,19 @@
    sizes are container-query units so the same rules paint identically over
    the preview player and the full-resolution export frame. */
 
+/* The frame is the container every cq unit measures against — the preview
+   player and the full-resolution export frame alike. */
+.stage-frame { container-type: size; }
+
+/* The overlay layer is deliberately NOT a stacking context: its pieces take
+   their place among the frame's other layers by z-index. Bottom to top:
+   glow 0, screen track 1, cards and the head's shadow 2, the head 3, text 4.
+   The head flies over cards and under text, in the window and in the film. */
 .ov-layer {
   position: absolute;
   inset: 0;
-  container-type: size;
   pointer-events: none;
   overflow: hidden;
-  /* Above the settled head (z 1), below the head in flight (z 3): scenes
-     paint over the video except while it flies between layouts. */
-  z-index: 2;
 }
 
 /* The 1080p stage: the charcoal field the whole composition lives on, with
@@ -25,13 +29,23 @@
    is set inline by the stage engine; these are the still parts. */
 .stage-video {
   position: absolute;
-  border-radius: 14px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  z-index: 3;
   object-fit: cover;
   background: #0b0e12;
 }
 
+/* The head's shadow is its own piece under the head, so the export can
+   capture it with the cards. Radius and rect follow the head. */
+.stage-shadow {
+  position: absolute;
+  z-index: 2;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
 .ov { position: absolute; }
+
+.ov-title, .ov-callout, .ov-caption, .ov-kinetic { z-index: 4; }
+.ov-graphic { z-index: 2; }
 
 /* Lower-third title: accent bar, heavy interface type. */
 .ov-title {
@@ -185,6 +199,7 @@
 /* The drifting pool of accent light on the field. */
 .stage-glow {
   position: absolute;
+  z-index: 0;
   left: 50%;
   top: 50%;
   width: 90cqw;
@@ -217,7 +232,6 @@
   z-index: 1;
   object-fit: contain;
   background: #0b0e12;
-  border-radius: 1cqw;
 }
 
 .ov-screen-card {

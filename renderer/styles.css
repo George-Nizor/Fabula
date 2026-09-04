@@ -366,6 +366,7 @@ body.insp-collapsed .inspector { display: none; }
 
 .videoframe {
   position: relative;
+  container-type: size;
   overflow: hidden;
   border-radius: 14px;
   max-width: 100%;

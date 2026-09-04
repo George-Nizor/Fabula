@@ -489,7 +489,7 @@ function runExport(dir, args, onProgress) {
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
       const lines = String(chunk).trim().split("\n");
-      const last = lines.filter((line) => /frames|muxing|captured/.test(line)).pop();
+      const last = lines.filter((line) => /chunk|states|stitch|frames|captured|cached/.test(line)).pop();
       if (last) onProgress(last.trim());
     });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -505,7 +505,7 @@ function runExport(dir, args, onProgress) {
 
 server.registerTool("render_final", {
   description:
-    "The composited render: the 1080p stage — head layer, screen track, scene overlays — captured frame by frame through the same runtime the preview uses and muxed with the clean cut's untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 when a word range is given (render a span to check a scene in a minute instead of the whole film in an hour). Minutes to hours depending on length; the window shows the frame count. Call once.",
+    "The composited render: the head and screen tracks are placed on the 1080p stage by ffmpeg from the stage engine's own numbers, the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached chunks — a tweak re-renders the chunk it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range. Minutes for a whole film, well under that for a tweak; the window shows progress. Call once.",
   inputSchema: {
     from_word_id: z.number().int().min(0).optional().describe("Render only from this clean word…"),
     to_word_id: z.number().int().min(0).optional().describe("…to this clean word (inclusive)"),
@@ -515,6 +515,9 @@ server.registerTool("render_final", {
   const paths = projectPaths(dir);
   if (!fs.existsSync(paths.compose)) throw new Error("no compose.json; set_scenes first");
   if (!fs.existsSync(paths.cleanTranscript)) throw new Error("no clean.json; retranscribe_clean first");
+  if (fs.statSync(paths.cleanTranscript).mtimeMs < fs.statSync(paths.clean).mtimeMs) {
+    throw new Error("clean.json is older than clean.mp4: retranscribe_clean first, then re-anchor the scenes");
+  }
   const args = [];
   let output = paths.final;
   if (from_word_id !== undefined || to_word_id !== undefined) {
@@ -530,6 +533,33 @@ server.registerTool("render_final", {
     (detail) => runExport(dir, args, detail));
   return ok({ output, bytes: fs.statSync(output).size, log });
 });
+
+// What is out of date relative to what feeds it, and the tool that fixes
+// it. This is the order of the pipeline read backwards: an agent that reads
+// it never has to guess which step to repeat after a change.
+function staleness(paths) {
+  const mtime = (file) => (fs.existsSync(file) ? fs.statSync(file).mtimeMs : null);
+  const out = [];
+  const review = mtime(paths.review);
+  const framing = mtime(paths.framing);
+  const clean = mtime(paths.clean);
+  const cleanTranscript = mtime(paths.cleanTranscript);
+  const compose = mtime(paths.compose);
+  const final = mtime(paths.final);
+  if (clean !== null && ((review !== null && review > clean) || (framing !== null && framing > clean))) {
+    out.push({ artifact: "clean.mp4", because: "cuts, shot plan or framing changed after it was rendered", next: "render_clean" });
+  }
+  if (clean !== null && (cleanTranscript === null || cleanTranscript < clean)) {
+    out.push({ artifact: "clean.json", because: "the clean cut was rendered after it was transcribed", next: "retranscribe_clean" });
+  }
+  if (compose !== null && cleanTranscript !== null && compose < cleanTranscript) {
+    out.push({ artifact: "compose.json", because: "the clean transcript changed after the scenes were written; word ids may have moved", next: "get_scenes, then set_scenes re-anchored via list_clean_words" });
+  }
+  if (final !== null && ((compose !== null && compose > final) || (clean !== null && clean > final))) {
+    out.push({ artifact: "final.mp4", because: "the scenes or the clean cut changed after the film was rendered", next: "render_final (cached chunks make this cheap)" });
+  }
+  return out;
+}
 
 server.registerTool("status", {
   description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics.",
@@ -554,6 +584,7 @@ server.registerTool("status", {
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   const map = readCleanMap(dir);
   if (map) state.screenSpans = map.screenSpans;
+  state.stale = staleness(paths);
   return ok(state);
 });
 
