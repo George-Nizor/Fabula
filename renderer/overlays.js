@@ -14,10 +14,26 @@ const window01 = (p, from, span) => clamp01((p - from) / span);
 // Card presence: rise in over the first beats, sink out over the last.
 const presence = (p) => Math.min(easeOut(p / 0.07), 1 - easeOut((p - 0.93) / 0.07));
 
+// A slow pool of accent light drifting across the field — deterministic in
+// t, managed outside the keyed scene DOM so it moves every frame without
+// forcing the cards to rebuild.
+function driftGlow(overlayEl, t) {
+  let glow = overlayEl.querySelector(":scope > .stage-glow");
+  if (!glow) {
+    glow = document.createElement("div");
+    glow.className = "stage-glow";
+    overlayEl.prepend(glow);
+  }
+  const x = 50 + Math.sin(t * 0.21) * 26 + Math.sin(t * 0.047) * 10;
+  const y = 42 + Math.cos(t * 0.16) * 20;
+  glow.style.transform = `translate(${x - 50}cqw, ${y - 50}cqh)`;
+}
+
 function buildGraphic(scene, p, contentRect, stage) {
   const graphic = scene.graphic;
   const card = document.createElement("div");
   card.className = "ov ov-graphic";
+  if (scene.accent) card.style.setProperty("--ov-accent", scene.accent);
   const alpha = presence(p);
   card.style.opacity = String(alpha);
   card.style.transform = `translateY(${(1 - alpha) * 3}cqh)`;
@@ -70,6 +86,25 @@ function buildGraphic(scene, p, contentRect, stage) {
     }
   }
 
+  if (graphic.kind === "image") {
+    card.classList.add("ov-image-card");
+    const wrap = document.createElement("div");
+    wrap.className = "ov-image-wrap";
+    const settle = easeOut(p / 0.18);
+    wrap.style.transform = `rotate(${-6.5 + settle * 4}deg) scale(${0.9 + settle * 0.1})`;
+    const img = document.createElement("img");
+    img.className = "ov-image";
+    img.src = graphic.url ?? graphic.src;
+    wrap.append(img);
+    if (graphic.label) {
+      const label = document.createElement("div");
+      label.className = "ov-image-label";
+      label.textContent = graphic.label;
+      wrap.append(label);
+    }
+    card.append(wrap);
+  }
+
   if (graphic.kind === "list") {
     for (const [i, item] of graphic.items.entries()) {
       const row = document.createElement("div");
@@ -110,22 +145,46 @@ window.FabulaStage = {
       videoEl.style.top = `${(rect.y / stage.height) * 100}%`;
       videoEl.style.width = `${(rect.w / stage.width) * 100}%`;
       videoEl.style.height = `${(rect.h / stage.height) * 100}%`;
+      // In flight the head rides above the scene cards — settled layouts
+      // never overlap them, and a card edge sliding across the head reads
+      // as clipping, not as motion.
+      videoEl.style.zIndex = layout.settled ? "1" : "3";
       contentRect = layout.content;
       layoutKey = `${Math.round(contentRect.x)}:${Math.round(contentRect.w)}`;
     }
+    overlayEl.style.setProperty("--ov-accent", compose.theme?.accent || "#d97757");
+    if (compose.stage) driftGlow(overlayEl, t);
 
     const parts = [];
+    const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
+    let captionEaten = false;
     for (const scene of compose.scenes ?? []) {
       if (scene.type === "stage" || scene.start > t || t >= scene.end) continue;
+      const p = Number(((t - scene.start) / (scene.end - scene.start)).toFixed(4));
       if (scene.type === "graphic") {
-        const p = (t - scene.start) / (scene.end - scene.start);
-        parts.push({ kind: "graphic", scene, p: Number(p.toFixed(4)), layoutKey });
+        parts.push({ kind: "graphic", scene, p, layoutKey });
+      } else if (scene.type === "kinetic") {
+        // Giant word-by-word type, riding the caption timing; the caption
+        // itself stands down while kinetic speaks for it. Between words it
+        // HOLDS the last one — big type must never blink out mid-scene.
+        const spans = compose.captions ?? [];
+        let span = null;
+        for (const s of spans) {
+          if (s.start <= t) span = s;
+          else break;
+        }
+        if (span) {
+          const wp = Math.min((t - span.start) / (span.end - span.start), 1.5);
+          parts.push({ kind: "kinetic", text: span.text, wp: Number(wp.toFixed(3)), accent: scene.accent });
+          captionEaten = true;
+        }
+      } else if (scene.type === "title" && scene.flair) {
+        parts.push({ kind: "title", text: scene.text, accent: scene.accent, flair: true, p });
       } else {
-        parts.push({ kind: scene.type, text: scene.text });
+        parts.push({ kind: scene.type, text: scene.text, accent: scene.accent });
       }
     }
-    const caption = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
-    if (caption) parts.push({ kind: "caption", text: caption.text });
+    if (captionAt && !captionEaten) parts.push({ kind: "caption", text: captionAt.text });
 
     // Progress and layout are part of the key, so an animated graphic redraws
     // each frame while static pictures keep their DOM (and entry animations).
@@ -141,7 +200,16 @@ window.FabulaStage = {
       }
       const el = document.createElement("div");
       el.className = `ov ov-${part.kind}`;
-      if (part.kind === "title") {
+      if (part.accent) el.style.setProperty("--ov-accent", part.accent);
+      if (part.kind === "kinetic") {
+        // Each word lands with a snap: oversized for its first beats, then
+        // settled — a pure function of the word's own progress.
+        const punch = 1 + (1 - easeOut(Math.min(part.wp * 4, 1))) * 0.35;
+        el.style.transform = `translate(-50%, -50%) scale(${punch.toFixed(4)})`;
+        el.style.opacity = String(easeOut(Math.min(part.wp * 6, 1)));
+        el.textContent = part.text;
+      } else if (part.kind === "title") {
+        if (part.flair) el.append(buildBurst(part.p));
         const bar = document.createElement("div");
         bar.className = "ov-title-bar";
         const text = document.createElement("div");
@@ -153,5 +221,26 @@ window.FabulaStage = {
       }
       overlayEl.append(el);
     }
+    if (compose.stage) driftGlow(overlayEl, t);
   },
 };
+
+// A radial burst of sparks behind a flaired title — positions seeded by
+// index, flight driven by the scene's progress. Celebration as a function.
+function buildBurst(p) {
+  const burst = document.createElement("div");
+  burst.className = "ov-burst";
+  const flight = easeOut(Math.min(p * 1.6, 1));
+  for (let i = 0; i < 26; i += 1) {
+    const spark = document.createElement("span");
+    spark.className = "ov-spark";
+    const angle = (i / 26) * Math.PI * 2 + (i % 5) * 0.13;
+    const reach = (26 + ((i * 37) % 34)) * flight;
+    spark.style.left = `${Math.cos(angle) * reach}cqh`;
+    spark.style.top = `${Math.sin(angle) * reach * 0.62}cqh`;
+    spark.style.opacity = String(Math.max(0, 1 - flight * 0.85 - (i % 3) * 0.08));
+    if (i % 3 === 0) spark.style.background = "#f0ede6";
+    burst.append(spark);
+  }
+  return burst;
+}

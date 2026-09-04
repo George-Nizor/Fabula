@@ -280,22 +280,28 @@ server.registerTool("set_scenes", {
       from_word_id: z.number().int().min(0),
       to_word_id: z.number().int().min(0),
       text: z.string().min(1).optional().describe("title/callout text"),
+      accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("per-scene accent override"),
+      flair: z.boolean().optional().describe("title only: a particle burst behind the text"),
       layout: z.enum(["focus", "pip", "side"]).optional().describe("stage scenes only"),
       corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage+pip only"),
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
         title: z.string().optional(),
         value: z.number().optional().describe("stat only"),
-        label: z.string().optional().describe("stat only"),
+        label: z.string().optional().describe("stat label / image caption"),
+        src: z.string().optional().describe("image only: project-relative png/jpg/webp, e.g. assets/still.png"),
         items: z.array(z.object({
           label: z.string().min(1),
           value: z.number().optional().describe("chart only"),
         })).max(6).optional().describe("chart/list rows"),
       }).optional().describe("graphic scenes only"),
-    })).describe("The full scene list; an empty array clears it"),
+    })).describe("The full scene list; an empty array clears it. kinetic scenes render the spoken words as giant center-stage type over their span."),
     captions: z.boolean().default(false).describe("Karaoke captions over the whole video"),
+    theme: z.object({
+      accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    }).optional().describe("Project-wide accent; omit to keep the current theme"),
   },
-}, async ({ scenes, captions }) => {
+}, async ({ scenes, captions, theme }) => {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const shaped = scenes.map((scene) => ({
@@ -303,13 +309,19 @@ server.registerTool("set_scenes", {
     fromWordId: scene.from_word_id,
     toWordId: scene.to_word_id,
     text: scene.text,
+    accent: scene.accent,
+    flair: scene.flair,
     layout: scene.layout,
     corner: scene.corner,
     graphic: scene.graphic,
   }));
   validateScenes(shaped, words);
-  fs.writeFileSync(projectPaths(dir).compose, JSON.stringify({ scenes: shaped, captions }, null, 2));
-  return ok({ scenes: shaped.length, captions });
+  const file = projectPaths(dir).compose;
+  const previous = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+  const config = { scenes: shaped, captions, theme: theme ?? previous.theme };
+  if (!config.theme) delete config.theme;
+  fs.writeFileSync(file, JSON.stringify(config, null, 2));
+  return ok({ scenes: shaped.length, captions, theme: config.theme ?? null });
 });
 
 server.registerTool("render_final", {

@@ -5,14 +5,37 @@
 
 const CAPTION_HANG_SECONDS = 0.4;
 
+// No node:path here — core stays runtime-neutral. Absolute means a leading
+// slash or a Windows drive.
+function path_isAbsoluteLike(p) {
+  return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\");
+}
+
 import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
 
-export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list"]);
+export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image"]);
+const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
+
+export function validateTheme(theme) {
+  if (theme === undefined || theme === null) return;
+  if (theme.accent !== undefined && !ACCENT_RE.test(theme.accent)) {
+    throw new Error(`theme accent must be #rrggbb, got "${theme.accent}"`);
+  }
+}
 
 function validateGraphic(graphic, at) {
   if (!graphic || typeof graphic !== "object") throw new Error(`${at}: graphic spec is required`);
   if (!GRAPHIC_KINDS.has(graphic.kind)) throw new Error(`${at}: unknown graphic kind "${graphic.kind}"`);
+  if (graphic.kind === "image") {
+    if (typeof graphic.src !== "string" || !/\.(png|jpe?g|webp)$/i.test(graphic.src)) {
+      throw new Error(`${at}: image needs a png/jpg/webp src`);
+    }
+    if (graphic.src.includes("..") || path_isAbsoluteLike(graphic.src)) {
+      throw new Error(`${at}: image src must be a project-relative path`);
+    }
+    return;
+  }
   if (graphic.kind === "stat") {
     if (typeof graphic.value !== "number") throw new Error(`${at}: stat needs a numeric value`);
     if (!graphic.label) throw new Error(`${at}: stat needs a label`);
@@ -40,12 +63,17 @@ export function validateScenes(scenes, words) {
     if (byId.get(scene.toWordId).start < byId.get(scene.fromWordId).start) {
       throw new Error(`${at}: toWordId precedes fromWordId`);
     }
+    if (scene.accent !== undefined && !ACCENT_RE.test(scene.accent)) {
+      throw new Error(`${at}: accent must be #rrggbb`);
+    }
     if (scene.type === "graphic") validateGraphic(scene.graphic, at);
     else if (scene.type === "stage") {
       if (!LAYOUTS.has(scene.layout)) throw new Error(`${at}: unknown layout "${scene.layout}"`);
       if (scene.corner !== undefined && !PIP_CORNERS.has(scene.corner)) {
         throw new Error(`${at}: unknown corner "${scene.corner}"`);
       }
+    } else if (scene.type === "kinetic") {
+      // Kinetic rides the transcript's own words; it carries no text.
     } else if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
   });
 }

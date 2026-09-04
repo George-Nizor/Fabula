@@ -50,11 +50,15 @@ async function main() {
   const videoAspect = dims.width / dims.height;
   const stage = stageEngine.DEFAULT_STAGE;
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
+  for (const scene of scenes) {
+    if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(projectDir, scene.graphic.src)).href;
+  }
   const compose = {
     videoUrl: pathToFileURL(cleanVideo).href,
     scenes,
     captions: composeFile.captions ? engine.resolveCaptions(words) : null,
     stage,
+    theme: composeFile.theme ?? null,
   };
   const timeline = stageEngine.resolveLayoutTimeline(scenes, duration);
   const frameCount = Math.ceil(duration * FPS);

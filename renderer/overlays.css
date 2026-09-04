@@ -43,7 +43,7 @@
 .ov-title-bar {
   width: 0.9cqw;
   border-radius: 0.45cqw;
-  background: #e0b34c;
+  background: var(--ov-accent, #d97757);
 }
 
 .ov-title-text {
@@ -64,7 +64,7 @@
   max-width: 36cqw;
   padding: 2.2cqh 2cqw;
   border-radius: 1.2cqw;
-  border: 1px solid rgba(224, 179, 76, 0.6);
+  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 60%, transparent);
   background: rgba(18, 23, 30, 0.82);
   font-family: Georgia, "Times New Roman", serif;
   font-size: 3.6cqh;
@@ -100,7 +100,7 @@
   inset: 8cqh 7cqw;
   padding: 4cqh 4cqw;
   border-radius: 2cqw;
-  border: 1px solid rgba(224, 179, 76, 0.45);
+  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 45%, transparent);
   background: rgba(11, 14, 18, 0.88);
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   color: #f0ede6;
@@ -114,7 +114,7 @@
   font-weight: 700;
   font-size: 4.6cqh;
   letter-spacing: 0.06em;
-  color: #e0b34c;
+  color: var(--ov-accent, #d97757);
 }
 
 .ov-stat-value {
@@ -151,7 +151,7 @@
   display: block;
   height: 100%;
   border-radius: 1cqh;
-  background: #e0b34c;
+  background: var(--ov-accent, #d97757);
 }
 
 .ov-chart-value {
@@ -171,8 +171,82 @@
   width: 1.6cqw;
   height: 1.6cqw;
   border-radius: 50%;
-  background: #e0b34c;
+  background: var(--ov-accent, #d97757);
   flex: none;
+}
+
+/* The drifting pool of accent light on the field. */
+.stage-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 90cqw;
+  height: 90cqw;
+  margin: -45cqw 0 0 -45cqw;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ov-accent, #d97757) 7%, transparent) 0%, transparent 62%);
+  pointer-events: none;
+}
+
+/* Kinetic type: the spoken word, enormous, center stage. */
+.ov-kinetic {
+  left: 50cqw;
+  top: 46cqh;
+  transform: translate(-50%, -50%);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 16cqh;
+  letter-spacing: 0.01em;
+  color: #f0ede6;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9), 0 0 8cqh color-mix(in srgb, var(--ov-accent, #d97757) 30%, transparent);
+  white-space: nowrap;
+}
+
+/* Snapshot card: a frame pulled from the footage, presented as evidence. */
+.ov-image-card {
+  border: none;
+  background: transparent;
+  align-items: center;
+}
+
+.ov-image-wrap {
+  background: #1a2129;
+  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
+  border-radius: 1.4cqw;
+  padding: 1.4cqh 1.4cqh 0;
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.65);
+  max-height: 100%;
+}
+
+.ov-image {
+  display: block;
+  max-height: 52cqh;
+  max-width: 100%;
+  border-radius: 0.8cqw;
+}
+
+.ov-image-label {
+  font-weight: 700;
+  font-size: 3.6cqh;
+  letter-spacing: 0.1em;
+  color: var(--ov-accent, #d97757);
+  text-align: center;
+  padding: 1.2cqh 0;
+}
+
+/* The burst behind a flaired title. */
+.ov-burst {
+  position: absolute;
+  left: 2cqw;
+  top: 50%;
+}
+
+.ov-spark {
+  position: absolute;
+  width: 1.1cqh;
+  height: 1.1cqh;
+  border-radius: 50%;
+  background: var(--ov-accent, #d97757);
 }
 
 @keyframes ov-rise {
