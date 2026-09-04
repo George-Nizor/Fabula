@@ -97,7 +97,7 @@ export function resolveScenes(scenes, words) {
 
 // Karaoke caption spans: each word holds the caption from its start until
 // the next word arrives, hanging on through pauses up to a beat so the
-// caption does not flicker across breaths.
+// caption does not flicker across breaths. Kinetic type rides these.
 export function resolveCaptions(words) {
   return words.map((word, index) => {
     const next = words[index + 1];
@@ -107,6 +107,39 @@ export function resolveCaptions(words) {
       end: next ? Math.min(Math.max(word.end, hang), next.start) : Math.max(word.end, hang),
       text: word.text,
     };
+  });
+}
+
+const PHRASE_MAX_WORDS = 4;
+const PHRASE_MAX_SECONDS = 2.2;
+const PHRASE_BREAK_GAP = 0.5;
+
+// Phrase captions for the whole film: a few words at a time, broken at
+// sentence punctuation, at real pauses, and at a length the eye can take
+// in — one word at a time three times a second is noise over thirteen
+// minutes. Each phrase shows from its first word until its last word ends
+// plus a hang, never past the next phrase.
+export function resolvePhraseCaptions(words) {
+  const phrases = [];
+  let current = [];
+  const flush = () => {
+    if (current.length === 0) return;
+    phrases.push({ start: current[0].start, end: current.at(-1).end, text: current.map((w) => w.text).join(" ") });
+    current = [];
+  };
+  words.forEach((word, index) => {
+    current.push(word);
+    const next = words[index + 1];
+    const endsSentence = /[.!?;:]["')]*$/.test(word.text);
+    const endsClause = /,["')]*$/.test(word.text) && current.length >= 2;
+    const tooLong = current.length >= PHRASE_MAX_WORDS || word.end - current[0].start >= PHRASE_MAX_SECONDS;
+    const pause = next ? next.start - word.end >= PHRASE_BREAK_GAP : true;
+    if (!next || endsSentence || endsClause || tooLong || pause) flush();
+  });
+  return phrases.map((phrase, index) => {
+    const next = phrases[index + 1];
+    const hang = phrase.end + CAPTION_HANG_SECONDS;
+    return { ...phrase, end: next ? Math.min(Math.max(phrase.end, hang), next.start) : Math.max(phrase.end, hang) };
   });
 }
 

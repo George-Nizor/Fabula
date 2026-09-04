@@ -232,10 +232,10 @@ window.FabulaStage = {
       if (scene.type === "graphic") {
         parts.push({ kind: "graphic", scene, p, layoutKey });
       } else if (scene.type === "kinetic") {
-        // Giant word-by-word type, riding the caption timing; the caption
+        // Giant word-by-word type, riding the per-word spans; the caption
         // itself stands down while kinetic speaks for it. Between words it
         // HOLDS the last one — big type must never blink out mid-scene.
-        const spans = compose.captions ?? [];
+        const spans = compose.wordSpans ?? compose.captions ?? [];
         let span = null;
         for (const s of spans) {
           if (s.start <= t) span = s;

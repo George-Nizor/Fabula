@@ -4,6 +4,7 @@ import {
   validateScenes,
   resolveScenes,
   resolveCaptions,
+  resolvePhraseCaptions,
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
@@ -71,4 +72,24 @@ test("activeAt is start-inclusive, end-exclusive", () => {
   const scenes = resolveScenes([{ type: "callout", fromWordId: 1, toWordId: 1, text: "!" }], words);
   assert.equal(activeAt(scenes, 0.5).length, 1);
   assert.equal(activeAt(scenes, 0.9).length, 0);
+});
+
+test("phrase captions break at sentence ends, clause commas, pauses, and length", () => {
+  const ws = [
+    { id: 0, text: "Well,", start: 0.0, end: 0.2 },
+    { id: 1, text: "guys,", start: 0.25, end: 0.5 },
+    { id: 2, text: "we", start: 0.55, end: 0.7 },
+    { id: 3, text: "did", start: 0.75, end: 0.9 },
+    { id: 4, text: "it.", start: 0.95, end: 1.2 },
+    { id: 5, text: "One", start: 3.0, end: 3.2 },
+    { id: 6, text: "two", start: 3.25, end: 3.4 },
+    { id: 7, text: "three", start: 3.45, end: 3.6 },
+    { id: 8, text: "four", start: 3.65, end: 3.8 },
+    { id: 9, text: "five", start: 3.85, end: 4.0 },
+  ];
+  const spans = resolvePhraseCaptions(ws);
+  assert.deepEqual(spans.map((s) => s.text), ["Well, guys,", "we did it.", "One two three four", "five"]);
+  assert.equal(spans[0].end, 0.55); // yields to the next phrase
+  assert.equal(spans[1].end, 1.6); // hangs a beat through the long pause
+  assert.equal(spans.at(-1).end, 4.4);
 });
