@@ -8,6 +8,13 @@ const { app, BrowserWindow, session, ipcMain } = require("electron");
 const MEDIA_ROOT = path.join(__dirname, "..", "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
 
+// core/ is ESM and this file is CJS; the shot engine arrives async and the
+// review feed simply lacks shots until it lands (a poll tick later at worst).
+let shotEngine = null;
+import(pathToFileURL(path.join(__dirname, "..", "core", "shot-engine.mjs")).href)
+  .then((module) => { shotEngine = module; })
+  .catch((error) => console.error("shot engine failed to load:", error));
+
 // The review state is a file the MCP server rewrites; the window polls its
 // mtime rather than using fs.watch because the app may run on Windows while
 // the file lives on the WSL share, where change notifications do not travel.
@@ -37,13 +44,20 @@ function stagedVideoUrl(dir) {
   }
 }
 
+function attachDerived(review, dir) {
+  review.videoUrl = stagedVideoUrl(dir);
+  review.shots = review.shotPlan && shotEngine
+    ? shotEngine.punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
+    : null;
+  return review;
+}
+
 function readReview() {
   const dir = projectDir();
   if (!dir) return null;
   try {
     const review = JSON.parse(fs.readFileSync(path.join(dir, "review.json"), "utf8"));
-    review.videoUrl = stagedVideoUrl(dir);
-    return review;
+    return attachDerived(review, dir);
   } catch {
     return null; // absent, or mid-rewrite; the next tick settles it
   }
@@ -58,8 +72,7 @@ function setCutEnabled(index, enabled) {
   if (!review.cuts[index]) return null;
   review.cuts[index].enabled = Boolean(enabled);
   fs.writeFileSync(file, JSON.stringify(review, null, 2));
-  review.videoUrl = stagedVideoUrl(projectDir());
-  return review;
+  return attachDerived(review, projectDir());
 }
 
 function startReviewFeed(window) {

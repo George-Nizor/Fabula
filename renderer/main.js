@@ -15,6 +15,8 @@ const els = {
   clean: document.getElementById("stat-clean"),
   cuts: document.getElementById("stat-cuts"),
   removed: document.getElementById("stat-removed"),
+  shotsWrap: document.getElementById("stat-shots-wrap"),
+  shots: document.getElementById("stat-shots"),
   empty: document.getElementById("empty"),
   player: document.getElementById("player"),
   video: document.getElementById("video"),
@@ -58,6 +60,11 @@ function render(next) {
   els.clean.textContent = seconds(review.duration - removed);
   els.cuts.textContent = `${enabledCuts().length}/${review.cuts.length}`;
   els.removed.textContent = seconds(removed);
+  if (review.shots) {
+    const tight = review.shots.filter((shot) => shot.scale > 1).length;
+    els.shots.textContent = `${review.shots.length} (${tight} tight)`;
+  }
+  els.shotsWrap.hidden = !review.shots;
   els.session.hidden = false;
   els.empty.hidden = true;
 
@@ -170,6 +177,15 @@ function tick() {
   }
   els.timeNow.textContent = seconds(now);
   els.timeEdited.textContent = seconds(Math.max(editedNow, 0));
+
+  // The shot plan previews as the transform the export will bake in: an
+  // instant framing change at each boundary, exactly like the render.
+  let scale = 1;
+  for (const shot of review.shots ?? []) {
+    if (now >= shot.start && now < shot.end) { scale = shot.scale; break; }
+  }
+  const transform = scale > 1 ? `scale(${scale})` : "";
+  if (els.video.style.transform !== transform) els.video.style.transform = transform;
 
   let current = null;
   for (const entry of wordSpans) {

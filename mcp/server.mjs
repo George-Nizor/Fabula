@@ -19,6 +19,7 @@ import {
   renderClean,
 } from "../scripts/pipeline.mjs";
 import { normalizeCuts } from "../core/cut-engine.mjs";
+import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 
 const MEDIA_ROOT = path.join(REPO_ROOT, "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
@@ -184,16 +185,50 @@ server.registerTool("add_cut", {
   return ok({ added: describeCut(review.cuts[added], added, wordText), stats: reviewStats(review) });
 });
 
+server.registerTool("plan_shots", {
+  description:
+    "Turn the alternating punch-in shot plan on or off for the current project: framing alternates wide/tight across the keep segments so every cut boundary reads as a shot change, not a skip. The plan recomputes from the live cut list, previews in the window, and applies on the next render_clean.",
+  inputSchema: {
+    enabled: z.boolean().default(true).describe("false removes the plan"),
+    zoom: z.number().min(1.02).max(1.5).optional()
+      .describe(`Tight-framing scale, default ${DEFAULT_PUNCH_ZOOM}`),
+  },
+}, async ({ enabled, zoom }) => {
+  const dir = currentProjectDir();
+  const review = readReview(dir);
+  if (!enabled) {
+    delete review.shotPlan;
+    writeReview(dir, review);
+    return ok({ shotPlan: null });
+  }
+  review.shotPlan = { type: "punch-alternate", zoom: zoom ?? DEFAULT_PUNCH_ZOOM };
+  writeReview(dir, review);
+  const shots = punchPlan(review.words, review.cuts, review.duration, review.shotPlan);
+  return ok({
+    shotPlan: review.shotPlan,
+    shots: shots.map((shot, index) => ({
+      index,
+      start: Number(shot.start.toFixed(2)),
+      end: Number(shot.end.toFixed(2)),
+      scale: shot.scale,
+      words: shot.fromWordId === null ? "(no words)" : `${shot.fromWordId}–${shot.toWordId}`,
+    })),
+  });
+});
+
 server.registerTool("render_clean", {
   description:
-    "Apply the enabled cuts in one re-encode and write out/clean.mp4 for the current project. This is the render behind the review gate — call it after the cuts look right.",
+    "Apply the enabled cuts (and the shot plan, when one is set) in one re-encode and write out/clean.mp4 for the current project. This is the render behind the review gate — call it after the cuts look right.",
   inputSchema: {},
 }, async () => {
   const dir = currentProjectDir();
   const paths = projectPaths(dir);
   const review = readReview(dir);
-  const result = renderClean(paths.video, review.cuts, review.duration, paths.clean);
-  return ok({ ...result, ...reviewStats(review) });
+  const shots = review.shotPlan
+    ? punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
+    : null;
+  const result = renderClean(paths.video, review.cuts, review.duration, paths.clean, { shots });
+  return ok({ ...result, shotPlan: review.shotPlan ?? null, ...reviewStats(review) });
 });
 
 server.registerTool("status", {

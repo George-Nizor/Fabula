@@ -16,6 +16,7 @@
         <span class="stat is-accent"><b id="stat-clean"></b> clean</span>
         <span class="stat"><b id="stat-cuts"></b> cuts on</span>
         <span class="stat"><b id="stat-removed"></b> removed</span>
+        <span class="stat" id="stat-shots-wrap" hidden><b id="stat-shots"></b> shots</span>
       </div>
     </header>
     <section class="empty" id="empty">
@@ -23,7 +24,7 @@
       <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts and <code>render_clean</code>.</p>
     </section>
     <section class="player" id="player" hidden>
-      <video id="video"></video>
+      <div class="videoframe"><video id="video"></video></div>
       <div class="controls">
         <button id="playpause" type="button">Play</button>
         <label class="skip"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>

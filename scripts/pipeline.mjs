@@ -92,15 +92,39 @@ export function reviewStats(review) {
   };
 }
 
+export function probeDimensions(file) {
+  const result = spawnSync(FFPROBE, [
+    "-v", "error",
+    "-select_streams", "v:0",
+    "-show_entries", "stream=width,height",
+    "-of", "csv=p=0",
+    file,
+  ], { encoding: "utf8" });
+  const [width, height] = result.stdout.trim().split(",").map(Number);
+  if (!width || !height) throw new Error(`ffprobe could not read dimensions of ${file}`);
+  return { width, height };
+}
+
 // One re-encode: trim each keep segment, reset timestamps, concat. Audio is
 // cut at the same boundaries — sync survives because video is never re-timed.
-export function renderClean(videoPath, cuts, duration, outPath) {
+// A shot plan (core/shot-engine.mjs) rides along as a per-segment framing:
+// scale > 1 becomes a centered crop back to full frame — the punch-in.
+export function renderClean(videoPath, cuts, duration, outPath, options = {}) {
   const keeps = keepSegments(cuts, duration);
   if (keeps.length === 0) throw new Error("every moment is cut; nothing to render");
+  let shots = options.shots ?? null;
+  if (shots && shots.length !== keeps.length) {
+    throw new Error(`shot plan has ${shots.length} shots for ${keeps.length} segments; replan after cut changes`);
+  }
+  const dims = shots ? probeDimensions(videoPath) : null;
   const filters = [];
   const pads = [];
   keeps.forEach((keep, i) => {
-    filters.push(`[0:v]trim=start=${keep.start}:end=${keep.end},setpts=PTS-STARTPTS[v${i}]`);
+    const scale = shots?.[i]?.scale ?? 1;
+    const punch = scale > 1
+      ? `,crop=iw/${scale}:ih/${scale},scale=${dims.width}:${dims.height}:flags=lanczos`
+      : "";
+    filters.push(`[0:v]trim=start=${keep.start}:end=${keep.end},setpts=PTS-STARTPTS${punch}[v${i}]`);
     filters.push(`[0:a]atrim=start=${keep.start}:end=${keep.end},asetpts=PTS-STARTPTS[a${i}]`);
     pads.push(`[v${i}][a${i}]`);
   });
