@@ -48,7 +48,7 @@ async function main() {
   const { width, height } = probeDimensions(cleanVideo);
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
   const captions = composeFile.captions ? engine.resolveCaptions(words) : null;
-  const states = engine.stateTimes(scenes, captions, duration);
+  const states = engine.renderSchedule(scenes, captions, duration, { fps: 30 });
   console.log(`${states.length} overlay states over ${duration.toFixed(1)}s at ${width}x${height}`);
 
   const framesDir = path.join(projectDir, "out", "overlay-frames");

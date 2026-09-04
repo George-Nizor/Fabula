@@ -5,7 +5,27 @@
 
 const CAPTION_HANG_SECONDS = 0.4;
 
-export const SCENE_TYPES = new Set(["title", "callout"]);
+export const SCENE_TYPES = new Set(["title", "callout", "graphic"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list"]);
+
+function validateGraphic(graphic, at) {
+  if (!graphic || typeof graphic !== "object") throw new Error(`${at}: graphic spec is required`);
+  if (!GRAPHIC_KINDS.has(graphic.kind)) throw new Error(`${at}: unknown graphic kind "${graphic.kind}"`);
+  if (graphic.kind === "stat") {
+    if (typeof graphic.value !== "number") throw new Error(`${at}: stat needs a numeric value`);
+    if (!graphic.label) throw new Error(`${at}: stat needs a label`);
+    return;
+  }
+  if (!Array.isArray(graphic.items) || graphic.items.length === 0 || graphic.items.length > 6) {
+    throw new Error(`${at}: ${graphic.kind} needs 1–6 items`);
+  }
+  for (const item of graphic.items) {
+    if (!item.label) throw new Error(`${at}: every item needs a label`);
+    if (graphic.kind === "chart" && typeof item.value !== "number") {
+      throw new Error(`${at}: chart items need numeric values`);
+    }
+  }
+}
 
 export function validateScenes(scenes, words) {
   const byId = new Map(words.map((word) => [word.id, word]));
@@ -18,7 +38,8 @@ export function validateScenes(scenes, words) {
     if (byId.get(scene.toWordId).start < byId.get(scene.fromWordId).start) {
       throw new Error(`${at}: toWordId precedes fromWordId`);
     }
-    if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
+    if (scene.type === "graphic") validateGraphic(scene.graphic, at);
+    else if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
   });
 }
 
@@ -50,10 +71,13 @@ export function resolveCaptions(words) {
   });
 }
 
-// Every instant the overlay picture changes, with how long it holds. The
-// export captures exactly one frame per state; the preview just renders at
-// the playhead and lands on the same picture.
-export function stateTimes(resolvedScenes, captionSpans, durationSeconds) {
+// Every instant the overlay picture changes, with how long it holds. Static
+// spans change at scene and caption boundaries — the export captures one
+// frame per state. Animated graphics change continuously, so their windows
+// are sampled at full frame rate. The preview just renders at the playhead
+// and lands on the same pictures.
+export function renderSchedule(resolvedScenes, captionSpans, durationSeconds, options = {}) {
+  const fps = options.fps ?? 30;
   const times = new Set([0]);
   const add = (t) => {
     if (t > 0 && t < durationSeconds) times.add(Number(t.toFixed(4)));
@@ -61,6 +85,9 @@ export function stateTimes(resolvedScenes, captionSpans, durationSeconds) {
   for (const scene of resolvedScenes) {
     add(scene.start);
     add(scene.end);
+    if (scene.type === "graphic") {
+      for (let t = scene.start; t < Math.min(scene.end, durationSeconds); t += 1 / fps) add(t);
+    }
   }
   for (const span of captionSpans ?? []) {
     add(span.start);

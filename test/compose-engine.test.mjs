@@ -4,7 +4,7 @@ import {
   validateScenes,
   resolveScenes,
   resolveCaptions,
-  stateTimes,
+  renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
 
@@ -34,14 +34,37 @@ test("captions hang through short gaps but yield to the next word", () => {
   assert.equal(spans[2].end, 3.9); // last word hangs a beat
 });
 
-test("state times cover every overlay change and hold to the duration", () => {
+test("the schedule covers every overlay change and holds to the duration", () => {
   const scenes = resolveScenes([{ type: "title", fromWordId: 0, toWordId: 1, text: "Hi" }], words);
-  const states = stateTimes(scenes, resolveCaptions(words), 5);
+  const states = renderSchedule(scenes, resolveCaptions(words), 5);
   assert.equal(states[0].t, 0);
   const total = states.reduce((sum, state) => sum + state.duration, 0);
   assert.ok(Math.abs(total - 5) < 0.01);
   assert.ok(states.every((state) => state.duration > 0));
   assert.ok(states.some((state) => state.t === 3.0)); // "three" starts a state
+});
+
+test("animated graphics densify their window to frame rate; static spans stay sparse", () => {
+  const scenes = resolveScenes([{
+    type: "graphic", fromWordId: 0, toWordId: 1,
+    graphic: { kind: "stat", value: 2, label: "snails" },
+  }], words);
+  const states = renderSchedule(scenes, null, 5, { fps: 30 });
+  const inside = states.filter((s) => s.t >= 0 && s.t < 0.9);
+  const outside = states.filter((s) => s.t >= 0.9);
+  assert.ok(inside.length >= 25); // ~0.9s at 30fps
+  assert.ok(outside.length <= 2); // nothing changes after the scene ends
+});
+
+test("graphic specs are validated by kind", () => {
+  const good = { type: "graphic", fromWordId: 0, toWordId: 1 };
+  validateScenes([{ ...good, graphic: { kind: "chart", items: [{ label: "a", value: 1 }] } }], words);
+  validateScenes([{ ...good, graphic: { kind: "list", items: [{ label: "a" }] } }], words);
+  validateScenes([{ ...good, graphic: { kind: "stat", value: 3, label: "x" } }], words);
+  assert.throws(() => validateScenes([{ ...good, graphic: { kind: "pie", items: [] } }], words));
+  assert.throws(() => validateScenes([{ ...good, graphic: { kind: "chart", items: [{ label: "a" }] } }], words));
+  assert.throws(() => validateScenes([{ ...good, graphic: { kind: "stat", label: "x" } }], words));
+  assert.throws(() => validateScenes([{ ...good }], words));
 });
 
 test("activeAt is start-inclusive, end-exclusive", () => {

@@ -20,7 +20,7 @@ import {
 } from "../scripts/pipeline.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, SCENE_TYPES } from "../core/compose-engine.mjs";
+import { validateScenes, SCENE_TYPES, GRAPHIC_KINDS } from "../core/compose-engine.mjs";
 import { spawnSync } from "node:child_process";
 
 const MEDIA_ROOT = path.join(REPO_ROOT, "media");
@@ -273,13 +273,23 @@ server.registerTool("list_clean_words", {
 
 server.registerTool("set_scenes", {
   description:
-    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. Each scene anchors to clean-transcript word ids and carries its text. captions turns karaoke word captions on for the whole video. The Compose tab previews everything live; render_final bakes it.`,
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title and callout carry text; graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")} (chart: items with numeric values, bars grow in; stat: one big count-up number; list: items reveal in sequence), all motion a pure function of scene progress. Scenes anchor to clean-transcript word ids; captions turns karaoke word captions on. The Compose tab previews everything live; render_final bakes it.`,
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
       from_word_id: z.number().int().min(0),
       to_word_id: z.number().int().min(0),
-      text: z.string().min(1),
+      text: z.string().min(1).optional().describe("title/callout text"),
+      graphic: z.object({
+        kind: z.enum([...GRAPHIC_KINDS]),
+        title: z.string().optional(),
+        value: z.number().optional().describe("stat only"),
+        label: z.string().optional().describe("stat only"),
+        items: z.array(z.object({
+          label: z.string().min(1),
+          value: z.number().optional().describe("chart only"),
+        })).max(6).optional().describe("chart/list rows"),
+      }).optional().describe("graphic scenes only"),
     })).describe("The full scene list; an empty array clears it"),
     captions: z.boolean().default(false).describe("Karaoke captions over the whole video"),
   },
@@ -291,6 +301,7 @@ server.registerTool("set_scenes", {
     fromWordId: scene.from_word_id,
     toWordId: scene.to_word_id,
     text: scene.text,
+    graphic: scene.graphic,
   }));
   validateScenes(shaped, words);
   fs.writeFileSync(projectPaths(dir).compose, JSON.stringify({ scenes: shaped, captions }, null, 2));

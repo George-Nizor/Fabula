@@ -72,8 +72,90 @@
 }
 
 /* The export captures a finished state per instant; entry animations would
-   be caught mid-flight, so the capture page pins everything to its end. */
+   be caught mid-flight, so the capture page pins everything to its end.
+   Graphics are unaffected: their motion is computed from progress in JS. */
 .ov-layer.is-static .ov { animation: none !important; }
+
+/* Animated graphic insert: a card over the dimmed frame. Every moving
+   property is set inline from progress; these rules are the still parts. */
+.ov-graphic {
+  inset: 8cqh 7cqw;
+  padding: 4cqh 4cqw;
+  border-radius: 2cqw;
+  border: 1px solid rgba(224, 179, 76, 0.45);
+  background: rgba(11, 14, 18, 0.88);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  color: #f0ede6;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.4cqh;
+}
+
+.ov-graphic-title {
+  font-weight: 700;
+  font-size: 4.6cqh;
+  letter-spacing: 0.06em;
+  color: #e0b34c;
+}
+
+.ov-stat-value {
+  font-weight: 700;
+  font-size: 18cqh;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-stat-label {
+  font-size: 4.2cqh;
+  color: #9aa3ad;
+}
+
+.ov-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  font-size: 3.8cqh;
+}
+
+.ov-chart-label { flex: 0 0 24cqw; color: #9aa3ad; }
+
+.ov-chart-track {
+  flex: 1;
+  height: 4.6cqh;
+  border-radius: 1cqh;
+  background: rgba(154, 163, 173, 0.15);
+  overflow: hidden;
+  display: block;
+}
+
+.ov-chart-bar {
+  display: block;
+  height: 100%;
+  border-radius: 1cqh;
+  background: #e0b34c;
+}
+
+.ov-chart-value {
+  flex: 0 0 8cqw;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-list-item {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  font-size: 4.4cqh;
+}
+
+.ov-list-marker {
+  width: 1.6cqw;
+  height: 1.6cqw;
+  border-radius: 50%;
+  background: #e0b34c;
+  flex: none;
+}
 
 @keyframes ov-rise {
   from { opacity: 0; transform: translateY(1.5cqh); }
