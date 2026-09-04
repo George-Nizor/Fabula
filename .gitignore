@@ -1,0 +1,7 @@
+node_modules/
+tools/
+.venv*/
+dist/
+media/
+*.log
+.DS_Store

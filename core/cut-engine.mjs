@@ -1,0 +1,159 @@
+// Pure cut-list detection over a WhisperX word timeline. No I/O, no ffmpeg.
+// Times are seconds. Cuts are proposals: every one carries a reason, its source
+// words, and an `enabled` toggle the review UI owns.
+
+export const DEFAULT_FILLERS = new Set([
+  "um", "uh", "erm", "uhm", "hmm", "mmm", "mhm", "ah", "er",
+]);
+
+const MIN_KEEP_SEGMENT_SECONDS = 0.05;
+
+function isFiniteTime(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+// WhisperX JSON -> flat [{id, text, start, end}]. Words WhisperX could not
+// align (numbers, symbols) carry no timestamps; they inherit an interpolated
+// span between their timed neighbours so every word stays seekable.
+export function flattenWords(transcript) {
+  const raw = [];
+  for (const segment of transcript?.segments ?? []) {
+    for (const word of segment.words ?? []) {
+      raw.push({
+        text: String(word.word ?? "").trim(),
+        start: isFiniteTime(word.start) ? word.start : null,
+        end: isFiniteTime(word.end) ? word.end : null,
+        segmentStart: segment.start,
+        segmentEnd: segment.end,
+      });
+    }
+  }
+  const words = raw.map((word, index) => ({ id: index, text: word.text, start: word.start, end: word.end }));
+  for (let i = 0; i < words.length; i += 1) {
+    if (words[i].start !== null && words[i].end !== null) continue;
+    const prevEnd = findPrevEnd(words, i) ?? raw[i].segmentStart ?? 0;
+    const nextStart = findNextStart(words, i) ?? raw[i].segmentEnd ?? prevEnd;
+    const span = Math.max(nextStart - prevEnd, 0);
+    const untimed = countUntimedRun(words, i);
+    const step = span / (untimed + 1);
+    const offset = untimedIndexInRun(words, i);
+    words[i].start = prevEnd + step * offset;
+    words[i].end = prevEnd + step * (offset + 1);
+  }
+  return words;
+}
+
+function findPrevEnd(words, index) {
+  for (let i = index - 1; i >= 0; i -= 1) if (words[i].end !== null) return words[i].end;
+  return null;
+}
+
+function findNextStart(words, index) {
+  for (let i = index + 1; i < words.length; i += 1) if (words[i].start !== null) return words[i].start;
+  return null;
+}
+
+function countUntimedRun(words, index) {
+  let first = index;
+  while (first > 0 && words[first - 1].start === null) first -= 1;
+  let last = index;
+  while (last + 1 < words.length && words[last + 1].start === null) last += 1;
+  return last - first + 1;
+}
+
+function untimedIndexInRun(words, index) {
+  let first = index;
+  while (first > 0 && words[first - 1].start === null) first -= 1;
+  return index - first;
+}
+
+export function normalizeToken(text) {
+  return String(text).toLowerCase().replace(/[^a-z'’-]/g, "");
+}
+
+export function detectFillerCuts(words, options = {}) {
+  const fillers = options.fillers ?? DEFAULT_FILLERS;
+  const pad = options.padSeconds ?? 0.04;
+  const cuts = [];
+  for (const word of words) {
+    const token = normalizeToken(word.text);
+    if (!fillers.has(token)) continue;
+    cuts.push({
+      start: Math.max(word.start - pad, 0),
+      end: word.end + pad,
+      reason: "filler",
+      detail: token,
+      wordIds: [word.id],
+      enabled: true,
+    });
+  }
+  return cuts;
+}
+
+// Dead air comes from gaps in the word timeline itself: one source of truth.
+// Cuts keep `keepBreathSeconds` on each side; speech is never cut to zero.
+export function detectGapCuts(words, options = {}) {
+  const minGap = options.minGapSeconds ?? 0.6;
+  const keep = options.keepBreathSeconds ?? 0.15;
+  const duration = options.mediaDurationSeconds ?? null;
+  const cuts = [];
+  if (words.length === 0) return cuts;
+
+  if (words[0].start >= minGap) {
+    cuts.push(gapCut(0, words[0].start - keep, [words[0].id]));
+  }
+  for (let i = 0; i + 1 < words.length; i += 1) {
+    const gap = words[i + 1].start - words[i].end;
+    if (gap < minGap) continue;
+    cuts.push(gapCut(words[i].end + keep, words[i + 1].start - keep, [words[i].id, words[i + 1].id]));
+  }
+  if (duration !== null && duration - words.at(-1).end >= minGap) {
+    cuts.push(gapCut(words.at(-1).end + keep, duration, [words.at(-1).id]));
+  }
+  return cuts.filter((cut) => cut.end - cut.start > 0);
+}
+
+function gapCut(start, end, wordIds) {
+  return { start: Math.max(start, 0), end, reason: "silence", wordIds, enabled: true };
+}
+
+// Sort and merge overlapping or near-adjacent cuts. Merged cuts keep every
+// contributing source so the UI can still explain them.
+export function normalizeCuts(cuts, options = {}) {
+  const mergeWithin = options.mergeWithinSeconds ?? 0.05;
+  const sorted = [...cuts].sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [];
+  for (const cut of sorted) {
+    const previous = merged.at(-1);
+    if (previous && cut.start <= previous.end + mergeWithin) {
+      previous.end = Math.max(previous.end, cut.end);
+      previous.sources.push(...(cut.sources ?? [cut]));
+      previous.enabled = previous.enabled && cut.enabled;
+      continue;
+    }
+    merged.push({
+      start: cut.start,
+      end: cut.end,
+      enabled: cut.enabled,
+      sources: [...(cut.sources ?? [cut])],
+    });
+  }
+  return merged;
+}
+
+// The complement of the enabled cuts: what survives into clean.mp4.
+export function keepSegments(cuts, durationSeconds) {
+  const active = normalizeCuts(cuts.filter((cut) => cut.enabled));
+  const keeps = [];
+  let cursor = 0;
+  for (const cut of active) {
+    if (cut.start - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: Math.min(cut.start, durationSeconds) });
+    cursor = Math.max(cursor, cut.end);
+  }
+  if (durationSeconds - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: durationSeconds });
+  return keeps;
+}
+
+export function totalCutSeconds(cuts) {
+  return normalizeCuts(cuts.filter((cut) => cut.enabled)).reduce((sum, cut) => sum + (cut.end - cut.start), 0);
+}
