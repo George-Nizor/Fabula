@@ -5,3 +5,4 @@ dist/
 media/
 *.log
 .DS_Store
+probe-frame.png

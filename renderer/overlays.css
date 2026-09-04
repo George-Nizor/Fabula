@@ -8,6 +8,9 @@
   container-type: size;
   pointer-events: none;
   overflow: hidden;
+  /* Above the settled head (z 1), below the head in flight (z 3): scenes
+     paint over the video except while it flies between layouts. */
+  z-index: 2;
 }
 
 /* The 1080p stage: the charcoal field the whole composition lives on, with
