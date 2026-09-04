@@ -1,0 +1,86 @@
+/* Overlay looks shared by the live preview and the export capture. All
+   sizes are container-query units so the same rules paint identically over
+   the preview player and the full-resolution export frame. */
+
+.ov-layer {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ov { position: absolute; }
+
+/* Lower-third title: accent bar, heavy interface type. */
+.ov-title {
+  left: 5cqw;
+  bottom: 12cqh;
+  display: flex;
+  align-items: stretch;
+  gap: 1.6cqw;
+  animation: ov-rise 300ms ease-out;
+}
+
+.ov-title-bar {
+  width: 0.9cqw;
+  border-radius: 0.45cqw;
+  background: #e0b34c;
+}
+
+.ov-title-text {
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 6cqh;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: #f0ede6;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  max-width: 60cqw;
+}
+
+/* Callout: a quiet panel in the upper right. */
+.ov-callout {
+  top: 6cqh;
+  right: 4cqw;
+  max-width: 36cqw;
+  padding: 2.2cqh 2cqw;
+  border-radius: 1.2cqw;
+  border: 1px solid rgba(224, 179, 76, 0.6);
+  background: rgba(18, 23, 30, 0.82);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 3.6cqh;
+  line-height: 1.4;
+  color: #f0ede6;
+  animation: ov-rise 300ms ease-out;
+}
+
+/* Kinetic caption: the spoken word, centered low. */
+.ov-caption {
+  left: 50cqw;
+  bottom: 4cqh;
+  transform: translateX(-50%);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 5cqh;
+  color: #f0ede6;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+  padding: 0.6cqh 1.6cqw;
+  border-radius: 0.8cqw;
+  background: rgba(11, 14, 18, 0.55);
+  animation: ov-pop 140ms ease-out;
+}
+
+/* The export captures a finished state per instant; entry animations would
+   be caught mid-flight, so the capture page pins everything to its end. */
+.ov-layer.is-static .ov { animation: none !important; }
+
+@keyframes ov-rise {
+  from { opacity: 0; transform: translateY(1.5cqh); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ov-pop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.92); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}

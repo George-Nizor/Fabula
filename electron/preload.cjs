@@ -6,9 +6,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 // discipline: no generic invoke pass-through, no node objects across the line.
 contextBridge.exposeInMainWorld("fabula", {
   version: "0.1.0",
-  getReview: () => ipcRenderer.invoke("fabula:get-review"),
+  getState: () => ipcRenderer.invoke("fabula:get-state"),
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
-  onReview: (callback) => {
-    ipcRenderer.on("fabula:review", (_event, review) => callback(review));
+  onState: (callback) => {
+    ipcRenderer.on("fabula:state", (_event, state) => callback(state));
   },
 });

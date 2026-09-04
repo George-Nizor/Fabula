@@ -39,6 +39,29 @@ body {
   margin: 0;
 }
 
+.stages { display: flex; gap: 0.5rem; }
+
+.stagebtn {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid rgba(154, 163, 173, 0.35);
+  border-radius: 999px;
+  padding: 0.25rem 1.1rem;
+  cursor: pointer;
+}
+
+.stagebtn.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.stagebtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .session {
   display: flex;
   align-items: baseline;
@@ -90,8 +113,10 @@ body {
   transform-origin: center center;
 }
 
-/* Punch-ins scale the video; the frame clips it back like the export's crop. */
+/* Punch-ins scale the video; the frame clips it back like the export's crop.
+   The overlay layer paints scenes over it in compose mode. */
 .videoframe {
+  position: relative;
   overflow: hidden;
   border-radius: 10px;
 }

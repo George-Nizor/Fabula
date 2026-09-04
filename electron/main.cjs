@@ -8,12 +8,15 @@ const { app, BrowserWindow, session, ipcMain } = require("electron");
 const MEDIA_ROOT = path.join(__dirname, "..", "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
 
-// core/ is ESM and this file is CJS; the shot engine arrives async and the
-// review feed simply lacks shots until it lands (a poll tick later at worst).
-let shotEngine = null;
-import(pathToFileURL(path.join(__dirname, "..", "core", "shot-engine.mjs")).href)
-  .then((module) => { shotEngine = module; })
-  .catch((error) => console.error("shot engine failed to load:", error));
+// core/ is ESM and this file is CJS; the engines arrive async and the feed
+// simply lacks their derived fields until they land (a poll tick at worst).
+let core = null;
+Promise.all(
+  ["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs"].map((name) =>
+    import(pathToFileURL(path.join(__dirname, "..", "core", name)).href)
+  )
+).then(([shot, cut, compose]) => { core = { shot, cut, compose }; })
+  .catch((error) => console.error("core engines failed to load:", error));
 
 // The review state is a file the MCP server rewrites; the window polls its
 // mtime rather than using fs.watch because the app may run on Windows while
@@ -46,21 +49,48 @@ function stagedVideoUrl(dir) {
 
 function attachDerived(review, dir) {
   review.videoUrl = stagedVideoUrl(dir);
-  review.shots = review.shotPlan && shotEngine
-    ? shotEngine.punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
+  review.shots = review.shotPlan && core
+    ? core.shot.punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
     : null;
   return review;
 }
 
-function readReview() {
-  const dir = projectDir();
-  if (!dir) return null;
+function readReview(dir) {
   try {
     const review = JSON.parse(fs.readFileSync(path.join(dir, "review.json"), "utf8"));
     return attachDerived(review, dir);
   } catch {
     return null; // absent, or mid-rewrite; the next tick settles it
   }
+}
+
+// The compose stage exists once the clean render and its transcript do.
+// Scenes resolve to seconds here, so the window and the export capture read
+// the same numbers from the same engine.
+function readCompose(dir) {
+  if (!core) return null;
+  try {
+    const cleanVideo = path.join(dir, "out", "clean.mp4");
+    if (!fs.existsSync(cleanVideo)) return null;
+    const words = core.cut.flattenWords(
+      JSON.parse(fs.readFileSync(path.join(dir, "clean.json"), "utf8"))
+    );
+    const config = JSON.parse(fs.readFileSync(path.join(dir, "compose.json"), "utf8"));
+    return {
+      videoUrl: pathToFileURL(cleanVideo).href,
+      words,
+      scenes: core.compose.resolveScenes(config.scenes ?? [], words),
+      captions: config.captions ? core.compose.resolveCaptions(words) : null,
+    };
+  } catch {
+    return null; // compose files absent or mid-write; cut review still works
+  }
+}
+
+function readState() {
+  const dir = projectDir();
+  if (!dir) return null;
+  return { review: readReview(dir), compose: readCompose(dir) };
 }
 
 // The one write the window owns: flipping a cut. Everything else about the
@@ -75,26 +105,29 @@ function setCutEnabled(index, enabled) {
   return attachDerived(review, projectDir());
 }
 
+function stateStamp() {
+  const dir = projectDir();
+  if (!dir) return "none";
+  return ["review.json", "compose.json", "clean.json", path.join("out", "clean.mp4")]
+    .map((name) => {
+      try {
+        const stat = fs.statSync(path.join(dir, name));
+        return `${name}:${stat.mtimeMs}:${stat.size}`;
+      } catch {
+        return `${name}:missing`;
+      }
+    })
+    .join("|") + `@${dir}`;
+}
+
 function startReviewFeed(window) {
   let lastStamp = "";
   const tick = () => {
     if (window.isDestroyed()) return;
-    const file = reviewPath();
-    let stamp = "none";
-    if (file) {
-      try {
-        const stat = fs.statSync(file);
-        stamp = `${file}:${stat.mtimeMs}:${stat.size}`;
-      } catch {
-        stamp = `${file}:missing`;
-      }
-    }
+    const stamp = stateStamp();
     if (stamp !== lastStamp) {
-      const review = readReview();
-      if (review || stamp.endsWith(":missing") || stamp === "none") {
-        lastStamp = stamp;
-        window.webContents.send("fabula:review", review);
-      }
+      lastStamp = stamp;
+      window.webContents.send("fabula:state", readState());
     }
   };
   const timer = setInterval(tick, 500);
@@ -130,10 +163,10 @@ app.whenReady().then(() => {
     contents.on("will-navigate", (event) => event.preventDefault());
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
   });
-  ipcMain.handle("fabula:get-review", () => readReview());
+  ipcMain.handle("fabula:get-state", () => readState());
   ipcMain.handle("fabula:set-cut", (event, index, enabled) => {
     const review = setCutEnabled(index, enabled);
-    if (review) event.sender.send("fabula:review", review);
+    if (review) event.sender.send("fabula:state", readState());
     return review !== null;
   });
   createWindow();

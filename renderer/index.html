@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fabula</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="overlays.css" />
 </head>
 <body>
   <main class="shell">
     <header class="masthead">
       <h1>Fabula</h1>
+      <nav class="stages" id="stages" hidden>
+        <button type="button" class="stagebtn is-active" id="tab-cut">Cut</button>
+        <button type="button" class="stagebtn" id="tab-compose" disabled>Compose</button>
+      </nav>
       <div class="session" id="session" hidden>
         <span class="project" id="project"></span>
         <span class="stat"><b id="stat-raw"></b> raw</span>
@@ -17,23 +22,28 @@
         <span class="stat"><b id="stat-cuts"></b> cuts on</span>
         <span class="stat"><b id="stat-removed"></b> removed</span>
         <span class="stat" id="stat-shots-wrap" hidden><b id="stat-shots"></b> shots</span>
+        <span class="stat" id="stat-scenes-wrap" hidden><b id="stat-scenes"></b> scenes</span>
       </div>
     </header>
     <section class="empty" id="empty">
       <p>No project open.</p>
-      <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts and <code>render_clean</code>.</p>
+      <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts, <code>render_clean</code>, <code>retranscribe_clean</code>, <code>set_scenes</code>, <code>render_final</code>.</p>
     </section>
     <section class="player" id="player" hidden>
-      <div class="videoframe"><video id="video"></video></div>
+      <div class="videoframe">
+        <video id="video"></video>
+        <div class="ov-layer" id="overlay"></div>
+      </div>
       <div class="controls">
         <button id="playpause" type="button">Play</button>
-        <label class="skip"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
+        <label class="skip" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
         <span class="time"><b id="time-edited">0.0s</b> edited · <span id="time-now">0.0s</span> raw</span>
-        <span class="controls-hint">click a word to jump · click anything red to keep it</span>
+        <span class="controls-hint" id="controls-hint">click a word to jump · click anything red to keep it</span>
       </div>
     </section>
     <article class="transcript" id="transcript" hidden></article>
   </main>
+  <script src="overlays.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

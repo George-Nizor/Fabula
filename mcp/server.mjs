@@ -18,8 +18,10 @@ import {
   reviewStats,
   renderClean,
 } from "../scripts/pipeline.mjs";
-import { normalizeCuts } from "../core/cut-engine.mjs";
+import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
+import { validateScenes, SCENE_TYPES } from "../core/compose-engine.mjs";
+import { spawnSync } from "node:child_process";
 
 const MEDIA_ROOT = path.join(REPO_ROOT, "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
@@ -37,7 +39,18 @@ function projectPaths(dir) {
     transcript: path.join(dir, "raw.json"),
     review: path.join(dir, "review.json"),
     clean: path.join(dir, "out", "clean.mp4"),
+    cleanTranscript: path.join(dir, "clean.json"),
+    compose: path.join(dir, "compose.json"),
+    final: path.join(dir, "out", "final.mp4"),
   };
+}
+
+function cleanWords(dir) {
+  const paths = projectPaths(dir);
+  if (!fs.existsSync(paths.cleanTranscript)) {
+    throw new Error("no clean transcript; render_clean then retranscribe_clean first");
+  }
+  return flattenWords(JSON.parse(fs.readFileSync(paths.cleanTranscript, "utf8")));
 }
 
 function readReview(dir) {
@@ -231,6 +244,97 @@ server.registerTool("render_clean", {
   return ok({ ...result, shotPlan: review.shotPlan ?? null, ...reviewStats(review) });
 });
 
+server.registerTool("retranscribe_clean", {
+  description:
+    "Transcribe out/clean.mp4 with WhisperX — the pipeline's second pass. Compose-stage scenes anchor to THIS transcript's word ids, never the raw one's. Run after the cut list settles; a minute or so on the GPU. Skips if clean.json is current unless force is set.",
+  inputSchema: { force: z.boolean().optional().describe("Re-transcribe even if clean.json exists") },
+}, async ({ force }) => {
+  const dir = currentProjectDir();
+  const paths = projectPaths(dir);
+  if (!fs.existsSync(paths.clean)) throw new Error("no clean.mp4; render_clean first");
+  if (fs.existsSync(paths.cleanTranscript) && !force &&
+      fs.statSync(paths.cleanTranscript).mtimeMs > fs.statSync(paths.clean).mtimeMs) {
+    return ok({ skipped: true, transcript: paths.cleanTranscript });
+  }
+  const transcript = transcribe(paths.clean, paths.cleanTranscript);
+  return ok({
+    transcript: paths.cleanTranscript,
+    words: transcript.segments.reduce((n, s) => n + (s.words?.length ?? 0), 0),
+  });
+});
+
+server.registerTool("list_clean_words", {
+  description: "The clean transcript's words with the ids scenes anchor to. Read this before set_scenes.",
+  inputSchema: {},
+}, async () => {
+  const words = cleanWords(currentProjectDir());
+  return ok(words.map((word) => `${word.id}:${word.text}`).join(" "));
+});
+
+server.registerTool("set_scenes", {
+  description:
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. Each scene anchors to clean-transcript word ids and carries its text. captions turns karaoke word captions on for the whole video. The Compose tab previews everything live; render_final bakes it.`,
+  inputSchema: {
+    scenes: z.array(z.object({
+      type: z.enum([...SCENE_TYPES]),
+      from_word_id: z.number().int().min(0),
+      to_word_id: z.number().int().min(0),
+      text: z.string().min(1),
+    })).describe("The full scene list; an empty array clears it"),
+    captions: z.boolean().default(false).describe("Karaoke captions over the whole video"),
+  },
+}, async ({ scenes, captions }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const shaped = scenes.map((scene) => ({
+    type: scene.type,
+    fromWordId: scene.from_word_id,
+    toWordId: scene.to_word_id,
+    text: scene.text,
+  }));
+  validateScenes(shaped, words);
+  fs.writeFileSync(projectPaths(dir).compose, JSON.stringify({ scenes: shaped, captions }, null, 2));
+  return ok({ scenes: shaped.length, captions });
+});
+
+server.registerTool("render_final", {
+  description:
+    "The composited render: overlay states are captured through the same runtime the preview uses (offscreen Electron, alpha PNGs) and ffmpeg composites them over clean.mp4 with the audio untouched. Writes out/final.mp4. Takes a minute; call once.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const paths = projectPaths(dir);
+  if (!fs.existsSync(paths.compose)) throw new Error("no compose.json; set_scenes first");
+  if (!fs.existsSync(paths.cleanTranscript)) throw new Error("no clean.json; retranscribe_clean first");
+  const electron = path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
+  // Headless on the CLI: the server's own environment has no display (stdio
+  // transports strip it), and the export needs no window anywhere.
+  const result = spawnSync(electron, [
+    "--no-sandbox", "--no-zygote", "--ozone-platform=headless",
+    path.join(REPO_ROOT, "scripts", "export-compose.cjs"),
+    dir,
+  ], {
+    encoding: "utf8",
+    timeout: 10 * 60 * 1000,
+    env: {
+      ...process.env,
+      LD_LIBRARY_PATH: [
+        path.join(REPO_ROOT, "tools", "wsl-libs", "usr", "lib", "x86_64-linux-gnu"),
+        process.env.LD_LIBRARY_PATH,
+      ].filter(Boolean).join(":"),
+    },
+  });
+  const tail = (stream) => (stream || "").trim().split("\n").slice(-6).join("\n");
+  if (result.status !== 0) {
+    throw new Error(`export failed (${result.status}): ${tail(result.stderr)}\n${tail(result.stdout)}`);
+  }
+  return ok({
+    final: paths.final,
+    bytes: fs.statSync(paths.final).size,
+    log: tail(result.stdout),
+  });
+});
+
 server.registerTool("status", {
   description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics.",
   inputSchema: {},
@@ -245,6 +349,9 @@ server.registerTool("status", {
     transcribed: fs.existsSync(paths.transcript),
     reviewed: fs.existsSync(paths.review),
     rendered: fs.existsSync(paths.clean),
+    cleanTranscribed: fs.existsSync(paths.cleanTranscript),
+    composed: fs.existsSync(paths.compose),
+    finalRendered: fs.existsSync(paths.final),
   };
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   return ok(state);
