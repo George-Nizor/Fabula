@@ -1,192 +1,218 @@
+/* Fabula's chrome: warm paper, ink, book-cloth terracotta. The stage stays
+   the suite's charcoal so footage and overlays read exactly as they render —
+   the app never leaks into the film. */
+
+/* The story face, vendored so every machine renders the same page. */
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 400 700;
+  src: url("assets/fonts/ss4-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: italic;
+  font-weight: 400 700;
+  src: url("assets/fonts/ss4-italic.woff2") format("woff2");
+}
+
 :root {
-  --ink: #0b0e12;
-  --surface: #12171e;
-  --surface-raised: #1a2129;
-  --text: #f0ede6;
-  --text-dim: #9aa3ad;
-  --accent: #e0b34c; /* provisional; the real accent joins brand/tokens.json with the mark */
-  --cut: #e06a5a;
+  --paper: #faf9f5;
+  --well: #f0eee6;
+  --card: #ffffff;
+  --line: #e3dfd3;
+  --line-strong: #dcd8cc;
+  --ink: #1f1e1d;
+  --ink-soft: #33312d;
+  --dim: #6e6b63;
+  --faint: #87857e;
+  --accent: #d97757;
+  --accent-deep: #a04a2e;
+  --accent-tint: rgba(217, 119, 87, 0.14);
+  --cut: #b3543c;
+  --cut-tint: #f7ede7;
 }
 
 * { box-sizing: border-box; }
 
+/* Author display rules beat the UA's [hidden] — restore its authority. */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
 body {
   margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(120% 120% at 50% 0%, var(--surface-raised) 0%, var(--surface) 55%, var(--ink) 100%);
-  color: var(--text);
+  background: var(--paper);
+  color: var(--ink);
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-}
-
-.shell {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 2.5rem 2rem 4rem;
-}
-
-.masthead {
   display: flex;
-  align-items: baseline;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  border-bottom: 1px solid rgba(154, 163, 173, 0.25);
-  padding-bottom: 1rem;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.masthead h1 {
-  font-size: 1.5rem;
-  letter-spacing: 0.08em;
+/* ---- Top bar ---- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.brand { display: flex; align-items: center; gap: 10px; }
+
+.brand-mark { width: 30px; height: 30px; }
+
+.brand h1 {
   margin: 0;
+  font-family: "Source Serif 4", Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.3rem;
+  letter-spacing: 0.01em;
 }
 
-.stages { display: flex; gap: 0.5rem; }
+.project { font-size: 0.75rem; color: var(--faint); margin-left: 2px; }
+
+.stages {
+  display: flex;
+  gap: 2px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+}
 
 .stagebtn {
   font: inherit;
-  font-size: 0.85rem;
-  color: var(--text-dim);
+  font-size: 0.8rem;
+  color: var(--dim);
   background: none;
-  border: 1px solid rgba(154, 163, 173, 0.35);
-  border-radius: 999px;
-  padding: 0.25rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.28rem 1.1rem;
   cursor: pointer;
 }
 
 .stagebtn.is-active {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--card);
+  border-color: var(--line);
+  box-shadow: 0 1px 3px rgba(31, 30, 29, 0.1);
 }
 
-.stagebtn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
+.stagebtn:disabled { opacity: 0.4; cursor: default; }
 
 .session {
   display: flex;
   align-items: baseline;
   gap: 1.1rem;
-  flex-wrap: wrap;
+  margin-left: auto;
 }
 
-.project {
-  color: var(--accent);
-  font-size: 0.9rem;
+.panel-toggles { display: flex; gap: 6px; }
+
+.session[hidden] + .panel-toggles { margin-left: auto; }
+
+.panelbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
-.stat {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
+.panelbtn.is-on { color: var(--accent-deep); border-color: var(--line-strong); }
+.panelbtn:hover { border-color: var(--accent); }
 
-.stat b {
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
+body.rail-collapsed .rail { display: none; }
+body.insp-collapsed .inspector { display: none; }
+
+.stat { color: var(--dim); font-size: 0.78rem; }
+
+.stat b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .stat.is-accent b { color: var(--accent); }
 
+/* ---- Empty state ---- */
+
 .empty {
-  margin-top: 6rem;
+  margin: auto;
   text-align: center;
-  color: var(--text-dim);
+  color: var(--dim);
+  max-width: 30rem;
 }
 
-/* Raw footage above, transcript-timeline below; the video stays put while
-   the words scroll under it. */
-.player {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 1rem 0 0.6rem;
-  background: linear-gradient(var(--surface) 82%, transparent);
-}
+.empty-mark { width: 72px; height: 72px; opacity: 0.9; }
 
-.player video {
-  display: block;
-  width: 100%;
-  max-height: 44vh;
-  border-radius: 10px;
-  background: var(--ink);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  transform-origin: center center;
-}
+.empty code { color: var(--ink-soft); font-size: 0.9em; }
 
-/* Punch-ins scale the video; the frame clips it back like the export's crop.
-   The overlay layer paints scenes over it in compose mode. */
-.videoframe {
-  position: relative;
-  overflow: hidden;
-  border-radius: 10px;
-}
+.hint { font-size: 0.85rem; }
 
-/* Compose mode: the frame becomes the 1080p stage and the video a layer on
-   it, positioned inline by the stage engine. */
-.videoframe.is-stage {
-  aspect-ratio: 16 / 9;
-}
+/* ---- Workspace ---- */
 
-.videoframe.is-stage video {
-  max-height: none;
-  width: auto;
-}
-
-.controls {
+.workspace {
   display: flex;
-  align-items: center;
-  gap: 1.1rem;
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
-  color: var(--text-dim);
+  flex: 1;
+  min-height: 0;
+  background: var(--well);
 }
 
-.controls button {
-  font: inherit;
-  color: var(--text);
-  background: var(--surface-raised);
-  border: 1px solid rgba(154, 163, 173, 0.35);
-  border-radius: 6px;
-  padding: 0.3rem 1.1rem;
-  cursor: pointer;
-  min-width: 5.5rem;
+.rail {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  min-height: 0;
 }
 
-.controls button:hover { border-color: var(--accent); color: var(--accent); }
-
-.skip { display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
-.skip input { accent-color: var(--accent); }
-
-.time b { color: var(--accent); font-variant-numeric: tabular-nums; }
-.time { font-variant-numeric: tabular-nums; }
-
-.controls-hint { margin-left: auto; font-size: 0.78rem; }
-
-.empty code {
-  color: var(--text);
-  font-size: 0.9em;
+.rail-label {
+  padding: 12px 18px 4px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
 }
 
-.hint { font-size: 0.9rem; }
-
-/* The transcript is the timeline. Reading type, generous air. */
 .transcript {
-  margin-top: 2rem;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.25rem;
-  line-height: 2.1;
-  word-spacing: 0.08em;
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 18px 14px;
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 0.95rem;
+  line-height: 2.05;
+  color: var(--ink-soft);
+  word-spacing: 0.05em;
+}
+
+.rail-foot {
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--faint);
 }
 
 .word { cursor: pointer; border-radius: 4px; padding: 0 2px; }
-.word:hover { color: var(--accent); }
+.word:hover { color: var(--accent-deep); }
 
 .word.is-now {
-  background: rgba(224, 179, 76, 0.22);
-  color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  font-weight: 600;
 }
-
-.gap { cursor: pointer; }
 
 .word.is-cut {
   color: var(--cut);
@@ -200,25 +226,283 @@ body {
   text-underline-offset: 0.25em;
 }
 
-/* Dead air as a measured pause chip between the words it separates. */
 .gap {
+  cursor: pointer;
   display: inline-block;
-  padding: 0 0.55em;
+  padding: 0 0.5em;
   border-radius: 999px;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  font-size: 0.7em;
-  vertical-align: 0.12em;
+  font-size: 0.62rem;
+  vertical-align: 0.14em;
   font-variant-numeric: tabular-nums;
 }
 
 .gap.is-cut {
   color: var(--cut);
-  border: 1px solid rgba(224, 106, 90, 0.55);
+  background: var(--cut-tint);
+  border: 1px solid #dcc8bd;
   text-decoration: line-through;
-  opacity: 0.75;
 }
 
 .gap.is-kept {
-  color: var(--accent);
+  color: var(--accent-deep);
   border: 1px dotted var(--accent);
+}
+
+/* ---- Stage well ---- */
+
+.stagewell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.videoframe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 10px 40px rgba(31, 30, 29, 0.22), 0 2px 8px rgba(31, 30, 29, 0.12);
+}
+
+.videoframe video {
+  display: block;
+  max-width: 100%;
+  max-height: 62vh;
+}
+
+/* Compose mode: the frame becomes the 1080p stage and the video a layer on
+   it, positioned inline by the stage engine. */
+.videoframe.is-stage {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  align-self: center;
+}
+
+.videoframe.is-stage video {
+  max-height: none;
+  max-width: none;
+  width: auto;
+}
+
+/* ---- Inspector ---- */
+
+.inspector {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  padding: 0 18px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.insp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.insp-head .rail-label { padding: 12px 0 4px; }
+
+#insp-title { font-size: 0.72rem; color: var(--accent-deep); font-weight: 600; }
+
+.insp-placeholder {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--faint);
+  line-height: 1.5;
+}
+
+.insp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.65rem 0;
+  color: var(--dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+
+.insp-field input[type="text"],
+.insp-field select {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: inset 0 1px 2px rgba(31, 30, 29, 0.04);
+}
+
+.insp-accent-row { display: flex; align-items: center; gap: 0.5rem; }
+
+.insp-field input[type="color"],
+.toggle input[type="color"] {
+  width: 2.2rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.insp-mini {
+  font: inherit;
+  font-size: 0.7rem;
+  color: var(--dim);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0.14rem 0.7rem;
+  cursor: pointer;
+}
+
+.insp-check { flex-direction: row; align-items: center; gap: 0.5rem; }
+.insp-check input { accent-color: var(--accent); }
+
+.insp-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+
+#insp-save {
+  font: inherit;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 9px;
+  padding: 0.42rem 1.4rem;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(31, 30, 29, 0.15);
+}
+
+#insp-save:hover { background: #c4664a; }
+
+.insp-status { font-size: 0.72rem; color: var(--faint); }
+.insp-status.is-error { color: var(--cut); }
+
+/* ---- Dock: transport + timeline ---- */
+
+.dock {
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  padding: 9px 18px 11px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.playbtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(31, 30, 29, 0.2);
+}
+
+.playbtn:hover { background: #c4664a; }
+
+.time { font-size: 0.8rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+.time b { color: var(--accent-deep); }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.toggle input[type="checkbox"] { accent-color: var(--accent); }
+
+.timeline { position: relative; display: flex; flex-direction: column; gap: 5px; }
+
+.tl-track { display: flex; align-items: center; gap: 0.6rem; }
+
+.tl-label {
+  flex: 0 0 3.2rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: right;
+}
+
+.tl-lane {
+  position: relative;
+  flex: 1;
+  height: 1.5rem;
+  border-radius: 7px;
+  background: #eceadf;
+}
+
+.tl-block {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 7px;
+  font-size: 0.66rem;
+  line-height: 1.5rem;
+  padding: 0 0.45rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent-deep);
+  background: color-mix(in srgb, var(--accent) 20%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  cursor: pointer;
+}
+
+.tl-block.is-dim {
+  background: #e0ddd1;
+  border-color: transparent;
+  color: var(--dim);
+  cursor: default;
+}
+
+.tl-block.is-selected {
+  background: color-mix(in srgb, var(--accent) 34%, #ffffff);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  font-weight: 600;
+}
+
+.tl-playhead {
+  position: absolute;
+  top: -2px;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(217, 119, 87, 0.5);
 }

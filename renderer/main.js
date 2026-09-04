@@ -13,17 +13,13 @@ const els = {
   tabCut: document.getElementById("tab-cut"),
   tabCompose: document.getElementById("tab-compose"),
   session: document.getElementById("session"),
-  project: document.getElementById("project"),
   raw: document.getElementById("stat-raw"),
   clean: document.getElementById("stat-clean"),
-  cuts: document.getElementById("stat-cuts"),
-  removed: document.getElementById("stat-removed"),
-  shotsWrap: document.getElementById("stat-shots-wrap"),
-  shots: document.getElementById("stat-shots"),
-  scenesWrap: document.getElementById("stat-scenes-wrap"),
-  scenes: document.getElementById("stat-scenes"),
   empty: document.getElementById("empty"),
   player: document.getElementById("player"),
+  dock: document.getElementById("dock"),
+  toggleRail: document.getElementById("toggle-rail"),
+  toggleInsp: document.getElementById("toggle-insp"),
   video: document.getElementById("video"),
   overlay: document.getElementById("overlay"),
   playpause: document.getElementById("playpause"),
@@ -33,12 +29,38 @@ const els = {
   timeEdited: document.getElementById("time-edited"),
   hint: document.getElementById("controls-hint"),
   transcript: document.getElementById("transcript"),
+  themewrap: document.getElementById("themewrap"),
+  themeAccent: document.getElementById("theme-accent"),
+  timeline: document.getElementById("timeline"),
+  laneLayout: document.getElementById("lane-layout"),
+  laneScenes: document.getElementById("lane-scenes"),
+  playhead: document.getElementById("tl-playhead"),
+  inspector: document.getElementById("inspector"),
+  inspEmpty: document.getElementById("insp-empty"),
+  inspBody: document.getElementById("insp-body"),
+  inspTitle: document.getElementById("insp-title"),
+  inspClose: document.getElementById("insp-close"),
+  inspText: document.getElementById("insp-text"),
+  inspTextWrap: document.getElementById("insp-text-wrap"),
+  inspAccent: document.getElementById("insp-accent"),
+  inspAccentWrap: document.getElementById("insp-accent-wrap"),
+  inspAccentClear: document.getElementById("insp-accent-clear"),
+  inspLayout: document.getElementById("insp-layout"),
+  inspLayoutWrap: document.getElementById("insp-layout-wrap"),
+  inspCorner: document.getElementById("insp-corner"),
+  inspCornerWrap: document.getElementById("insp-corner-wrap"),
+  inspFlair: document.getElementById("insp-flair"),
+  inspFlairWrap: document.getElementById("insp-flair-wrap"),
+  inspSave: document.getElementById("insp-save"),
+  inspStatus: document.getElementById("insp-status"),
 };
 
 let state = null; // { review, compose }
 let mode = "cut";
 let wordSpans = [];
 let highlighted = null;
+let selectedScene = null; // index into compose.scenes
+let accentCleared = false;
 
 const seconds = (value) => `${value.toFixed(1)}s`;
 const review = () => state?.review ?? null;
@@ -60,19 +82,8 @@ function setSource(url) {
 function renderHeader() {
   const r = review();
   const removed = enabledCuts().reduce((sum, cut) => sum + (cut.end - cut.start), 0);
-  els.project.textContent = r.video.split(/[\\/]/).slice(-2, -1)[0] ?? "project";
   els.raw.textContent = seconds(r.duration);
   els.clean.textContent = seconds(r.duration - removed);
-  els.cuts.textContent = `${enabledCuts().length}/${r.cuts.length}`;
-  els.removed.textContent = seconds(removed);
-  if (r.shots) {
-    const tight = r.shots.filter((shot) => shot.scale > 1).length;
-    els.shots.textContent = `${r.shots.length} (${tight} tight)`;
-  }
-  els.shotsWrap.hidden = !r.shots;
-  const c = compose();
-  if (c) els.scenes.textContent = `${c.scenes.length}${c.captions ? " + captions" : ""}`;
-  els.scenesWrap.hidden = !c;
 }
 
 function renderCutTranscript() {
@@ -126,6 +137,98 @@ function renderCutTranscript() {
   emitChipsBefore(Infinity);
 }
 
+function composeDuration() {
+  const c = compose();
+  return (Number.isFinite(els.video.duration) && els.video.duration) || c.words.at(-1)?.end || 1;
+}
+
+function sceneBlockLabel(scene) {
+  if (scene.type === "graphic") return `${scene.graphic.kind}${scene.graphic.title ? ` · ${scene.graphic.title}` : ""}`;
+  if (scene.type === "kinetic") return "kinetic type";
+  return `${scene.type} · ${scene.text ?? ""}`;
+}
+
+// The composition timeline: one lane for where the head sits, one for the
+// scenes. Blocks are clickable — seek, select, inspect.
+function renderTimeline() {
+  const c = compose();
+  const total = composeDuration();
+  const place = (el, start, end) => {
+    el.style.left = `${(start / total) * 100}%`;
+    el.style.width = `${Math.max(((end - start) / total) * 100, 0.8)}%`;
+  };
+
+  els.laneLayout.replaceChildren();
+  for (const segment of c.layoutTimeline ?? []) {
+    const block = document.createElement("div");
+    const isFocus = segment.layout === "focus";
+    block.className = `tl-block${isFocus ? " is-dim" : ""}`;
+    block.textContent = isFocus ? "focus" : `${segment.layout}${segment.corner ? ` ${segment.corner}` : ""}`;
+    block.title = `${segment.layout} · ${segment.start.toFixed(1)}–${segment.end.toFixed(1)}s`;
+    place(block, segment.start, segment.end);
+    const sceneIndex = c.scenes.findIndex(
+      (scene) => scene.type === "stage" && Math.abs(scene.start - segment.start) < 0.01
+    );
+    block.dataset.seek = String(segment.start);
+    if (sceneIndex >= 0) block.dataset.scene = String(sceneIndex);
+    els.laneLayout.append(block);
+  }
+
+  els.laneScenes.replaceChildren();
+  c.scenes.forEach((scene, index) => {
+    if (scene.type === "stage") return;
+    const block = document.createElement("div");
+    block.className = "tl-block";
+    if (scene.accent) {
+      block.style.background = `${scene.accent}38`;
+      block.style.borderColor = `${scene.accent}66`;
+    }
+    block.textContent = sceneBlockLabel(scene);
+    block.title = `${sceneBlockLabel(scene)} · ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s`;
+    place(block, scene.start, scene.end);
+    block.dataset.seek = String(scene.start);
+    block.dataset.scene = String(index);
+    if (index === selectedScene) block.classList.add("is-selected");
+    els.laneScenes.append(block);
+  });
+}
+
+function openInspector(index) {
+  const scene = compose()?.scenes[index];
+  if (!scene) return;
+  selectedScene = index;
+  accentCleared = false;
+  els.inspEmpty.hidden = true;
+  els.inspBody.hidden = false;
+  els.inspTitle.textContent = `${scene.type} · ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s`;
+  const hasText = scene.type === "title" || scene.type === "callout";
+  els.inspTextWrap.hidden = !hasText;
+  els.inspText.value = hasText ? (scene.text ?? "") : "";
+  const isStage = scene.type === "stage";
+  els.inspAccentWrap.hidden = isStage;
+  els.inspAccent.value = scene.accent ?? compose()?.theme?.accent ?? "#d97757";
+  els.inspLayoutWrap.hidden = !isStage;
+  els.inspCornerWrap.hidden = !isStage;
+  if (isStage) {
+    els.inspLayout.value = scene.layout;
+    els.inspCorner.value = scene.corner ?? "br";
+  }
+  els.inspFlairWrap.hidden = scene.type !== "title";
+  els.inspFlair.checked = Boolean(scene.flair);
+  els.inspStatus.textContent = "";
+  els.inspStatus.classList.remove("is-error");
+  els.inspector.hidden = false;
+  renderTimeline();
+}
+
+function closeInspector() {
+  selectedScene = null;
+  els.inspEmpty.hidden = false;
+  els.inspBody.hidden = true;
+  els.inspTitle.textContent = "";
+  if (mode === "compose" && compose()) renderTimeline();
+}
+
 function renderComposeTranscript() {
   const c = compose();
   els.transcript.replaceChildren();
@@ -146,7 +249,7 @@ function render() {
     els.session.hidden = true;
     els.stages.hidden = true;
     els.player.hidden = true;
-    els.transcript.hidden = true;
+    els.dock.hidden = true;
     els.empty.hidden = false;
     return;
   }
@@ -164,30 +267,51 @@ function render() {
   if (mode === "cut") {
     setSource(review().videoUrl);
     els.skipwrap.hidden = false;
-    els.hint.textContent = "click a word to jump · click anything red to keep it";
+    els.hint.textContent = "click a word to jump · click anything struck to keep it";
     els.overlay.replaceChildren();
     delete els.overlay.dataset.state;
     frame.classList.remove("is-stage", "stage-field");
     els.video.classList.remove("stage-video");
     els.video.style.left = els.video.style.top = "";
     els.video.style.width = els.video.style.height = "";
+    els.video.style.zIndex = "";
+    els.timeline.hidden = true;
+    els.themewrap.hidden = true;
+    els.inspector.hidden = true;
     renderCutTranscript();
   } else {
     setSource(compose().videoUrl);
     els.skipwrap.hidden = true;
-    els.hint.textContent = "the 1080p stage previews here exactly as render_final bakes it";
+    els.hint.textContent = "the 1080p stage previews exactly as render_final bakes it";
     els.video.style.transform = "";
     frame.classList.add("is-stage", "stage-field");
     els.video.classList.add("stage-video");
+    els.timeline.hidden = false;
+    els.themewrap.hidden = false;
+    els.themeAccent.value = compose().theme?.accent ?? "#d97757";
+    els.inspector.hidden = false;
+    if (selectedScene !== null && !compose().scenes[selectedScene]) closeInspector();
+    else if (selectedScene === null) closeInspector();
+    renderTimeline();
     renderComposeTranscript();
   }
   els.player.hidden = !els.video.src;
-  els.transcript.hidden = false;
+  els.dock.hidden = els.player.hidden;
   highlighted = null;
 }
 
-els.tabCut.addEventListener("click", () => { mode = "cut"; render(); });
-els.tabCompose.addEventListener("click", () => { mode = "compose"; render(); });
+els.toggleRail.addEventListener("click", () => {
+  const collapsed = document.body.classList.toggle("rail-collapsed");
+  els.toggleRail.classList.toggle("is-on", !collapsed);
+});
+els.toggleInsp.addEventListener("click", () => {
+  const collapsed = document.body.classList.toggle("insp-collapsed");
+  els.toggleInsp.classList.toggle("is-on", !collapsed);
+});
+
+let userChoseTab = false;
+els.tabCut.addEventListener("click", () => { userChoseTab = true; mode = "cut"; render(); });
+els.tabCompose.addEventListener("click", () => { userChoseTab = true; mode = "compose"; render(); });
 
 els.transcript.addEventListener("click", (event) => {
   const target = event.target;
@@ -201,6 +325,40 @@ els.transcript.addEventListener("click", (event) => {
     els.video.currentTime = Number(target.dataset.start);
     els.video.play();
   }
+});
+
+els.timeline.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || target.dataset.seek === undefined) return;
+  els.video.currentTime = Number(target.dataset.seek) + 0.01;
+  if (target.dataset.scene !== undefined) openInspector(Number(target.dataset.scene));
+});
+
+els.inspClose.addEventListener("click", closeInspector);
+els.inspAccentClear.addEventListener("click", () => {
+  accentCleared = true;
+  els.inspAccent.value = compose()?.theme?.accent ?? "#d97757";
+});
+
+els.inspSave.addEventListener("click", async () => {
+  if (selectedScene === null) return;
+  const scene = compose()?.scenes[selectedScene];
+  if (!scene) return;
+  const patch = {};
+  if (!els.inspTextWrap.hidden) patch.text = els.inspText.value;
+  if (!els.inspAccentWrap.hidden) patch.accent = accentCleared ? null : els.inspAccent.value;
+  if (!els.inspLayoutWrap.hidden) {
+    patch.layout = els.inspLayout.value;
+    patch.corner = patch.layout === "pip" ? els.inspCorner.value : null;
+  }
+  if (!els.inspFlairWrap.hidden) patch.flair = els.inspFlair.checked ? true : null;
+  const result = await window.fabula.updateScene(selectedScene, patch);
+  els.inspStatus.textContent = result.ok ? "applied" : result.error;
+  els.inspStatus.classList.toggle("is-error", !result.ok);
+});
+
+els.themeAccent.addEventListener("change", async () => {
+  await window.fabula.setTheme({ accent: els.themeAccent.value });
 });
 
 els.playpause.addEventListener("click", () => {
@@ -251,6 +409,11 @@ function tick() {
     els.timeNow.textContent = seconds(now);
     els.timeEdited.textContent = seconds(now);
     window.FabulaStage.update(els.overlay, els.video, compose(), now);
+    const lane = els.laneScenes.getBoundingClientRect();
+    const box = els.timeline.getBoundingClientRect();
+    if (lane.width > 0) {
+      els.playhead.style.left = `${lane.left - box.left + (now / composeDuration()) * lane.width}px`;
+    }
   }
 
   let current = null;
@@ -266,5 +429,16 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-window.fabula.getState().then((next) => { state = next; render(); });
-window.fabula.onState((next) => { state = next; render(); });
+window.fabula.getState().then((next) => {
+  state = next;
+  // Open on the furthest stage the project has reached.
+  if (compose()) mode = "compose";
+  render();
+});
+window.fabula.onState((next) => {
+  state = next;
+  // The engines load async in the main process; when the compose stage
+  // arrives late, follow it — unless the user already picked a tab.
+  if (!userChoseTab && mode === "cut" && compose()) mode = "compose";
+  render();
+});

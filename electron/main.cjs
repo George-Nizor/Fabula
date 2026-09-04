@@ -77,6 +77,9 @@ function readCompose(dir) {
     );
     const config = JSON.parse(fs.readFileSync(path.join(dir, "compose.json"), "utf8"));
     const scenes = core.compose.resolveScenes(config.scenes ?? [], words);
+    for (const scene of scenes) {
+      if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(dir, scene.graphic.src)).href;
+    }
     const duration = words.at(-1)?.end ?? 0;
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
@@ -85,6 +88,7 @@ function readCompose(dir) {
       captions: config.captions ? core.compose.resolveCaptions(words) : null,
       stage: core.stage.DEFAULT_STAGE,
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
+      theme: config.theme ?? null,
     };
   } catch {
     return null; // compose files absent or mid-write; cut review still works
@@ -144,7 +148,8 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#12171e",
+    backgroundColor: "#faf9f5",
+    icon: path.join(__dirname, "..", "brand", "fabula-mark-256.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -175,6 +180,47 @@ app.whenReady().then(() => {
     if (review) event.sender.send("fabula:state", readState());
     return review !== null;
   });
+
+  // The inspector's two writes. Both re-validate through the same core
+  // engine the MCP server uses, so the window cannot save a plan the
+  // pipeline would refuse.
+  const editCompose = (event, mutate) => {
+    try {
+      const dir = projectDir();
+      const file = path.join(dir, "compose.json");
+      const config = JSON.parse(fs.readFileSync(file, "utf8"));
+      mutate(config);
+      const words = core.cut.flattenWords(
+        JSON.parse(fs.readFileSync(path.join(dir, "clean.json"), "utf8"))
+      );
+      core.compose.validateScenes(config.scenes ?? [], words);
+      core.compose.validateTheme(config.theme);
+      fs.writeFileSync(file, JSON.stringify(config, null, 2));
+      event.sender.send("fabula:state", readState());
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: String(error.message ?? error) };
+    }
+  };
+
+  const SCENE_PATCH_FIELDS = ["text", "accent", "layout", "corner", "flair"];
+  ipcMain.handle("fabula:update-scene", (event, index, patch) =>
+    editCompose(event, (config) => {
+      const scene = config.scenes?.[index];
+      if (!scene) throw new Error(`no scene ${index}`);
+      for (const field of SCENE_PATCH_FIELDS) {
+        if (!(field in patch)) continue;
+        if (patch[field] === null || patch[field] === "" ) delete scene[field];
+        else scene[field] = patch[field];
+      }
+    })
+  );
+  ipcMain.handle("fabula:set-theme", (event, theme) =>
+    editCompose(event, (config) => {
+      if (theme?.accent) config.theme = { ...config.theme, accent: theme.accent };
+      else delete config.theme;
+    })
+  );
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

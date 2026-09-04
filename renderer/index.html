@@ -8,41 +8,106 @@
   <link rel="stylesheet" href="overlays.css" />
 </head>
 <body>
-  <main class="shell">
-    <header class="masthead">
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-mark" src="assets/fabula-mark.png" alt="" />
       <h1>Fabula</h1>
-      <nav class="stages" id="stages" hidden>
-        <button type="button" class="stagebtn is-active" id="tab-cut">Cut</button>
-        <button type="button" class="stagebtn" id="tab-compose" disabled>Compose</button>
-      </nav>
-      <div class="session" id="session" hidden>
-        <span class="project" id="project"></span>
-        <span class="stat"><b id="stat-raw"></b> raw</span>
-        <span class="stat is-accent"><b id="stat-clean"></b> clean</span>
-        <span class="stat"><b id="stat-cuts"></b> cuts on</span>
-        <span class="stat"><b id="stat-removed"></b> removed</span>
-        <span class="stat" id="stat-shots-wrap" hidden><b id="stat-shots"></b> shots</span>
-        <span class="stat" id="stat-scenes-wrap" hidden><b id="stat-scenes"></b> scenes</span>
-      </div>
-    </header>
-    <section class="empty" id="empty">
-      <p>No project open.</p>
-      <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts, <code>render_clean</code>, <code>retranscribe_clean</code>, <code>set_scenes</code>, <code>render_final</code>.</p>
-    </section>
-    <section class="player" id="player" hidden>
+    </div>
+    <nav class="stages" id="stages" hidden>
+      <button type="button" class="stagebtn is-active" id="tab-cut">Cut</button>
+      <button type="button" class="stagebtn" id="tab-compose" disabled>Compose</button>
+    </nav>
+    <div class="session" id="session" hidden>
+      <span class="stat"><b id="stat-raw"></b> raw</span>
+      <span class="stat is-accent"><b id="stat-clean"></b> clean</span>
+    </div>
+    <div class="panel-toggles">
+      <button type="button" class="panelbtn is-on" id="toggle-rail" title="Transcript panel">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg>
+      </button>
+      <button type="button" class="panelbtn is-on" id="toggle-insp" title="Inspector panel">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M10 2.5v11"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="empty" id="empty">
+    <img class="empty-mark" src="assets/fabula-mark.png" alt="" />
+    <p>No project open.</p>
+    <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts, <code>render_clean</code>, <code>retranscribe_clean</code>, <code>set_scenes</code>, <code>render_final</code>.</p>
+  </section>
+
+  <main class="workspace" id="player" hidden>
+    <aside class="rail">
+      <div class="rail-label">Transcript</div>
+      <article class="transcript" id="transcript"></article>
+      <div class="rail-foot" id="controls-hint">click a word to jump · click anything struck to keep it</div>
+    </aside>
+    <section class="stagewell">
       <div class="videoframe">
         <video id="video"></video>
         <div class="ov-layer" id="overlay"></div>
       </div>
-      <div class="controls">
-        <button id="playpause" type="button">Play</button>
-        <label class="skip" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
-        <span class="time"><b id="time-edited">0.0s</b> edited · <span id="time-now">0.0s</span> raw</span>
-        <span class="controls-hint" id="controls-hint">click a word to jump · click anything red to keep it</span>
-      </div>
     </section>
-    <article class="transcript" id="transcript" hidden></article>
+    <aside class="inspector" id="inspector" hidden>
+      <div class="insp-head">
+        <span class="rail-label">Inspector</span>
+        <span id="insp-title"></span>
+      </div>
+      <div id="insp-empty" class="insp-placeholder">Select a block in the timeline to tweak it.</div>
+      <div id="insp-body" hidden>
+        <label class="insp-field" id="insp-text-wrap">Text
+          <input type="text" id="insp-text" />
+        </label>
+        <label class="insp-field" id="insp-accent-wrap">Accent
+          <span class="insp-accent-row">
+            <input type="color" id="insp-accent" />
+            <button type="button" class="insp-mini" id="insp-accent-clear">inherit</button>
+          </span>
+        </label>
+        <label class="insp-field" id="insp-layout-wrap">Layout
+          <select id="insp-layout">
+            <option value="focus">focus</option>
+            <option value="pip">pip</option>
+            <option value="side">side</option>
+          </select>
+        </label>
+        <label class="insp-field" id="insp-corner-wrap">Corner
+          <select id="insp-corner">
+            <option value="br">bottom right</option>
+            <option value="bl">bottom left</option>
+            <option value="tr">top right</option>
+            <option value="tl">top left</option>
+          </select>
+        </label>
+        <label class="insp-field insp-check" id="insp-flair-wrap">
+          <input type="checkbox" id="insp-flair" /> burst flair
+        </label>
+        <div class="insp-actions">
+          <button type="button" id="insp-save">Apply</button>
+          <button type="button" class="insp-mini" id="insp-close">deselect</button>
+          <span class="insp-status" id="insp-status"></span>
+        </div>
+      </div>
+    </aside>
   </main>
+
+  <footer class="dock" id="dock" hidden>
+    <div class="transport">
+      <button id="playpause" type="button" class="playbtn" aria-label="Play">
+        <svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>
+      </button>
+      <span class="time"><b id="time-edited">0.0s</b> edited · <span id="time-now">0.0s</span> raw</span>
+      <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
+      <label class="toggle" id="themewrap" hidden>accent <input type="color" id="theme-accent" value="#d97757" /></label>
+    </div>
+    <div class="timeline" id="timeline" hidden>
+      <div class="tl-track"><span class="tl-label">stage</span><div class="tl-lane" id="lane-layout"></div></div>
+      <div class="tl-track"><span class="tl-label">scenes</span><div class="tl-lane" id="lane-scenes"></div></div>
+      <div class="tl-playhead" id="tl-playhead"></div>
+    </div>
+  </footer>
+
   <script src="overlays.js"></script>
   <script src="main.js"></script>
 </body>

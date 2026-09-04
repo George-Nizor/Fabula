@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("fabula", {
   version: "0.1.0",
   getState: () => ipcRenderer.invoke("fabula:get-state"),
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
+  updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
+  setTheme: (theme) => ipcRenderer.invoke("fabula:set-theme", theme),
   onState: (callback) => {
     ipcRenderer.on("fabula:state", (_event, state) => callback(state));
   },
