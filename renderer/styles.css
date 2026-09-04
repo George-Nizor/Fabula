@@ -678,6 +678,8 @@ input[type="color"] {
   cursor: pointer;
 }
 
+.tl-block.is-tiny { color: transparent; }
+
 .tl-block.is-dim {
   background: #e0ddd1;
   border-color: transparent;

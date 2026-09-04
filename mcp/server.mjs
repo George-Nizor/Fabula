@@ -178,8 +178,14 @@ server.registerTool("cut_pass", {
     minGapSeconds: min_gap_seconds,
     keepBreathSeconds: keep_breath_seconds,
   });
+  // A retuned pass replaces the proposals, not the shot plan: punch-ins
+  // re-derive from whatever cuts stand, so the plan survives the rerun.
+  if (fs.existsSync(paths.review)) {
+    const previous = JSON.parse(fs.readFileSync(paths.review, "utf8"));
+    if (previous.shotPlan) review.shotPlan = previous.shotPlan;
+  }
   writeReview(dir, review);
-  return ok({ ...reviewStats(review), cutOptions: review.cutOptions });
+  return ok({ ...reviewStats(review), cutOptions: review.cutOptions, shotPlan: review.shotPlan ?? null });
 });
 
 // ---- Source framing ----
@@ -410,7 +416,9 @@ server.registerTool("set_scenes", {
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
         title: z.string().optional(),
-        value: z.number().optional().describe("stat only"),
+        value: z.number().optional().describe("stat only; counts up in its own precision (3.99 keeps cents)"),
+        prefix: z.string().max(4).optional().describe("stat only: text before the number, e.g. $"),
+        suffix: z.string().max(6).optional().describe("stat only: text after the number, e.g. % or k"),
         label: z.string().optional().describe("stat label / image or screen caption"),
         src: z.string().optional().describe("image only: project-relative png/jpg/webp, e.g. assets/still.png"),
         items: z.array(z.object({

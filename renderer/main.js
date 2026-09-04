@@ -281,7 +281,19 @@ function renderComposeTimeline() {
     if (index === selectedScene) block.classList.add("is-selected");
     els.laneScenes.append(block);
   });
+  hideTinyLabels();
 }
+
+// A thirteen-minute film packs the lanes; a label that would show two
+// letters and an ellipsis says less than a plain block with its tooltip.
+function hideTinyLabels() {
+  requestAnimationFrame(() => {
+    for (const block of els.timeline.querySelectorAll(".tl-block")) {
+      block.classList.toggle("is-tiny", block.offsetWidth < 46 && !block.classList.contains("is-cutblock"));
+    }
+  });
+}
+window.addEventListener("resize", hideTinyLabels);
 
 // ---- Inspector ----
 

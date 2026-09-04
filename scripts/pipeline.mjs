@@ -30,9 +30,14 @@ const WHISPERX = path.join(REPO_ROOT, ".venv-whisperx", "bin", "whisperx");
 
 // The clean cut is delivered at stage resolution and a review-friendly frame
 // rate: a 3440x1440 60fps master would otherwise cost four times the encode
-// for pixels the 1080p stage never shows.
+// for pixels the 1080p stage never shows. Keyframes land every 12 frames:
+// the export seeks this file once per frame, and a seek decodes from the
+// previous keyframe, so an eight-second GOP made every capture decode most
+// of a GOP (2.4 fps at 1080p); a 0.4 s GOP roughly doubles that for about
+// a third more bytes on an intermediate nobody ships.
 export const CLEAN_FPS = 30;
 export const CLEAN_CEILING = { width: 1920, height: 1080 };
+export const CLEAN_GOP = 12;
 
 export function probeDuration(file) {
   const result = spawnSync(FFPROBE, [
@@ -433,11 +438,15 @@ export function renderClean(videoPath, cuts, duration, outPath, options = {}) {
     "-/filter_complex", graphPath,
     "-map", "[v]", "-map", "[a]",
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+    "-g", String(CLEAN_GOP), "-keyint_min", String(CLEAN_GOP),
     "-c:a", "aac", "-b:a", "192k",
     outPath,
   ];
   if (screenSize) {
-    args.push("-map", "[s]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-an", screenPath);
+    args.push(
+      "-map", "[s]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+      "-g", String(CLEAN_GOP), "-keyint_min", String(CLEAN_GOP), "-an", screenPath,
+    );
   }
   const started = Date.now();
   const render = spawnSync(FFMPEG, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });

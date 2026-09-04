@@ -54,7 +54,10 @@ export function layoutRects(layout, corner, videoAspect, stage = DEFAULT_STAGE) 
     };
   }
   if (layout === "side") {
-    const h = H * 0.62;
+    // The head takes at most 46% of the width, so wide footage (16:9 or
+    // wider) still leaves the visuals a column worth reading; square or
+    // portrait footage keeps its taller 62% frame.
+    const h = Math.min(H * 0.62, (W * 0.46) / videoAspect);
     const w = h * videoAspect;
     const x = W * 0.055;
     const contentX = x + w + W * 0.045;

@@ -55,7 +55,10 @@ function buildGraphic(scene, p, contentRect, stage) {
   if (graphic.kind === "stat") {
     const value = document.createElement("div");
     value.className = "ov-stat-value";
-    value.textContent = String(Math.round(graphic.value * easeOut(p / 0.5)));
+    // Counts up in the value's own precision: 30 stays whole, 3.99 keeps
+    // its cents; prefix and suffix ride along ($, %, k).
+    const decimals = Number.isInteger(graphic.value) ? 0 : Math.min((String(graphic.value).split(".")[1] ?? "").length, 3);
+    value.textContent = `${graphic.prefix ?? ""}${(graphic.value * easeOut(p / 0.5)).toFixed(decimals)}${graphic.suffix ?? ""}`;
     const label = document.createElement("div");
     label.className = "ov-stat-label";
     label.textContent = graphic.label;
