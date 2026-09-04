@@ -8,11 +8,13 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // discipline: no generic invoke pass-through, no node objects across the line.
 contextBridge.exposeInMainWorld("fabula", {
   version: "0.1.0",
+  platform: process.platform,
   getState: () => ipcRenderer.invoke("fabula:get-state"),
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
-  setTheme: (theme) => ipcRenderer.invoke("fabula:set-theme", theme),
+  setProject: (patch) => ipcRenderer.invoke("fabula:set-project", patch),
   ingestFile: (file) => ipcRenderer.invoke("fabula:ingest", webUtils.getPathForFile(file)),
+  pickFile: () => ipcRenderer.invoke("fabula:pick"),
   onState: (callback) => {
     ipcRenderer.on("fabula:state", (_event, state) => callback(state));
   },

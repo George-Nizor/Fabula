@@ -14,7 +14,7 @@ function path_isAbsoluteLike(p) {
 import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 
 export function validateTheme(theme) {
@@ -27,6 +27,10 @@ export function validateTheme(theme) {
 function validateGraphic(graphic, at) {
   if (!graphic || typeof graphic !== "object") throw new Error(`${at}: graphic spec is required`);
   if (!GRAPHIC_KINDS.has(graphic.kind)) throw new Error(`${at}: unknown graphic kind "${graphic.kind}"`);
+  // screen: the recording's own screen track in the content rect; nothing
+  // to declare beyond an optional label. Whether a screen exists at that
+  // moment is the render map's business, reported as a warning upstream.
+  if (graphic.kind === "screen") return;
   if (graphic.kind === "image") {
     if (typeof graphic.src !== "string" || !/\.(png|jpe?g|webp)$/i.test(graphic.src)) {
       throw new Error(`${at}: image needs a png/jpg/webp src`);

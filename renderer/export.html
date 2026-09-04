@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <link rel="stylesheet" href="overlays.css" />
   <style>
-    /* The full 1080p composition: the charcoal stage, the head as a layer,
-       the scenes over it. Every captured frame is this page at one t. */
+    /* The full 1080p composition: the charcoal stage, the head and screen as
+       layers, the scenes over them. Every captured frame is this page at one t. */
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
     #frame { position: fixed; inset: 0; }
     #head { position: absolute; }
@@ -14,6 +14,7 @@
 <body>
   <div id="frame" class="stage-field">
     <video id="head" class="stage-video" muted preload="auto"></video>
+    <video id="screen" class="stage-screen" muted preload="auto" hidden></video>
     <div id="stage" class="ov-layer is-static"></div>
   </div>
   <script src="overlays.js"></script>

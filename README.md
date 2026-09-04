@@ -14,23 +14,35 @@ architecture, the decisions already made, and what has been proven or disproven.
 
 Fabula is a two-hander: the window is where you watch and tweak, Claude is who does the work.
 
-1. **Open Fabula and drop a recording on it.** The clip is staged as a project and the window
+1. **Open Fabula and drop a recording on it** (or use *Open a recording…*). The clip is opened
+   as a project where it lives — nothing is copied, a 19 GB recording included — and the window
    says what to ask for next.
 2. **In a Claude Code session started in this folder** (`.mcp.json` registers the `fabula`
-   tools), say what you want in plain words: *"do a first pass on the staged clip"*. Claude
-   transcribes on the GPU, proposes cuts, renders the clean cut, re-transcribes it, plans
-   layouts and scenes, and renders the composition. Everything lands in the window as it
-   happens.
-3. **Review in the window.** Play with skip-preview, click struck words to keep them, click
-   timeline blocks and tweak text, accents, layouts in the inspector, change the project accent.
-   Every change is saved to the project and previews immediately.
+   tools), say what you want in plain words: *"do a first pass on the open clip"*. Claude
+   transcribes on the GPU, finds where the head sits in the frame (a camera inset over a screen
+   recording, scene switches, pillarboxing), proposes cuts, renders the clean cut, re-transcribes
+   it, plans layouts and scenes, and renders the composition. The window shows each step as it
+   runs and every result as it lands.
+3. **Review in the window.** Play with skip-preview, click struck words to keep them, watch the
+   framing guides show what the render will pull, click timeline blocks and tweak text, accents,
+   layouts in the inspector, change the project accent. Every change is saved to the project and
+   previews immediately.
 4. **Iterate by prompting.** *"Make the intro title punchier", "drop the chart, show the snail
    still longer", "warmer accent", "tighten the pauses"* — Claude reads the current plan first
    (your tweaks included), changes only what you asked, and re-renders behind the gate. Your
    manual edits and Claude's edits live in the same files, so neither side tramples the other.
 
-The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `final.mp4` the finished
-composition.
+The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `screen.mp4` the recording's
+screen track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4`
+a span rendered to check a scene in a minute instead of the film in an hour.
+
+## In the Instrumenta launcher
+
+Fabula is a `native-bundle` product: `scripts/bootstrap-windows.ps1` deploys the Windows Electron
+runtime into `dist/windows/` beside a `fabula-bundle.json` that names this checkout as the app,
+and the launcher's Prepare button runs exactly that. Open mirrors the runtime to local disk once
+and launches it with the checkout as its argument, so edits here are live. The pipeline still runs
+in WSL under Claude Code; the launcher only opens the window.
 
 ## Development
 
@@ -41,4 +53,4 @@ npm run setup:tools   # static ffmpeg + WhisperX venv, no sudo
 npm start             # Electron shell
 ```
 
-Part of the [Instrumenta workspace](../README.md); not yet registered in the launcher catalog.
+Part of the [Instrumenta workspace](../README.md), registered in the launcher catalog as `fabula`.

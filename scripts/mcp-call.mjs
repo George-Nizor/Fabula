@@ -28,7 +28,7 @@ try {
   const result = await client.callTool(
     { name: tool, arguments: rawArgs ? JSON.parse(rawArgs) : {} },
     undefined,
-    { timeout: 15 * 60 * 1000 }
+    { timeout: 3 * 60 * 60 * 1000 }
   );
   console.log(result.content?.[0]?.text ?? JSON.stringify(result));
   if (result.isError) process.exitCode = 1;

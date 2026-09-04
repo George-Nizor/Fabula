@@ -28,10 +28,21 @@ may depend on an API key or a paid service.
 ## The agent loop (how to work a project)
 
 The person drops a clip on the window (or names a path); you do the pipeline over the `fabula`
-MCP tools and they watch it land live. First pass: `open_project` (skip if the window staged it —
-`status` tells you) → `transcribe` → `cut_pass` → review talk if asked → `plan_shots` →
-`render_clean` → `retranscribe_clean` → `set_scenes` (your editorial judgment: layouts, titles,
-graphics, kinetic beats, captions) → `render_final`.
+MCP tools and they watch it land live. Footage is referenced where it lives, never copied. First
+pass: `open_project` (skip if the window staged it — `status` tells you) → `transcribe` →
+`detect_framing` → look at the frames it saved, then `set_framing` when the head is not the whole
+frame (screen recordings with a camera inset, OBS scene switches, pillarboxing) → `cut_pass` →
+review talk if asked → `plan_shots` → `render_clean` → `retranscribe_clean` → `set_scenes` (your
+editorial judgment: layouts, titles, graphics, kinetic beats, captions; a `screen` graphic plays
+the recording's own screen beside the head wherever `get_framing` reports a screen span) →
+`render_final` over a word range first (a minute), the whole film once the spans look right.
+
+Long steps write `progress.json` so the window shows what is running; the tools do that for you.
+The window plays the raw file over the framing guides in Cut and the 1080p stage in Compose, so
+the person sees every decision as you make it.
+
+Tuning that matters on real recordings: `cut_pass` at the default 0.6 s minimum pause reads
+fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Say which you chose.
 
 Iteration rules, in order of importance:
 

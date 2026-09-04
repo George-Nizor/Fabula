@@ -22,16 +22,20 @@
   --well: #f0eee6;
   --card: #ffffff;
   --line: #e3dfd3;
-  --line-strong: #dcd8cc;
+  --line-strong: #d6d1c4;
   --ink: #1f1e1d;
   --ink-soft: #33312d;
   --dim: #6e6b63;
-  --faint: #87857e;
+  --faint: #8b887f;
   --accent: #d97757;
   --accent-deep: #a04a2e;
   --accent-tint: rgba(217, 119, 87, 0.14);
   --cut: #b3543c;
   --cut-tint: #f7ede7;
+  --ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --serif: "Source Serif 4", Georgia, serif;
+  --radius: 10px;
+  --shadow-card: 0 1px 3px rgba(31, 30, 29, 0.1);
 }
 
 * { box-sizing: border-box; }
@@ -45,23 +49,39 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--ui);
+  font-size: 13px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Top bar ---- */
+button, input, select { font-family: inherit; }
+
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Top bar (the title bar on Windows) ---- */
 
 .topbar {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   height: 56px;
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  -webkit-app-region: drag;
+  user-select: none;
 }
+
+/* The system's window controls overlay the top-right corner on Windows. */
+body.win32 .topbar { padding-right: 156px; }
+
+.topbar button, .topbar input, .topbar nav { -webkit-app-region: no-drag; }
 
 .brand { display: flex; align-items: center; gap: 10px; }
 
@@ -69,14 +89,12 @@ body {
 
 .brand h1 {
   margin: 0;
-  font-family: "Source Serif 4", Georgia, serif;
+  font-family: var(--serif);
   font-style: italic;
   font-weight: 600;
   font-size: 1.3rem;
   letter-spacing: 0.01em;
 }
-
-.project { font-size: 0.75rem; color: var(--faint); margin-left: 2px; }
 
 .stages {
   display: flex;
@@ -88,7 +106,6 @@ body {
 }
 
 .stagebtn {
-  font: inherit;
   font-size: 0.8rem;
   color: var(--dim);
   background: none;
@@ -103,10 +120,47 @@ body {
   font-weight: 600;
   background: var(--card);
   border-color: var(--line);
-  box-shadow: 0 1px 3px rgba(31, 30, 29, 0.1);
+  box-shadow: var(--shadow-card);
 }
 
 .stagebtn:disabled { opacity: 0.4; cursor: default; }
+
+/* Pipeline progress: the one live thing in the chrome while Claude works. */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  max-width: 46vw;
+  overflow: hidden;
+}
+
+.progress.is-failed { background: var(--cut-tint); color: var(--cut); }
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.progress.is-failed .pulse { background: var(--cut); animation: none; }
+
+@keyframes pulse {
+  0%, 100% { transform: scale(0.8); opacity: 0.55; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+.progress-label { font-weight: 600; }
+.progress-detail { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.progress-clock { font-variant-numeric: tabular-nums; color: var(--dim); }
 
 .session {
   display: flex;
@@ -117,7 +171,7 @@ body {
 
 .panel-toggles { display: flex; gap: 6px; }
 
-.session[hidden] + .panel-toggles { margin-left: auto; }
+.session[hidden] + .panel-toggles, .progress[hidden] + .session[hidden] + .panel-toggles { margin-left: auto; }
 
 .panelbtn {
   width: 30px;
@@ -150,14 +204,61 @@ body.insp-collapsed .inspector { display: none; }
   margin: auto;
   text-align: center;
   color: var(--dim);
-  max-width: 30rem;
+  max-width: 32rem;
+  padding: 0 24px;
 }
 
-.empty-mark { width: 72px; height: 72px; opacity: 0.9; }
+.empty-mark { width: 84px; height: 84px; }
 
-.empty code { color: var(--ink-soft); font-size: 0.9em; }
+.empty h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.45rem;
+  color: var(--ink);
+  margin: 14px 0 6px;
+  line-height: 1.25;
+}
 
-.hint { font-size: 0.85rem; }
+.empty .hint { font-size: 0.9rem; line-height: 1.5; margin: 0 0 22px; }
+
+.empty.is-error h2 { color: var(--cut); }
+
+.button {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 0.5rem 1.2rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+
+.button:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+/* The whole window is the drop target; the card says so while a file hovers. */
+.dropzone {
+  position: fixed;
+  inset: 0;
+  background: rgba(250, 249, 245, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.dropzone-card {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  border: 2px dashed var(--accent);
+  border-radius: 18px;
+  padding: 2.2rem 4rem;
+  background: var(--paper);
+}
 
 /* ---- Workspace ---- */
 
@@ -191,11 +292,12 @@ body.insp-collapsed .inspector { display: none; }
   flex: 1;
   overflow-y: auto;
   padding: 6px 18px 14px;
-  font-family: "Source Serif 4", Georgia, serif;
+  font-family: var(--serif);
   font-size: 0.95rem;
   line-height: 2.05;
   color: var(--ink-soft);
   word-spacing: 0.05em;
+  scroll-behavior: smooth;
 }
 
 .rail-foot {
@@ -203,6 +305,7 @@ body.insp-collapsed .inspector { display: none; }
   border-top: 1px solid var(--line);
   font-size: 0.72rem;
   color: var(--faint);
+  line-height: 1.45;
 }
 
 .word { cursor: pointer; border-radius: 4px; padding: 0 2px; }
@@ -231,7 +334,7 @@ body.insp-collapsed .inspector { display: none; }
   display: inline-block;
   padding: 0 0.5em;
   border-radius: 999px;
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--ui);
   font-size: 0.62rem;
   vertical-align: 0.14em;
   font-variant-numeric: tabular-nums;
@@ -268,13 +371,43 @@ body.insp-collapsed .inspector { display: none; }
   max-width: 100%;
   max-height: 100%;
   box-shadow: 0 10px 40px rgba(31, 30, 29, 0.22), 0 2px 8px rgba(31, 30, 29, 0.12);
+  background: #0b0e12;
 }
 
 .videoframe video {
   display: block;
   max-width: 100%;
-  max-height: 62vh;
+  max-height: calc(100vh - 236px);
 }
+
+/* Framing guides over the raw footage: what the clean render will pull. */
+.guides { position: absolute; inset: 0; pointer-events: none; }
+
+.guide {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.guide-label {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  padding: 1px 7px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: var(--accent);
+  border-radius: 4px 0 4px 0;
+}
+
+.guide.is-punch { border-style: dashed; border-width: 1.5px; opacity: 0.85; }
+.guide.is-screen { border-color: #59d9f2; }
+.guide.is-screen .guide-label { background: #59d9f2; color: #0b0e12; }
+.guide.is-punch .guide-label { display: none; }
 
 /* Compose mode: the frame becomes the 1080p stage and the video a layer on
    it, positioned inline by the stage engine. */
@@ -293,13 +426,14 @@ body.insp-collapsed .inspector { display: none; }
 /* ---- Inspector ---- */
 
 .inspector {
-  width: 280px;
+  width: 284px;
   flex-shrink: 0;
   background: var(--paper);
   border-left: 1px solid var(--line);
   padding: 0 18px 16px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .insp-head {
@@ -314,10 +448,52 @@ body.insp-collapsed .inspector { display: none; }
 #insp-title { font-size: 0.72rem; color: var(--accent-deep); font-weight: 600; }
 
 .insp-placeholder {
-  margin-top: 1rem;
+  margin: 1rem 0 0;
   font-size: 0.8rem;
   color: var(--faint);
   line-height: 1.5;
+}
+
+.insp-section {
+  padding: 4px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.insp-kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+
+.insp-kv b { color: var(--ink); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+
+.insp-keys {
+  margin-top: auto;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  margin-right: 0.25em;
+  text-align: center;
+  font-family: var(--ui);
+  font-size: 0.66rem;
+  color: var(--dim);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
 }
 
 .insp-field {
@@ -332,7 +508,6 @@ body.insp-collapsed .inspector { display: none; }
 
 .insp-field input[type="text"],
 .insp-field select {
-  font: inherit;
   font-size: 0.85rem;
   color: var(--ink);
   background: var(--card);
@@ -340,12 +515,14 @@ body.insp-collapsed .inspector { display: none; }
   border-radius: 8px;
   padding: 0.4rem 0.6rem;
   box-shadow: inset 0 1px 2px rgba(31, 30, 29, 0.04);
+  letter-spacing: 0;
 }
 
 .insp-accent-row { display: flex; align-items: center; gap: 0.5rem; }
 
-.insp-field input[type="color"],
-.toggle input[type="color"] {
+.insp-swatch-value { font-size: 0.78rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+input[type="color"] {
   width: 2.2rem;
   height: 1.5rem;
   padding: 0;
@@ -356,7 +533,6 @@ body.insp-collapsed .inspector { display: none; }
 }
 
 .insp-mini {
-  font: inherit;
   font-size: 0.7rem;
   color: var(--dim);
   background: var(--card);
@@ -365,6 +541,8 @@ body.insp-collapsed .inspector { display: none; }
   padding: 0.14rem 0.7rem;
   cursor: pointer;
 }
+
+.insp-mini:hover { border-color: var(--accent); color: var(--accent-deep); }
 
 .insp-check { flex-direction: row; align-items: center; gap: 0.5rem; }
 .insp-check input { accent-color: var(--accent); }
@@ -376,22 +554,7 @@ body.insp-collapsed .inspector { display: none; }
   margin-top: 0.9rem;
 }
 
-#insp-save {
-  font: inherit;
-  color: #ffffff;
-  font-weight: 600;
-  font-size: 0.82rem;
-  background: var(--accent);
-  border: none;
-  border-radius: 9px;
-  padding: 0.42rem 1.4rem;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(31, 30, 29, 0.15);
-}
-
-#insp-save:hover { background: #c4664a; }
-
-.insp-status { font-size: 0.72rem; color: var(--faint); }
+.insp-status { font-size: 0.72rem; color: var(--faint); transition: opacity 300ms; }
 .insp-status.is-error { color: var(--cut); }
 
 /* ---- Dock: transport + timeline ---- */
@@ -432,6 +595,8 @@ body.insp-collapsed .inspector { display: none; }
 .time { font-size: 0.8rem; color: var(--dim); font-variant-numeric: tabular-nums; }
 .time b { color: var(--accent-deep); }
 
+.transport-note { margin-left: auto; font-size: 0.72rem; color: var(--faint); }
+
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -457,13 +622,44 @@ body.insp-collapsed .inspector { display: none; }
   text-align: right;
 }
 
+.tl-track-ruler { height: 0.9rem; }
+
+.tl-ruler {
+  position: relative;
+  flex: 1;
+  height: 0.9rem;
+  font-size: 0.6rem;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.tl-tick::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 1px;
+  height: 3px;
+  background: var(--line-strong);
+}
+
 .tl-lane {
   position: relative;
   flex: 1;
   height: 1.5rem;
   border-radius: 7px;
   background: #eceadf;
+  cursor: pointer;
 }
+
+.tl-lane.is-quiet { height: 0.7rem; border-radius: 4px; }
 
 .tl-block {
   position: absolute;
@@ -486,7 +682,6 @@ body.insp-collapsed .inspector { display: none; }
   background: #e0ddd1;
   border-color: transparent;
   color: var(--dim);
-  cursor: default;
 }
 
 .tl-block.is-selected {
@@ -496,9 +691,29 @@ body.insp-collapsed .inspector { display: none; }
   font-weight: 600;
 }
 
+/* Cut lane: struck spans in cut red, kept ones as an outline; no labels, the
+   transcript carries the words. */
+.tl-block.is-cutblock {
+  border-radius: 3px;
+  background: var(--cut);
+  border-color: var(--cut);
+  padding: 0;
+  min-width: 2px;
+}
+
+.tl-block.is-cutblock.is-kept { background: transparent; border: 1px dotted var(--accent); }
+
+.tl-block.is-screenblock {
+  border-radius: 4px;
+  background: color-mix(in srgb, #59d9f2 35%, #ffffff);
+  border-color: color-mix(in srgb, #59d9f2 60%, transparent);
+  padding: 0;
+  cursor: default;
+}
+
 .tl-playhead {
   position: absolute;
-  top: -2px;
+  top: 0.9rem;
   bottom: 0;
   width: 2px;
   background: var(--accent);

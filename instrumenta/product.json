@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "fabula",
+  "displayName": "Fabula",
+  "kind": "native",
+  "adapter": "native-bundle",
+  "versionSource": { "type": "package-json", "path": "package.json" },
+  "build": {
+    "output": "dist/windows",
+    "bundleManifest": "fabula-bundle.json",
+    "prepare": "scripts/bootstrap-windows.ps1"
+  },
+  "launch": {
+    "type": "native",
+    "manifest": "fabula-bundle.json",
+    "executable": "electron.exe",
+    "checkArgument": "--instrumenta-launch-check"
+  },
+  "assets": {
+    "mark": "brand/fabula-mark-256.png"
+  }
+}

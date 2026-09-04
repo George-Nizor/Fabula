@@ -205,6 +205,34 @@
   white-space: nowrap;
 }
 
+/* The screen track: the recording's own screen, playing in sync inside the
+   content rect. The video element is a layer under the overlay; the card
+   above it carries the frame and the caption. */
+.stage-screen {
+  position: absolute;
+  z-index: 1;
+  object-fit: contain;
+  background: #0b0e12;
+  border-radius: 1cqw;
+}
+
+.ov-screen-card {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.55);
+  justify-content: flex-end;
+  padding: 1.2cqh 1.2cqw;
+}
+
+.ov-screen-label {
+  font-weight: 700;
+  font-size: 3.2cqh;
+  letter-spacing: 0.1em;
+  color: var(--ov-accent, #d97757);
+  text-align: center;
+  padding-top: 1cqh;
+}
+
 /* Snapshot card: a frame pulled from the footage, presented as evidence. */
 .ov-image-card {
   border: none;

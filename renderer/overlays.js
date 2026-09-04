@@ -105,6 +105,18 @@ function buildGraphic(scene, p, contentRect, stage) {
     card.append(wrap);
   }
 
+  if (graphic.kind === "screen") {
+    // The picture itself is the persistent screen element under this layer
+    // (placed by placeScreen); the card carries the frame and the caption.
+    card.classList.add("ov-screen-card");
+    if (graphic.label) {
+      const label = document.createElement("div");
+      label.className = "ov-screen-label";
+      label.textContent = graphic.label;
+      card.append(label);
+    }
+  }
+
   if (graphic.kind === "list") {
     for (const [i, item] of graphic.items.entries()) {
       const row = document.createElement("div");
@@ -121,6 +133,25 @@ function buildGraphic(scene, p, contentRect, stage) {
     }
   }
   return card;
+}
+
+// The screen track sits inside the content rect, under the overlay layer,
+// inset to the screen card's frame; hidden when no screen scene holds.
+// Placed every frame — it is one element, not a rebuilt card.
+function placeScreen(screenEl, scene, p, contentRect, stage) {
+  if (!screenEl) return;
+  if (!scene || !contentRect || !stage) { screenEl.hidden = true; return; }
+  const padX = stage.width * 0.012;
+  const padY = stage.height * 0.02;
+  const labelH = scene.graphic.label ? stage.height * 0.055 : 0;
+  const alpha = presence(p);
+  screenEl.hidden = false;
+  screenEl.style.left = `${((contentRect.x + padX) / stage.width) * 100}%`;
+  screenEl.style.top = `${((contentRect.y + padY) / stage.height) * 100}%`;
+  screenEl.style.width = `${((contentRect.w - padX * 2) / stage.width) * 100}%`;
+  screenEl.style.height = `${((contentRect.h - padY * 2 - labelH) / stage.height) * 100}%`;
+  screenEl.style.opacity = String(alpha);
+  screenEl.style.transform = `translateY(${((1 - alpha) * 3 * stage.height) / 100 / (contentRect.h / 100)}%)`;
 }
 
 // The free columns either side of the head, in stage pixels. Titles and
@@ -155,7 +186,8 @@ window.FabulaStage = {
   // layoutOverride: a {video, content} rect pair computed by the caller from
   // the same core engine — the export driver's path. Without it, the preview
   // asks the engine bridged in by the preload.
-  update(overlayEl, videoEl, compose, t, layoutOverride) {
+  // screenEl: the recording's screen track, when the project has one.
+  update(overlayEl, videoEl, compose, t, layoutOverride, screenEl) {
     let contentRect = null;
     const stage = compose.stage ?? null;
     let layoutKey = "flat";
@@ -180,6 +212,13 @@ window.FabulaStage = {
     const columns = layout && stage ? freeColumns(layout.video, stage) : null;
     overlayEl.style.setProperty("--ov-accent", compose.theme?.accent || "#d97757");
     if (compose.stage) driftGlow(overlayEl, t);
+    if (screenEl) {
+      const screenScene = (compose.scenes ?? []).find(
+        (scene) => scene.type === "graphic" && scene.graphic?.kind === "screen" && scene.start <= t && t < scene.end,
+      );
+      const sp = screenScene ? (t - screenScene.start) / (screenScene.end - screenScene.start) : 0;
+      placeScreen(screenEl, screenScene, sp, contentRect, stage);
+    }
 
     const parts = [];
     const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);

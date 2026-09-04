@@ -3,10 +3,26 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, session, ipcMain } = require("electron");
+const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen } = require("electron");
 
 const MEDIA_ROOT = path.join(__dirname, "..", "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
+const VIDEO_RE = /^\.(mp4|mov|mkv|webm|m4v)$/;
+
+// The Instrumenta launcher's runtime check: it runs the bundle with this
+// flag and a marker path, and expects the marker written and a clean exit
+// before it will open the product. No window, no state, no side effects.
+const checkFlag = process.argv.indexOf("--instrumenta-launch-check");
+if (checkFlag >= 0) {
+  const marker = process.argv[checkFlag + 1];
+  try {
+    fs.writeFileSync(marker, `FABULA_LAUNCH_OK ${app.getVersion()}\n`, "utf8");
+    app.exit(0);
+  } catch (error) {
+    console.error(`launch check could not write ${marker}: ${error.message}`);
+    app.exit(1);
+  }
+}
 
 // core/ is ESM and this file is CJS; the engines arrive async and the feed
 // simply lacks their derived fields until they land (a poll tick at worst).
@@ -18,50 +34,75 @@ Promise.all(
 ).then(([shot, cut, compose, stage]) => { core = { shot, cut, compose, stage }; })
   .catch((error) => console.error("core engines failed to load:", error));
 
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null; // absent, or mid-rewrite; the next tick settles it
+  }
+}
+
 // The review state is a file the MCP server rewrites; the window polls its
 // mtime rather than using fs.watch because the app may run on Windows while
 // the file lives on the WSL share, where change notifications do not travel.
 function projectDir() {
+  const pointer = readJson(POINTER);
+  return pointer?.dir ? path.join(MEDIA_ROOT, pointer.dir) : null;
+}
+
+// Footage is referenced, never copied: a 19 GB recording stays where it was
+// recorded. source.json holds the path as WSL sees it, because the pipeline
+// runs there; this process maps it to wherever it happens to be running.
+// Older projects that staged a raw.<ext> copy keep working.
+const WSL_PREFIX = (() => {
+  const match = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+/i.exec(__dirname);
+  return match ? match[0] : null;
+})();
+
+function toPosixPath(localPath) {
+  if (process.platform !== "win32") return localPath;
+  let match = /^([a-zA-Z]):[\\/](.*)$/.exec(localPath);
+  if (match) return `/mnt/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
+  match = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+\\(.*)$/i.exec(localPath);
+  if (match) return `/${match[1].replace(/\\/g, "/")}`;
+  return null;
+}
+
+function toLocalPath(posixPath) {
+  if (process.platform !== "win32") return posixPath;
+  const match = /^\/mnt\/([a-z])\/(.*)$/i.exec(posixPath);
+  if (match) return `${match[1].toUpperCase()}:\\${match[2].replace(/\//g, "\\")}`;
+  if (WSL_PREFIX) return `${WSL_PREFIX}${posixPath.replace(/\//g, "\\")}`;
+  return posixPath;
+}
+
+function stagedVideoPath(dir) {
   try {
-    const pointer = JSON.parse(fs.readFileSync(POINTER, "utf8"));
-    return path.join(MEDIA_ROOT, pointer.dir);
+    const raw = fs.readdirSync(dir).find((entry) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(entry));
+    if (raw) return path.join(dir, raw);
+    const source = readJson(path.join(dir, "source.json"));
+    return source?.path ? toLocalPath(source.path) : null;
   } catch {
     return null;
   }
 }
 
-function reviewPath() {
-  const dir = projectDir();
-  return dir ? path.join(dir, "review.json") : null;
-}
-
-// The server records the video by its own (WSL) absolute path; resolve the
-// staged file relative to this process instead, so the same review.json plays
-// whether the app runs on Linux or from the Windows side of the share.
-function stagedVideoUrl(dir) {
-  try {
-    const name = fs.readdirSync(dir).find((entry) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(entry));
-    return name ? pathToFileURL(path.join(dir, name)).href : null;
-  } catch {
-    return null;
-  }
+function fileUrl(file) {
+  return file && fs.existsSync(file) ? pathToFileURL(file).href : null;
 }
 
 function attachDerived(review, dir) {
-  review.videoUrl = stagedVideoUrl(dir);
+  review.videoUrl = fileUrl(stagedVideoPath(dir));
   review.shots = review.shotPlan && core
     ? core.shot.punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
     : null;
+  review.framing = readJson(path.join(dir, "framing.json"));
   return review;
 }
 
 function readReview(dir) {
-  try {
-    const review = JSON.parse(fs.readFileSync(path.join(dir, "review.json"), "utf8"));
-    return attachDerived(review, dir);
-  } catch {
-    return null; // absent, or mid-rewrite; the next tick settles it
-  }
+  const review = readJson(path.join(dir, "review.json"));
+  return review ? attachDerived(review, dir) : null;
 }
 
 // The compose stage exists once the clean render and its transcript do.
@@ -71,21 +112,27 @@ function readCompose(dir) {
   if (!core) return null;
   try {
     const cleanVideo = path.join(dir, "out", "clean.mp4");
-    if (!fs.existsSync(cleanVideo)) return null;
-    const words = core.cut.flattenWords(
-      JSON.parse(fs.readFileSync(path.join(dir, "clean.json"), "utf8"))
-    );
-    const config = JSON.parse(fs.readFileSync(path.join(dir, "compose.json"), "utf8"));
+    const cleanTranscript = path.join(dir, "clean.json");
+    if (!fs.existsSync(cleanVideo) || !fs.existsSync(cleanTranscript)) return null;
+    // The transcript must belong to THIS render: an older clean.json against
+    // a clean.mp4 still being written is not a compose stage, it is a race.
+    if (fs.statSync(cleanTranscript).mtimeMs < fs.statSync(cleanVideo).mtimeMs) return null;
+    const words = core.cut.flattenWords(readJson(cleanTranscript));
+    const config = readJson(path.join(dir, "compose.json")) ?? { scenes: [] };
     const scenes = core.compose.resolveScenes(config.scenes ?? [], words);
     for (const scene of scenes) {
       if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(dir, scene.graphic.src)).href;
     }
     const duration = words.at(-1)?.end ?? 0;
+    const map = readJson(path.join(dir, "out", "clean-map.json"));
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
+      screenUrl: fileUrl(path.join(dir, "out", "screen.mp4")),
+      screenSpans: map?.screenSpans ?? [],
       words,
       scenes,
       captions: config.captions ? core.compose.resolveCaptions(words) : null,
+      captionsOn: Boolean(config.captions),
       stage: core.stage.DEFAULT_STAGE,
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
       theme: config.theme ?? null,
@@ -98,54 +145,57 @@ function readCompose(dir) {
 function readState() {
   const dir = projectDir();
   if (!dir) return null;
-  const state = { review: readReview(dir), compose: readCompose(dir) };
-  if (!state.review) {
-    // Staged but not yet transcribed: the window shows what to ask for.
-    try {
-      const pointer = JSON.parse(fs.readFileSync(POINTER, "utf8"));
-      const video = fs.readdirSync(dir).find((n) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(n));
-      if (video) state.pending = { project: pointer.dir };
-    } catch {
-      /* no pending project */
-    }
-  }
+  const state = {
+    project: path.basename(dir),
+    review: readReview(dir),
+    compose: readCompose(dir),
+    progress: readJson(path.join(dir, "progress.json")),
+  };
+  // Staged but not yet transcribed: the window shows what to ask for.
+  if (!state.review && stagedVideoPath(dir)) state.pending = { project: path.basename(dir) };
   return state;
 }
 
-// Drag-drop ingest: copy the clip into a project folder and point the
-// review at it. The pipeline itself (transcribe, cuts, scenes, renders)
-// belongs to the agent over MCP — the app stages, Claude works.
+// Ingest: open a project folder that references the clip where it lives,
+// and point the review at it. The pipeline itself (transcribe, cuts, scenes,
+// renders) belongs to the agent over MCP — the app stages, Claude works.
 function ingest(sourcePath) {
   const ext = path.extname(sourcePath).toLowerCase();
-  if (!/^\.(mp4|mov|mkv|webm|m4v)$/.test(ext)) {
-    return { ok: false, error: `unsupported container: ${ext}` };
-  }
-  if (!fs.existsSync(sourcePath)) return { ok: false, error: "file not found" };
+  if (!VIDEO_RE.test(ext)) return { ok: false, error: `Fabula cannot open ${ext || "that"} files.` };
+  if (!fs.existsSync(sourcePath)) return { ok: false, error: "That file could not be found." };
+  const posix = toPosixPath(sourcePath);
+  if (!posix) return { ok: false, error: "That location is not reachable from the pipeline." };
   const name = path.basename(sourcePath, ext).replace(/[^a-z0-9-_]/gi, "_").toLowerCase() || "project";
   const dir = path.join(MEDIA_ROOT, name);
   fs.mkdirSync(dir, { recursive: true });
-  const staged = path.join(dir, `raw${ext}`);
-  if (!fs.existsSync(staged)) fs.copyFileSync(sourcePath, staged);
+  if (!stagedVideoPath(dir)) {
+    const bytes = fs.statSync(sourcePath).size;
+    fs.writeFileSync(path.join(dir, "source.json"), JSON.stringify({ path: posix, container: ext, bytes }, null, 2));
+  }
   fs.writeFileSync(POINTER, JSON.stringify({ dir: name }, null, 2));
   return { ok: true, project: name };
 }
 
-// The one write the window owns: flipping a cut. Everything else about the
-// review file belongs to the MCP server; both sides reread before writing.
+// The one write the window owns in the cut stage: flipping a cut. Everything
+// else about the review file belongs to the MCP server; both sides reread
+// before writing.
 function setCutEnabled(index, enabled) {
-  const file = reviewPath();
-  if (!file) return null;
-  const review = JSON.parse(fs.readFileSync(file, "utf8"));
-  if (!review.cuts[index]) return null;
+  const dir = projectDir();
+  const file = dir && path.join(dir, "review.json");
+  const review = file && readJson(file);
+  if (!review?.cuts?.[index]) return null;
   review.cuts[index].enabled = Boolean(enabled);
   fs.writeFileSync(file, JSON.stringify(review, null, 2));
-  return attachDerived(review, projectDir());
+  return attachDerived(review, dir);
 }
 
 function stateStamp() {
   const dir = projectDir();
   if (!dir) return "none";
-  return ["review.json", "compose.json", "clean.json", path.join("out", "clean.mp4")]
+  return [
+    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json",
+    path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"),
+  ]
     .map((name) => {
       try {
         const stat = fs.statSync(path.join(dir, name));
@@ -171,15 +221,37 @@ function startReviewFeed(window) {
   window.on("closed", () => clearInterval(timer));
 }
 
+// Where the window was last left, if that place still exists on a screen.
+const boundsFile = () => path.join(app.getPath("userData"), "window.json");
+
+function savedBounds() {
+  const saved = readJson(boundsFile());
+  if (!saved || !Number.isFinite(saved.width) || !Number.isFinite(saved.height)) return null;
+  const visible = screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    return saved.x + saved.width > area.x + 40 && saved.x < area.x + area.width - 40
+      && saved.y >= area.y - 8 && saved.y < area.y + area.height - 40;
+  });
+  return visible ? saved : null;
+}
+
 function createWindow() {
+  const bounds = savedBounds();
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
+    ...(bounds ?? {}),
     minWidth: 960,
-    minHeight: 600,
+    minHeight: 620,
     backgroundColor: "#faf9f5",
     icon: path.join(__dirname, "..", "brand", "fabula-mark-256.png"),
     show: false,
+    // On Windows the masthead is the title bar: the window's own frame would
+    // put a second, grey strip above the brand row. The system controls
+    // overlay the top-right corner in the app's own colours.
+    ...(process.platform === "win32"
+      ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#faf9f5", symbolColor: "#6e6b63", height: 56 } }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -189,13 +261,30 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  if (bounds?.maximized) window.maximize();
   window.once("ready-to-show", () => window.show());
+  window.on("close", () => {
+    try {
+      const rect = window.getNormalBounds();
+      fs.mkdirSync(path.dirname(boundsFile()), { recursive: true });
+      fs.writeFileSync(boundsFile(), JSON.stringify({ ...rect, maximized: window.isMaximized() }));
+    } catch { /* not worth a dialog */ }
+  });
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    if (input.key === "F12" || (input.control && input.shift && input.key.toUpperCase() === "I")) {
+      window.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
   window.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   startReviewFeed(window);
   return window;
 }
 
 app.whenReady().then(() => {
+  // A review tool has no menu to offer; the masthead carries what it needs.
+  Menu.setApplicationMenu(null);
   // Local review tool: no permission has a reason to be granted, no external
   // navigation has a reason to happen.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
@@ -203,9 +292,21 @@ app.whenReady().then(() => {
     contents.on("will-navigate", (event) => event.preventDefault());
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
   });
+
   ipcMain.handle("fabula:get-state", () => readState());
   ipcMain.handle("fabula:ingest", (event, sourcePath) => {
     const result = ingest(sourcePath);
+    if (result.ok) event.sender.send("fabula:state", readState());
+    return result;
+  });
+  ipcMain.handle("fabula:pick", async (event) => {
+    const picked = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Open a recording",
+      properties: ["openFile"],
+      filters: [{ name: "Recordings", extensions: ["mp4", "mov", "mkv", "webm", "m4v"] }],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true };
+    const result = ingest(picked.filePaths[0]);
     if (result.ok) event.sender.send("fabula:state", readState());
     return result;
   });
@@ -215,18 +316,16 @@ app.whenReady().then(() => {
     return review !== null;
   });
 
-  // The inspector's two writes. Both re-validate through the same core
-  // engine the MCP server uses, so the window cannot save a plan the
-  // pipeline would refuse.
+  // The inspector's writes. Each re-validates through the same core engine
+  // the MCP server uses, so the window cannot save a plan the pipeline would
+  // refuse.
   const editCompose = (event, mutate) => {
     try {
       const dir = projectDir();
       const file = path.join(dir, "compose.json");
-      const config = JSON.parse(fs.readFileSync(file, "utf8"));
+      const config = readJson(file) ?? { scenes: [] };
       mutate(config);
-      const words = core.cut.flattenWords(
-        JSON.parse(fs.readFileSync(path.join(dir, "clean.json"), "utf8"))
-      );
+      const words = core.cut.flattenWords(readJson(path.join(dir, "clean.json")));
       core.compose.validateScenes(config.scenes ?? [], words);
       core.compose.validateTheme(config.theme);
       fs.writeFileSync(file, JSON.stringify(config, null, 2));
@@ -244,15 +343,22 @@ app.whenReady().then(() => {
       if (!scene) throw new Error(`no scene ${index}`);
       for (const field of SCENE_PATCH_FIELDS) {
         if (!(field in patch)) continue;
-        if (patch[field] === null || patch[field] === "" ) delete scene[field];
+        if (patch[field] === null || patch[field] === "") delete scene[field];
         else scene[field] = patch[field];
+      }
+      if ("label" in patch && scene.graphic) {
+        if (patch.label) scene.graphic.label = patch.label;
+        else delete scene.graphic.label;
       }
     })
   );
-  ipcMain.handle("fabula:set-theme", (event, theme) =>
+  ipcMain.handle("fabula:set-project", (event, patch) =>
     editCompose(event, (config) => {
-      if (theme?.accent) config.theme = { ...config.theme, accent: theme.accent };
-      else delete config.theme;
+      if ("accent" in patch) {
+        if (patch.accent) config.theme = { ...config.theme, accent: patch.accent };
+        else delete config.theme;
+      }
+      if ("captions" in patch) config.captions = Boolean(patch.captions);
     })
   );
   createWindow();
