@@ -5,7 +5,9 @@
 
 const CAPTION_HANG_SECONDS = 0.4;
 
-export const SCENE_TYPES = new Set(["title", "callout", "graphic"]);
+import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
+
+export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage"]);
 export const GRAPHIC_KINDS = new Set(["chart", "stat", "list"]);
 
 function validateGraphic(graphic, at) {
@@ -39,7 +41,12 @@ export function validateScenes(scenes, words) {
       throw new Error(`${at}: toWordId precedes fromWordId`);
     }
     if (scene.type === "graphic") validateGraphic(scene.graphic, at);
-    else if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
+    else if (scene.type === "stage") {
+      if (!LAYOUTS.has(scene.layout)) throw new Error(`${at}: unknown layout "${scene.layout}"`);
+      if (scene.corner !== undefined && !PIP_CORNERS.has(scene.corner)) {
+        throw new Error(`${at}: unknown corner "${scene.corner}"`);
+      }
+    } else if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
   });
 }
 

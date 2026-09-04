@@ -1,5 +1,7 @@
 "use strict";
 
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { contextBridge, ipcRenderer } = require("electron");
 
 // The bridge grows named operations only, mirroring the suite's preload
@@ -12,3 +14,14 @@ contextBridge.exposeInMainWorld("fabula", {
     ipcRenderer.on("fabula:state", (_event, state) => callback(state));
   },
 });
+
+// The stage engine crosses the bridge as plain functions over plain data, so
+// the preview positions the head with the same math the export uses. Preload
+// is CJS and core is ESM; the page guards on the global until this resolves.
+import(pathToFileURL(path.join(__dirname, "..", "core", "stage-engine.mjs")).href)
+  .then((engine) => {
+    contextBridge.exposeInMainWorld("FabulaStageEngine", {
+      layoutAt: (timeline, t, aspect, stage) => engine.layoutAt(timeline, t, aspect, stage),
+    });
+  })
+  .catch((error) => console.error("stage engine bridge failed:", error));

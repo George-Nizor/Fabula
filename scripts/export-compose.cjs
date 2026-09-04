@@ -1,11 +1,10 @@
 "use strict";
 
-// The composited render: clean.mp4 plus the scene overlays, through the same
-// overlay runtime the preview uses. The overlays are captured as an alpha PNG
-// per *state* (an instant the picture changes), not per frame — a caption
-// holds for a word, a title for a phrase — then ffmpeg composites them over
-// the untouched video pixels and copies the audio. One re-encode, behind the
-// gate. Run by the MCP server's render_final, or by hand:
+// The composited render: the 1080p stage — charcoal field, the talking head
+// as an animated layer, the scene overlays — captured frame by frame through
+// the same runtime and the same stage engine the preview uses, then muxed
+// with the clean cut's untouched audio. One re-encode, behind the gate.
+// Run by the MCP server's render_final, or by hand:
 //
 //   npx electron --no-sandbox --no-zygote scripts/export-compose.cjs media/<project>
 
@@ -17,6 +16,7 @@ const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const FFMPEG = path.join(REPO_ROOT, "tools", "ffmpeg", "ffmpeg");
+const FPS = 30;
 
 // Same WSL reality as the capture spike: both flags must be on the CLI —
 // zygote-forked renderers die on this kernel before this file runs.
@@ -37,6 +37,7 @@ const projectDir = path.resolve(REPO_ROOT, dirArg ?? "");
 async function main() {
   const { flattenWords } = await import(pathToFileURL(path.join(REPO_ROOT, "core", "cut-engine.mjs")).href);
   const engine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "compose-engine.mjs")).href);
+  const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
   const { probeDuration, probeDimensions } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
 
   const cleanVideo = path.join(projectDir, "out", "clean.mp4");
@@ -45,21 +46,28 @@ async function main() {
 
   const words = flattenWords(transcript);
   const duration = probeDuration(cleanVideo);
-  const { width, height } = probeDimensions(cleanVideo);
+  const dims = probeDimensions(cleanVideo);
+  const videoAspect = dims.width / dims.height;
+  const stage = stageEngine.DEFAULT_STAGE;
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
-  const captions = composeFile.captions ? engine.resolveCaptions(words) : null;
-  const states = engine.renderSchedule(scenes, captions, duration, { fps: 30 });
-  console.log(`${states.length} overlay states over ${duration.toFixed(1)}s at ${width}x${height}`);
+  const compose = {
+    videoUrl: pathToFileURL(cleanVideo).href,
+    scenes,
+    captions: composeFile.captions ? engine.resolveCaptions(words) : null,
+    stage,
+  };
+  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration);
+  const frameCount = Math.ceil(duration * FPS);
+  console.log(`${frameCount} frames over ${duration.toFixed(1)}s on a ${stage.width}x${stage.height} stage`);
 
-  const framesDir = path.join(projectDir, "out", "overlay-frames");
+  const framesDir = path.join(projectDir, "out", "stage-frames");
   fs.rmSync(framesDir, { recursive: true, force: true });
   fs.mkdirSync(framesDir, { recursive: true });
 
   const window = new BrowserWindow({
     show: false,
-    width,
-    height,
-    transparent: true,
+    width: stage.width,
+    height: stage.height,
     frame: false,
     webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false },
   });
@@ -74,46 +82,43 @@ async function main() {
   if (!contents.isPainting()) contents.startPainting();
   contents.debugger.attach("1.3");
 
-  await contents.executeJavaScript(
-    `__setCompose(${JSON.stringify({ scenes, captions })})`
-  );
+  await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)})`);
 
   const started = Date.now();
-  const listLines = ["ffconcat version 1.0"];
-  for (let i = 0; i < states.length; i += 1) {
-    const name = `state-${String(i).padStart(4, "0")}.png`;
-    await contents.executeJavaScript(
-      `__renderAt(${states[i].t}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`
+  for (let i = 0; i < frameCount; i += 1) {
+    const t = Math.min(i / FPS, Math.max(duration - 0.001, 0));
+    const layout = stageEngine.layoutAt(timeline, t, videoAspect, stage);
+    await contents.executeJavaScript(`__renderAt(${t}, ${JSON.stringify(layout)})`);
+    const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(
+      path.join(framesDir, `frame-${String(i).padStart(5, "0")}.png`),
+      Buffer.from(shot.data, "base64")
     );
-    const shot = await contents.debugger.sendCommand("Page.captureScreenshot", {
-      format: "png",
-      omitBackground: true,
-    });
-    fs.writeFileSync(path.join(framesDir, name), Buffer.from(shot.data, "base64"));
-    listLines.push(`file '${name}'`, `duration ${states[i].duration.toFixed(4)}`);
+    if (i > 0 && i % 300 === 0) {
+      const rate = i / ((Date.now() - started) / 1000);
+      console.log(`  ${i}/${frameCount} frames (${rate.toFixed(1)} fps capture)`);
+    }
   }
-  // The concat demuxer holds the last entry only if it is named again.
-  listLines.push(`file 'state-${String(states.length - 1).padStart(4, "0")}.png'`);
-  const listPath = path.join(framesDir, "states.ffconcat");
-  fs.writeFileSync(listPath, listLines.join("\n") + "\n");
   const captureSeconds = (Date.now() - started) / 1000;
-  console.log(`captured ${states.length} states in ${captureSeconds.toFixed(1)}s`);
+  console.log(`captured ${frameCount} frames in ${captureSeconds.toFixed(1)}s (${(frameCount / captureSeconds).toFixed(1)} fps)`);
 
   const finalPath = path.join(projectDir, "out", "final.mp4");
   const mux = spawnSync(FFMPEG, [
     "-y", "-v", "error",
+    "-framerate", String(FPS),
+    "-i", path.join(framesDir, "frame-%05d.png"),
     "-i", cleanVideo,
-    "-safe", "0", "-i", listPath,
-    "-filter_complex", "[0:v][1:v]overlay=0:0:eof_action=pass[v]",
-    "-map", "[v]", "-map", "0:a",
-    "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+    "-map", "0:v", "-map", "1:a",
+    "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
     "-c:a", "copy",
+    "-shortest",
     finalPath,
   ], { encoding: "utf8" });
   if (mux.status !== 0) {
     console.error((mux.stderr || "").slice(-800));
-    throw new Error("ffmpeg composite failed");
+    throw new Error("ffmpeg mux failed");
   }
+  fs.rmSync(framesDir, { recursive: true, force: true });
   console.log(`wrote ${finalPath} (${(fs.statSync(finalPath).size / 1e6).toFixed(1)} MB)`);
   app.quit();
 }

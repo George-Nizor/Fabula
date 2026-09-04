@@ -121,6 +121,17 @@ body {
   border-radius: 10px;
 }
 
+/* Compose mode: the frame becomes the 1080p stage and the video a layer on
+   it, positioned inline by the stage engine. */
+.videoframe.is-stage {
+  aspect-ratio: 16 / 9;
+}
+
+.videoframe.is-stage video {
+  max-height: none;
+  width: auto;
+}
+
 .controls {
   display: flex;
   align-items: center;

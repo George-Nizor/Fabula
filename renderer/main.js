@@ -160,18 +160,25 @@ function render() {
   els.tabCut.classList.toggle("is-active", mode === "cut");
   els.tabCompose.classList.toggle("is-active", mode === "compose");
 
+  const frame = els.video.parentElement;
   if (mode === "cut") {
     setSource(review().videoUrl);
     els.skipwrap.hidden = false;
     els.hint.textContent = "click a word to jump · click anything red to keep it";
     els.overlay.replaceChildren();
     delete els.overlay.dataset.state;
+    frame.classList.remove("is-stage", "stage-field");
+    els.video.classList.remove("stage-video");
+    els.video.style.left = els.video.style.top = "";
+    els.video.style.width = els.video.style.height = "";
     renderCutTranscript();
   } else {
     setSource(compose().videoUrl);
     els.skipwrap.hidden = true;
-    els.hint.textContent = "the scene plan previews here exactly as render_final bakes it";
+    els.hint.textContent = "the 1080p stage previews here exactly as render_final bakes it";
     els.video.style.transform = "";
+    frame.classList.add("is-stage", "stage-field");
+    els.video.classList.add("stage-video");
     renderComposeTranscript();
   }
   els.player.hidden = !els.video.src;
@@ -243,7 +250,7 @@ function tick() {
   } else {
     els.timeNow.textContent = seconds(now);
     els.timeEdited.textContent = seconds(now);
-    window.FabulaOverlays.update(els.overlay, compose(), now);
+    window.FabulaStage.update(els.overlay, els.video, compose(), now);
   }
 
   let current = null;

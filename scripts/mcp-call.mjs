@@ -23,7 +23,13 @@ await client.connect(new StdioClientTransport({
 }));
 
 try {
-  const result = await client.callTool({ name: tool, arguments: rawArgs ? JSON.parse(rawArgs) : {} });
+  // Renders and transcriptions run for minutes; the SDK's default 60s
+  // request timeout is for conversations, not exports.
+  const result = await client.callTool(
+    { name: tool, arguments: rawArgs ? JSON.parse(rawArgs) : {} },
+    undefined,
+    { timeout: 15 * 60 * 1000 }
+  );
   console.log(result.content?.[0]?.text ?? JSON.stringify(result));
   if (result.isError) process.exitCode = 1;
 } finally {

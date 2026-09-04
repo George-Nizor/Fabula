@@ -12,10 +12,10 @@ const POINTER = path.join(MEDIA_ROOT, "current-project.json");
 // simply lacks their derived fields until they land (a poll tick at worst).
 let core = null;
 Promise.all(
-  ["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs"].map((name) =>
+  ["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs", "stage-engine.mjs"].map((name) =>
     import(pathToFileURL(path.join(__dirname, "..", "core", name)).href)
   )
-).then(([shot, cut, compose]) => { core = { shot, cut, compose }; })
+).then(([shot, cut, compose, stage]) => { core = { shot, cut, compose, stage }; })
   .catch((error) => console.error("core engines failed to load:", error));
 
 // The review state is a file the MCP server rewrites; the window polls its
@@ -76,11 +76,15 @@ function readCompose(dir) {
       JSON.parse(fs.readFileSync(path.join(dir, "clean.json"), "utf8"))
     );
     const config = JSON.parse(fs.readFileSync(path.join(dir, "compose.json"), "utf8"));
+    const scenes = core.compose.resolveScenes(config.scenes ?? [], words);
+    const duration = words.at(-1)?.end ?? 0;
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
       words,
-      scenes: core.compose.resolveScenes(config.scenes ?? [], words),
+      scenes,
       captions: config.captions ? core.compose.resolveCaptions(words) : null,
+      stage: core.stage.DEFAULT_STAGE,
+      layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
     };
   } catch {
     return null; // compose files absent or mid-write; cut review still works
@@ -145,7 +149,9 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      sandbox: true,
+      // The preload imports core/'s ESM engines to bridge them; a sandboxed
+      // preload cannot load files. Isolation stays on; the page gets no node.
+      sandbox: false,
       nodeIntegration: false,
     },
   });

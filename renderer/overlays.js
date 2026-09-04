@@ -14,13 +14,20 @@ const window01 = (p, from, span) => clamp01((p - from) / span);
 // Card presence: rise in over the first beats, sink out over the last.
 const presence = (p) => Math.min(easeOut(p / 0.07), 1 - easeOut((p - 0.93) / 0.07));
 
-function buildGraphic(scene, p) {
+function buildGraphic(scene, p, contentRect, stage) {
   const graphic = scene.graphic;
   const card = document.createElement("div");
   card.className = "ov ov-graphic";
   const alpha = presence(p);
   card.style.opacity = String(alpha);
   card.style.transform = `translateY(${(1 - alpha) * 3}cqh)`;
+  if (contentRect && stage) {
+    card.style.inset = "auto";
+    card.style.left = `${(contentRect.x / stage.width) * 100}%`;
+    card.style.top = `${(contentRect.y / stage.height) * 100}%`;
+    card.style.width = `${(contentRect.w / stage.width) * 100}%`;
+    card.style.height = `${(contentRect.h / stage.height) * 100}%`;
+  }
 
   if (graphic.title) {
     const title = document.createElement("div");
@@ -81,16 +88,38 @@ function buildGraphic(scene, p) {
   return card;
 }
 
-window.FabulaOverlays = {
-  // container: positioned element covering the video frame.
-  // compose: { scenes: [{type,text,graphic,start,end,...}], captions: [{start,end,text}] | null }
-  update(container, compose, t) {
+window.FabulaStage = {
+  // overlayEl: the stage-covering layer the scenes paint into.
+  // videoEl: the head — positioned as a layer when a layout timeline exists.
+  // compose: { scenes, captions, layoutTimeline?, stage? {width,height} }
+  // layoutOverride: a {video, content} rect pair computed by the caller from
+  // the same core engine — the export driver's path. Without it, the preview
+  // asks the engine bridged in by the preload.
+  update(overlayEl, videoEl, compose, t, layoutOverride) {
+    let contentRect = null;
+    const stage = compose.stage ?? null;
+    let layoutKey = "flat";
+    let layout = layoutOverride ?? null;
+    if (!layout && compose.layoutTimeline && stage && videoEl && window.FabulaStageEngine) {
+      const aspect = videoEl.videoWidth > 0 ? videoEl.videoWidth / videoEl.videoHeight : 1;
+      layout = window.FabulaStageEngine.layoutAt(compose.layoutTimeline, t, aspect, stage);
+    }
+    if (layout && stage && videoEl) {
+      const rect = layout.video;
+      videoEl.style.left = `${(rect.x / stage.width) * 100}%`;
+      videoEl.style.top = `${(rect.y / stage.height) * 100}%`;
+      videoEl.style.width = `${(rect.w / stage.width) * 100}%`;
+      videoEl.style.height = `${(rect.h / stage.height) * 100}%`;
+      contentRect = layout.content;
+      layoutKey = `${Math.round(contentRect.x)}:${Math.round(contentRect.w)}`;
+    }
+
     const parts = [];
     for (const scene of compose.scenes ?? []) {
-      if (scene.start > t || t >= scene.end) continue;
+      if (scene.type === "stage" || scene.start > t || t >= scene.end) continue;
       if (scene.type === "graphic") {
         const p = (t - scene.start) / (scene.end - scene.start);
-        parts.push({ kind: "graphic", scene, p: Number(p.toFixed(4)) });
+        parts.push({ kind: "graphic", scene, p: Number(p.toFixed(4)), layoutKey });
       } else {
         parts.push({ kind: scene.type, text: scene.text });
       }
@@ -98,16 +127,16 @@ window.FabulaOverlays = {
     const caption = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
     if (caption) parts.push({ kind: "caption", text: caption.text });
 
-    // Progress is part of the key, so an animated graphic redraws each frame
-    // while static pictures keep their DOM (and their entry animations).
+    // Progress and layout are part of the key, so an animated graphic redraws
+    // each frame while static pictures keep their DOM (and entry animations).
     const key = JSON.stringify(parts, (k, v) => (k === "scene" ? v.start : v));
-    if (container.dataset.state === key) return;
-    container.dataset.state = key;
+    if (overlayEl.dataset.state === key) return;
+    overlayEl.dataset.state = key;
 
-    container.replaceChildren();
+    overlayEl.replaceChildren();
     for (const part of parts) {
       if (part.kind === "graphic") {
-        container.append(buildGraphic(part.scene, part.p));
+        overlayEl.append(buildGraphic(part.scene, part.p, contentRect, stage));
         continue;
       }
       const el = document.createElement("div");
@@ -122,7 +151,7 @@ window.FabulaOverlays = {
       } else {
         el.textContent = part.text;
       }
-      container.append(el);
+      overlayEl.append(el);
     }
   },
 };

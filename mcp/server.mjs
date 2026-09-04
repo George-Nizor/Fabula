@@ -273,13 +273,15 @@ server.registerTool("list_clean_words", {
 
 server.registerTool("set_scenes", {
   description:
-    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title and callout carry text; graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")} (chart: items with numeric values, bars grow in; stat: one big count-up number; list: items reveal in sequence), all motion a pure function of scene progress. Scenes anchor to clean-transcript word ids; captions turns karaoke word captions on. The Compose tab previews everything live; render_final bakes it.`,
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title and callout carry text; graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")} (chart: items with numeric values, bars grow in; stat: one big count-up number; list: items reveal in sequence), all motion a pure function of scene progress. stage scenes place the talking head on the 1080p canvas for their span — layout focus (large, centered), pip (small corner card; optional corner br/bl/tr/tl), or side (head left, content right) — easing between layouts at each boundary; anywhere undeclared, the head holds focus. Scenes anchor to clean-transcript word ids; captions turns karaoke word captions on. The Compose tab previews everything live; render_final bakes it.`,
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
       from_word_id: z.number().int().min(0),
       to_word_id: z.number().int().min(0),
       text: z.string().min(1).optional().describe("title/callout text"),
+      layout: z.enum(["focus", "pip", "side"]).optional().describe("stage scenes only"),
+      corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage+pip only"),
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
         title: z.string().optional(),
@@ -301,6 +303,8 @@ server.registerTool("set_scenes", {
     fromWordId: scene.from_word_id,
     toWordId: scene.to_word_id,
     text: scene.text,
+    layout: scene.layout,
+    corner: scene.corner,
     graphic: scene.graphic,
   }));
   validateScenes(shaped, words);
