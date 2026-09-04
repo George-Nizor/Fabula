@@ -10,17 +10,28 @@
   <main class="shell">
     <header class="masthead">
       <h1>Fabula</h1>
-      <p class="tagline">Raw footage in. A told story out.</p>
+      <div class="session" id="session" hidden>
+        <span class="project" id="project"></span>
+        <span class="stat"><b id="stat-raw"></b> raw</span>
+        <span class="stat is-accent"><b id="stat-clean"></b> clean</span>
+        <span class="stat"><b id="stat-cuts"></b> cuts on</span>
+        <span class="stat"><b id="stat-removed"></b> removed</span>
+      </div>
     </header>
-    <nav class="stages" aria-label="Pipeline stages">
-      <span class="stage is-active">Ingest</span>
-      <span class="stage">Cut</span>
-      <span class="stage">Compose</span>
-    </nav>
-    <section class="dropzone" id="dropzone">
-      <p>Drop a recording here to begin.</p>
-      <p class="hint">Transcription, cut proposals, and the review editor arrive in slice 1.</p>
+    <section class="empty" id="empty">
+      <p>No project open.</p>
+      <p class="hint">Drive Fabula over MCP: <code>open_project</code> → <code>transcribe</code> → <code>cut_pass</code>, then toggle cuts and <code>render_clean</code>.</p>
     </section>
+    <section class="player" id="player" hidden>
+      <video id="video"></video>
+      <div class="controls">
+        <button id="playpause" type="button">Play</button>
+        <label class="skip"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
+        <span class="time"><b id="time-edited">0.0s</b> edited · <span id="time-now">0.0s</span> raw</span>
+        <span class="controls-hint">click a word to jump · click anything red to keep it</span>
+      </div>
+    </section>
+    <article class="transcript" id="transcript" hidden></article>
   </main>
   <script src="main.js"></script>
 </body>

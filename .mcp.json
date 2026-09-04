@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fabula": {
+      "command": "node",
+      "args": ["mcp/server.mjs"]
+    }
+  }
+}
