@@ -5,7 +5,7 @@
 // bundled ffmpeg. Prints capture throughput. Run with:
 //
 //   LD_LIBRARY_PATH=tools/wsl-libs/usr/lib/x86_64-linux-gnu \
-//     npx electron scripts/spike-offscreen-capture.cjs
+//     npx electron --no-sandbox --no-zygote scripts/spike-offscreen-capture.cjs
 //
 // Output: media/spike/out.mp4 — a 2s clip whose every frame must show its own
 // timestamp and a bar that sweeps left to right. If frames repeat or the bar
@@ -16,7 +16,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-app.commandLine.appendSwitch("no-sandbox");
+// --no-sandbox and --no-zygote must be on the electron command line, not
+// appended here: zygotes fork before this script runs, and on this WSL2 kernel
+// a zygote-forked renderer sits in a PID namespace where /proc/self resolves
+// to nothing — every procfs read and shm create fails ESRCH and Chromium
+// misreports it as bad /dev/shm permissions.
+if (!app.commandLine.hasSwitch("no-zygote")) {
+  console.error(
+    "Run with both flags on the CLI:\n" +
+      "  npx electron --no-sandbox --no-zygote scripts/spike-offscreen-capture.cjs"
+  );
+  app.exit(2);
+  return;
+}
 app.commandLine.appendSwitch("disable-gpu");
 if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
   app.commandLine.appendSwitch("ozone-platform", "headless");
