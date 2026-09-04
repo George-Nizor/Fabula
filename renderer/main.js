@@ -16,6 +16,8 @@ const els = {
   raw: document.getElementById("stat-raw"),
   clean: document.getElementById("stat-clean"),
   empty: document.getElementById("empty"),
+  emptyLine: document.getElementById("empty-line"),
+  emptyHint: document.getElementById("empty-hint"),
   player: document.getElementById("player"),
   dock: document.getElementById("dock"),
   toggleRail: document.getElementById("toggle-rail"),
@@ -251,6 +253,13 @@ function render() {
     els.player.hidden = true;
     els.dock.hidden = true;
     els.empty.hidden = false;
+    if (state?.pending) {
+      els.emptyLine.textContent = `“${state.pending.project}” is staged and waiting.`;
+      els.emptyHint.textContent = "Tell Claude: “do a first pass on the staged clip” — it transcribes, cuts, and designs; you review here.";
+    } else {
+      els.emptyLine.textContent = "Drop a recording here to begin.";
+      els.emptyHint.textContent = "Then ask Claude for a first pass — it transcribes, cuts, and designs; you review here.";
+    }
     return;
   }
   if (mode === "compose" && !compose()) mode = "cut";
@@ -361,12 +370,21 @@ els.themeAccent.addEventListener("change", async () => {
   await window.fabula.setTheme({ accent: els.themeAccent.value });
 });
 
+const PLAY_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>';
+const PAUSE_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><rect x="2.4" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect><rect x="7" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect></svg>';
+
 els.playpause.addEventListener("click", () => {
   if (els.video.paused) els.video.play();
   else els.video.pause();
 });
-els.video.addEventListener("play", () => { els.playpause.textContent = "Pause"; });
-els.video.addEventListener("pause", () => { els.playpause.textContent = "Play"; });
+els.video.addEventListener("play", () => {
+  els.playpause.innerHTML = PAUSE_ICON;
+  els.playpause.setAttribute("aria-label", "Pause");
+});
+els.video.addEventListener("pause", () => {
+  els.playpause.innerHTML = PLAY_ICON;
+  els.playpause.setAttribute("aria-label", "Play");
+});
 document.addEventListener("keydown", (event) => {
   if (event.code === "Space" && event.target === document.body) {
     event.preventDefault();
@@ -428,6 +446,19 @@ function tick() {
   }
 }
 requestAnimationFrame(tick);
+
+// Drag-drop ingest, anywhere on the window.
+document.addEventListener("dragover", (event) => event.preventDefault());
+document.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  const result = await window.fabula.ingestFile(file);
+  if (!result.ok) {
+    els.emptyLine.textContent = result.error;
+    els.emptyHint.textContent = "Drop an mp4, mov, mkv, webm or m4v recording.";
+  }
+});
 
 window.fabula.getState().then((next) => {
   state = next;

@@ -271,6 +271,22 @@ server.registerTool("list_clean_words", {
   return ok(words.map((word) => `${word.id}:${word.text}`).join(" "));
 });
 
+server.registerTool("get_scenes", {
+  description:
+    "Read the CURRENT scene plan — scenes with indices, captions flag, theme. The person may have tweaked text, accents, layouts or the theme in the app since the plan was last written, so ALWAYS read this before set_scenes and carry their changes forward; replacing the plan from memory discards their edits.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const paths = projectPaths(dir);
+  if (!fs.existsSync(paths.compose)) return ok({ scenes: [], captions: false, theme: null });
+  const config = JSON.parse(fs.readFileSync(paths.compose, "utf8"));
+  return ok({
+    scenes: (config.scenes ?? []).map((scene, index) => ({ index, ...scene })),
+    captions: Boolean(config.captions),
+    theme: config.theme ?? null,
+  });
+});
+
 server.registerTool("set_scenes", {
   description:
     `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title and callout carry text; graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")} (chart: items with numeric values, bars grow in; stat: one big count-up number; list: items reveal in sequence), all motion a pure function of scene progress. stage scenes place the talking head on the 1080p canvas for their span — layout focus (large, centered), pip (small corner card; optional corner br/bl/tr/tl), or side (head left, content right) — easing between layouts at each boundary; anywhere undeclared, the head holds focus. Scenes anchor to clean-transcript word ids; captions turns karaoke word captions on. The Compose tab previews everything live; render_final bakes it.`,

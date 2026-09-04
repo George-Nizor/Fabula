@@ -123,6 +123,31 @@ function buildGraphic(scene, p, contentRect, stage) {
   return card;
 }
 
+// The free columns either side of the head, in stage pixels. Titles and
+// callouts place themselves into real empty space instead of crossing the
+// footage — the smarts that keep production titles readable and the speaker
+// unobscured, in preview and export alike.
+function freeColumns(videoRect, stage) {
+  if (!videoRect || !stage) return null;
+  const left = { x: 0, w: Math.max(videoRect.x, 0), side: "left" };
+  const right = {
+    x: videoRect.x + videoRect.w,
+    w: Math.max(stage.width - videoRect.x - videoRect.w, 0),
+    side: "right",
+  };
+  const wide = right.w > left.w ? right : left;
+  const narrow = wide === right ? left : right;
+  const usable = (col) => (col.w >= stage.width * 0.16 ? col : null);
+  return { wide: usable(wide), narrow: usable(narrow) };
+}
+
+function placeInColumn(el, col, stage) {
+  const pad = stage.width * 0.03;
+  el.style.left = `${((col.x + pad) / stage.width) * 100}%`;
+  el.style.right = "auto";
+  el.style.width = `${((col.w - pad * 2) / stage.width) * 100}%`;
+}
+
 window.FabulaStage = {
   // overlayEl: the stage-covering layer the scenes paint into.
   // videoEl: the head — positioned as a layer when a layout timeline exists.
@@ -150,8 +175,9 @@ window.FabulaStage = {
       // as clipping, not as motion.
       videoEl.style.zIndex = layout.settled ? "1" : "3";
       contentRect = layout.content;
-      layoutKey = `${Math.round(contentRect.x)}:${Math.round(contentRect.w)}`;
+      layoutKey = `${Math.round(contentRect.x)}:${Math.round(contentRect.w)}:${Math.round(layout.video.x)}:${Math.round(layout.video.w)}`;
     }
+    const columns = layout && stage ? freeColumns(layout.video, stage) : null;
     overlayEl.style.setProperty("--ov-accent", compose.theme?.accent || "#d97757");
     if (compose.stage) driftGlow(overlayEl, t);
 
@@ -179,9 +205,9 @@ window.FabulaStage = {
           captionEaten = true;
         }
       } else if (scene.type === "title" && scene.flair) {
-        parts.push({ kind: "title", text: scene.text, accent: scene.accent, flair: true, p });
+        parts.push({ kind: "title", text: scene.text, accent: scene.accent, flair: true, p, layoutKey });
       } else {
-        parts.push({ kind: scene.type, text: scene.text, accent: scene.accent });
+        parts.push({ kind: scene.type, text: scene.text, accent: scene.accent, layoutKey });
       }
     }
     if (captionAt && !captionEaten) parts.push({ kind: "caption", text: captionAt.text });
@@ -216,8 +242,23 @@ window.FabulaStage = {
         text.className = "ov-title-text";
         text.textContent = part.text;
         el.append(bar, text);
+        if (columns?.wide && stage) {
+          placeInColumn(el, columns.wide, stage);
+          text.style.maxWidth = "100%";
+        }
       } else {
         el.textContent = part.text;
+        if (part.kind === "callout" && stage) {
+          // The callout takes the column the title is not using, when one
+          // exists; otherwise its default corner. It keeps its compact width.
+          const col = columns?.narrow ?? columns?.wide;
+          if (col) {
+            const pad = stage.width * 0.03;
+            el.style.left = `${((col.x + pad) / stage.width) * 100}%`;
+            el.style.right = "auto";
+            el.style.maxWidth = `${(Math.min(col.w - pad * 2, stage.width * 0.36) / stage.width) * 100}%`;
+          }
+        }
       }
       overlayEl.append(el);
     }

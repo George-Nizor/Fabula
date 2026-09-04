@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 // The bridge grows named operations only, mirroring the suite's preload
 // discipline: no generic invoke pass-through, no node objects across the line.
@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("fabula", {
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   setTheme: (theme) => ipcRenderer.invoke("fabula:set-theme", theme),
+  ingestFile: (file) => ipcRenderer.invoke("fabula:ingest", webUtils.getPathForFile(file)),
   onState: (callback) => {
     ipcRenderer.on("fabula:state", (_event, state) => callback(state));
   },

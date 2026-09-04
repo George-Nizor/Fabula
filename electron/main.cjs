@@ -98,7 +98,36 @@ function readCompose(dir) {
 function readState() {
   const dir = projectDir();
   if (!dir) return null;
-  return { review: readReview(dir), compose: readCompose(dir) };
+  const state = { review: readReview(dir), compose: readCompose(dir) };
+  if (!state.review) {
+    // Staged but not yet transcribed: the window shows what to ask for.
+    try {
+      const pointer = JSON.parse(fs.readFileSync(POINTER, "utf8"));
+      const video = fs.readdirSync(dir).find((n) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(n));
+      if (video) state.pending = { project: pointer.dir };
+    } catch {
+      /* no pending project */
+    }
+  }
+  return state;
+}
+
+// Drag-drop ingest: copy the clip into a project folder and point the
+// review at it. The pipeline itself (transcribe, cuts, scenes, renders)
+// belongs to the agent over MCP — the app stages, Claude works.
+function ingest(sourcePath) {
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (!/^\.(mp4|mov|mkv|webm|m4v)$/.test(ext)) {
+    return { ok: false, error: `unsupported container: ${ext}` };
+  }
+  if (!fs.existsSync(sourcePath)) return { ok: false, error: "file not found" };
+  const name = path.basename(sourcePath, ext).replace(/[^a-z0-9-_]/gi, "_").toLowerCase() || "project";
+  const dir = path.join(MEDIA_ROOT, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const staged = path.join(dir, `raw${ext}`);
+  if (!fs.existsSync(staged)) fs.copyFileSync(sourcePath, staged);
+  fs.writeFileSync(POINTER, JSON.stringify({ dir: name }, null, 2));
+  return { ok: true, project: name };
 }
 
 // The one write the window owns: flipping a cut. Everything else about the
@@ -175,6 +204,11 @@ app.whenReady().then(() => {
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
   });
   ipcMain.handle("fabula:get-state", () => readState());
+  ipcMain.handle("fabula:ingest", (event, sourcePath) => {
+    const result = ingest(sourcePath);
+    if (result.ok) event.sender.send("fabula:state", readState());
+    return result;
+  });
   ipcMain.handle("fabula:set-cut", (event, index, enabled) => {
     const review = setCutEnabled(index, enabled);
     if (review) event.sender.send("fabula:state", readState());
