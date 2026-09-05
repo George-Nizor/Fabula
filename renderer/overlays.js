@@ -724,7 +724,10 @@ window.FabulaStage = {
       }
     }
     if (captionAt && !captionEaten && theme.captionStyle !== "none") {
-      const part = { key: `caption:${captionAt.start}`, kind: "caption", layer: "over", style: theme.captionStyle, text: captionAt.text, enter: presenceAt(t, captionAt.start, captionAt.end, 0.14, 0.1) };
+      // Captions cut hard: a phrase every couple of seconds with a fade on
+      // each end is eight captures a phrase in the export for a flicker
+      // nobody watches. On and off, one capture.
+      const part = { key: `caption:${captionAt.start}`, kind: "caption", layer: "over", style: theme.captionStyle, text: captionAt.text, enter: 1 };
       if (theme.captionStyle === "karaoke") {
         const spans = (compose.wordSpans ?? []).filter((s) => s.start >= captionAt.start - 0.01 && s.start < captionAt.end);
         let active = -1;

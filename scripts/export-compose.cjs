@@ -25,7 +25,8 @@ const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const FPS = 30;
-const PARALLEL_ENCODES = 3;
+const PARALLEL_ENCODES = 4;
+const CAPTURE_WINDOWS = 3;
 const STAGE = "render_final";
 
 // Same WSL reality as the capture spike: both flags must be on the CLI —
@@ -180,29 +181,37 @@ async function main() {
   const assetsDir = path.join(cacheDir, `assets-${sha1(JSON.stringify({ theme, stage, dims, v: plan.RENDERER_VERSION }))}`);
   const encodes = [];
   if (todo.length > 0) {
-    const window = new BrowserWindow({
-      show: false,
-      width: stage.width,
-      height: stage.height,
-      frame: false,
-      transparent: true,
-      webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false },
-    });
-    const watchdog = setTimeout(() => {
-      console.error("load watchdog fired: renderer never became ready");
-      app.exit(3);
-    }, 15000);
-    await window.loadFile(path.join(REPO_ROOT, "renderer", "export.html"));
-    clearTimeout(watchdog);
-    const contents = window.webContents;
-    if (!contents.isPainting()) contents.startPainting();
-    contents.debugger.attach("1.3");
-    const shoot = async (file, alpha) => {
+    // Capture runs in several browsers at once, one chunk each: the
+    // captures are the critical path, and each renderer is its own
+    // process. Encodes queue behind the captures, several at a time.
+    const makeWindow = async () => {
+      const window = new BrowserWindow({
+        show: false,
+        width: stage.width,
+        height: stage.height,
+        frame: false,
+        transparent: true,
+        webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false },
+      });
+      const watchdog = setTimeout(() => {
+        console.error("load watchdog fired: renderer never became ready");
+        app.exit(3);
+      }, 15000);
+      await window.loadFile(path.join(REPO_ROOT, "renderer", "export.html"));
+      clearTimeout(watchdog);
+      const contents = window.webContents;
+      if (!contents.isPainting()) contents.startPainting();
+      contents.debugger.attach("1.3");
+      await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)}, { media: false })`);
+      return window;
+    };
+    const shoot = async (contents, file, alpha) => {
       const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png", omitBackground: alpha, optimizeForSpeed: true });
       fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
     };
-
-    await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)}, { media: false })`);
+    const windows = [];
+    for (let i = 0; i < Math.min(CAPTURE_WINDOWS, todo.length); i += 1) windows.push(await makeWindow());
+    const first = windows[0].webContents;
 
     // Plates shared by every chunk: the field, the glow, the head's mask,
     // and one empty transparent frame for layers with nothing to show.
@@ -213,33 +222,33 @@ async function main() {
     const headMask = path.join(assets, "mask-head.png");
     const empty = path.join(assets, "empty.png");
     const glowSize = Math.round(stage.width * 0.9);
-    if (!fs.existsSync(field)) { await contents.executeJavaScript("__fieldOnly()"); await shoot(field, false); }
+    if (!fs.existsSync(field)) { await first.executeJavaScript("__fieldOnly()"); await shoot(first, field, false); }
     if (!fs.existsSync(glow)) glowImage(glow, glowSize, accent, theme.glow);
-    const HEAD_RADIUS = (await contents.executeJavaScript("FabulaStage.HEAD_RADIUS")) * theme.radius;
-    const SCREEN_RADIUS = (await contents.executeJavaScript("FabulaStage.SCREEN_RADIUS")) * theme.radius;
+    const HEAD_RADIUS = (await first.executeJavaScript("FabulaStage.HEAD_RADIUS")) * theme.radius;
+    const SCREEN_RADIUS = (await first.executeJavaScript("FabulaStage.SCREEN_RADIUS")) * theme.radius;
     if (!fs.existsSync(headMask)) roundedMask(headMask, dims.width, dims.height, HEAD_RADIUS * dims.width);
-    if (!fs.existsSync(empty)) { await contents.executeJavaScript("__renderLayer(0, null, 'none')"); await shoot(empty, true); }
+    if (!fs.existsSync(empty)) { await first.executeJavaScript("__renderLayer(0, null, 'none')"); await shoot(first, empty, true); }
     const screenMask = (w, h) => {
       const file = path.join(assets, `mask-screen-${w}x${h}.png`);
       if (!fs.existsSync(file)) roundedMask(file, w, h, SCREEN_RADIUS * w);
       return file;
     };
 
-    let inFlight = 0;
-    const waiters = [];
-    const slot = () => new Promise((resolve) => { if (inFlight < PARALLEL_ENCODES) { inFlight += 1; resolve(); } else waiters.push(resolve); });
-    const release = () => { inFlight -= 1; const next = waiters.shift(); if (next) { inFlight += 1; next(); } };
+    const pool = (items) => {
+      const free = [...items];
+      const waiters = [];
+      return {
+        take: () => new Promise((resolve) => { if (free.length) resolve(free.pop()); else waiters.push(resolve); }),
+        give: (item) => { const next = waiters.shift(); if (next) next(item); else free.push(item); },
+      };
+    };
+    const captureSlots = pool(windows);
+    const encodeSlots = pool(Array.from({ length: PARALLEL_ENCODES }, (_, i) => i));
     let encoded = 0;
     let failure = null;
 
-    for (const [n, chunk] of todo.entries()) {
-      if (failure) break;
-      const tag = `chunk ${n + 1}/${todo.length} (${fmt(chunk.start)}–${fmt(chunk.end)})`;
-      const work = path.join(cacheDir, `${chunk.hash}.work`);
-      fs.rmSync(work, { recursive: true, force: true });
-      fs.mkdirSync(work, { recursive: true });
+    const captureChunk = async (contents, chunk, tag, work) => {
       const captureStart = Date.now();
-
       const ts = [];
       const layouts = [];
       for (let i = 0; i < chunk.frames; i += 1) {
@@ -262,7 +271,7 @@ async function main() {
           if (key !== "[]") {
             file = path.join(work, `${layer}-${String(i).padStart(5, "0")}.png`);
             await contents.executeJavaScript(`__renderLayer(${ts[i]}, ${JSON.stringify(layouts[i])}, ${JSON.stringify(layer)})`);
-            await shoot(file, true);
+            await shoot(contents, file, true);
           }
           states[layer].push({ at: i / FPS, file });
         }
@@ -287,7 +296,10 @@ async function main() {
       const screens = hasScreen ? plan.screenPlacements(screenScenes, chunk) : [];
       const captured = states.under.length + states.over.length;
       say(`${tag}: ${captured} states captured in ${((Date.now() - captureStart) / 1000).toFixed(1)}s (under ${states.under.length}, over ${states.over.length}, screens ${screens.length}); ${encoded} of ${todo.length} encoded`);
+      return screens;
+    };
 
+    const encodeChunk = async (chunk, tag, work, screens) => {
       const graph = plan.chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch: punchSpans, fps: FPS });
       const graphFile = path.join(work, "graph.txt");
       fs.writeFileSync(graphFile, graph);
@@ -311,18 +323,43 @@ async function main() {
         ...encoder,
         "-an", path.join(work, "chunk.mp4"),
       );
-
-      await slot();
       const encodeStart = Date.now();
-      encodes.push(run(args, tag).then(() => {
-        fs.renameSync(path.join(work, "chunk.mp4"), chunk.cached);
-        fs.rmSync(work, { recursive: true, force: true });
-        encoded += 1;
-        say(`${tag} encoded in ${((Date.now() - encodeStart) / 1000).toFixed(1)}s; ${encoded} of ${todo.length} encoded`);
-      }).catch((error) => { failure = error; }).finally(release));
+      await run(args, tag);
+      fs.renameSync(path.join(work, "chunk.mp4"), chunk.cached);
+      fs.rmSync(work, { recursive: true, force: true });
+      encoded += 1;
+      say(`${tag} encoded in ${((Date.now() - encodeStart) / 1000).toFixed(1)}s; ${encoded} of ${todo.length} encoded`);
+    };
+
+    for (const [n, chunk] of todo.entries()) {
+      const tag = `chunk ${n + 1}/${todo.length} (${fmt(chunk.start)}–${fmt(chunk.end)})`;
+      const work = path.join(cacheDir, `${chunk.hash}.work`);
+      fs.rmSync(work, { recursive: true, force: true });
+      fs.mkdirSync(work, { recursive: true });
+      encodes.push((async () => {
+        if (failure) return;
+        const window = await captureSlots.take();
+        let screens;
+        try {
+          screens = await captureChunk(window.webContents, chunk, tag, work);
+        } catch (error) {
+          failure = failure ?? error;
+          return;
+        } finally {
+          captureSlots.give(window);
+        }
+        const slot = await encodeSlots.take();
+        try {
+          if (!failure) await encodeChunk(chunk, tag, work, screens);
+        } catch (error) {
+          failure = failure ?? error;
+        } finally {
+          encodeSlots.give(slot);
+        }
+      })());
     }
     await Promise.all(encodes);
-    window.destroy();
+    for (const window of windows) window.destroy();
     if (failure) throw failure;
   }
 
