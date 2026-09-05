@@ -36,7 +36,7 @@ import {
 } from "../scripts/pipeline.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, validateInserts, applyInsertChoice, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS } from "../core/stage-engine.mjs";
@@ -565,7 +565,7 @@ server.registerTool("get_scenes", {
   const config = readComposeConfig(dir);
   return ok({
     scenes: (config.scenes ?? []).map((scene, index) => ({ index, ...scene, ...(scene.insertId ? { insert_id: scene.insertId } : {}) })),
-    captions: Boolean(config.captions),
+    captions: captionMode(config.captions),
     theme: config.theme ?? null,
     punch: readPunch(dir),
     inserts: (config.inserts ?? []).map((insert) => ({ id: insert.id, chosen: insert.chosen ?? null, note: insert.note ?? null })),
@@ -729,7 +729,7 @@ server.registerTool("set_scenes", {
         })).max(6).optional().describe("chart/list/steps/logos rows"),
       }).optional().describe("graphic scenes only"),
     })).describe("The full scene list; an empty array clears it. kinetic scenes render the spoken words as giant center-stage type over their span."),
-    captions: z.boolean().default(false).describe("Karaoke captions over the whole video"),
+    captions: z.union([z.boolean(), z.enum([...CAPTION_MODES])]).optional().describe("open (burned in), closed (an SRT/VTT beside the film for the player's CC), both, or none; omit to keep the current setting"),
     theme: z.object({
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     }).optional().describe("A quick accent override merged into the theme; set_theme is the full instrument"),
@@ -759,7 +759,7 @@ server.registerTool("set_scenes", {
   validateTheme(mergedTheme);
   const config = {
     scenes: shaped,
-    captions,
+    captions: captions === undefined ? captionMode(previous.captions) : captionMode(captions),
     theme: mergedTheme,
     inserts: previous.inserts,
     punch: punch_zoom === undefined ? readPunch(dir) : (punch_zoom === null ? null : { zoom: punch_zoom }),
@@ -779,7 +779,18 @@ server.registerTool("set_scenes", {
     const covered = spans.some((span) => span.start <= scene.start + 0.05 && scene.end - 0.05 <= span.end);
     if (!covered) warnings.push(`scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span ${JSON.stringify(spans)}`);
   });
-  return ok({ scenes: shaped.length, captions, theme: config.theme ?? null, punch: config.punch ?? null, warnings });
+  return ok({ scenes: shaped.length, captions: config.captions, theme: config.theme ?? null, punch: config.punch ?? null, warnings });
+});
+
+server.registerTool("set_captions", {
+  description: "How the film carries its captions: open (burned into the picture in the theme's caption style), closed (not in the picture; an SRT and a VTT are written beside every render for the player to offer as CC), both, or none. Previews at once; a change between open and closed re-renders the chunks.",
+  inputSchema: { mode: z.enum([...CAPTION_MODES]) },
+}, async ({ mode }) => {
+  const dir = currentProjectDir();
+  const config = readComposeConfig(dir);
+  config.captions = captionMode(mode);
+  writeComposeConfig(dir, config);
+  return ok({ captions: config.captions });
 });
 
 // ---- The look: themes and brand ----

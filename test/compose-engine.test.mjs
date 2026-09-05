@@ -161,3 +161,24 @@ test("insert points validate, materialise a choice, and replace it on a second c
   assert.equal(resolved[0].options[0].scenes[0].insertId, "features");
   assert.equal(typeof resolved[0].options[0].scenes[0].start, "number");
 });
+
+test("caption modes read the old booleans and write subtitle files re-timed to the span", async () => {
+  const { captionMode, captionsBurnedIn, captionsAsFile, subtitleFile } = await import("../core/compose-engine.mjs");
+  assert.equal(captionMode(true), "open");
+  assert.equal(captionMode(false), "none");
+  assert.equal(captionMode(undefined), "none");
+  assert.equal(captionMode("closed"), "closed");
+  assert.throws(() => captionMode("sideways"), /captions must be/);
+  assert.equal(captionsBurnedIn("both"), true);
+  assert.equal(captionsBurnedIn("closed"), false);
+  assert.equal(captionsAsFile("closed"), true);
+  assert.equal(captionsAsFile("open"), false);
+  const cues = [{ start: 0.5, end: 2.0, text: "Well, guys," }, { start: 61.25, end: 63.9, text: "we did it." }];
+  const srt = subtitleFile(cues, "srt");
+  assert.ok(srt.startsWith("1\n00:00:00,500 --> 00:00:02,000\nWell, guys,\n"));
+  assert.ok(srt.includes("2\n00:01:01,250 --> 00:01:03,900\nwe did it.\n"));
+  const vtt = subtitleFile(cues, "vtt", 60, 70);
+  assert.ok(vtt.startsWith("WEBVTT\n"));
+  assert.ok(vtt.includes("00:00:01.250 --> 00:00:03.900\nwe did it."), "a span re-times from its own zero");
+  assert.ok(!vtt.includes("Well, guys"), "cues outside the span are dropped");
+});

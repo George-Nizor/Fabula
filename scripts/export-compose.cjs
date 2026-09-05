@@ -138,11 +138,12 @@ async function main() {
   if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
   const accent = theme.accent;
   const punchSpans = composeFile.punch ? shotEngine.punchSpans(cleanMap.pieces, composeFile.punch.zoom) : [];
+  const phrases = engine.resolvePhraseCaptions(words);
   const compose = {
     videoUrl: pathToFileURL(cleanVideo).href,
     screenUrl: hasScreen ? pathToFileURL(screenVideo).href : null,
     scenes,
-    captions: composeFile.captions ? engine.resolvePhraseCaptions(words) : null,
+    captions: engine.captionsBurnedIn(composeFile.captions) ? phrases : null,
     wordSpans: engine.resolveCaptions(words),
     stage,
     theme,
@@ -384,6 +385,11 @@ async function main() {
   ], "stitch");
   fs.renameSync(partial, outPath);
   fs.rmSync(listFile, { force: true });
+  // The captions as files beside the film, whatever the mode: a player's CC
+  // track when they are not in the picture, a transcript when they are.
+  for (const format of ["srt", "vtt"]) {
+    fs.writeFileSync(outPath.replace(/\.mp4$/, `.${format}`), engine.subtitleFile(phrases, format, from, to));
+  }
 
   // After a whole film, chunks no plan references any more are dead weight,
   // and so are plates from an older accent or renderer; a preview span's

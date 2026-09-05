@@ -37,6 +37,11 @@ Fabula is a two-hander: the window is where you watch and tweak, Claude is who d
    behind the gate. Your manual edits and Claude's edits live in the same files, so neither side
    tramples the other.
 
+Captions are a mode, not a switch: burned into the picture in the theme's caption style,
+closed (an SRT and a VTT are written beside every render for the player to offer as CC and the
+viewer to toggle), both, or none. The inspector's Captions select and the `set_captions` tool
+set it.
+
 The loop can also be a conversation in the window. Ask Claude to mark the film with insert
 points instead of writing every scene: each one shows in the transcript and the timeline with a
 few ready-made options (a side card, the spoken words, a full-screen cover…). Hover to preview

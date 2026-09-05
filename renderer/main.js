@@ -397,7 +397,7 @@ function renderProjectPanel() {
     els.themeLogoCornerWrap.hidden = !theme.logo;
     els.themeLogoCorner.value = theme.logo?.corner ?? "tr";
     if (document.activeElement !== els.themeWatermark) els.themeWatermark.value = theme.watermark ?? "";
-    els.themeCaptions.checked = Boolean(c?.captionsOn);
+    els.themeCaptions.value = c?.captionMode ?? "none";
     const zoom = c?.punch?.zoom;
     const option = zoom ? [...els.themePunch.options].find((o) => Number(o.value) === zoom) : null;
     if (zoom && !option) {
@@ -746,7 +746,7 @@ els.askSend.addEventListener("click", async () => {
   els.askStatus.classList.toggle("is-error", !result.ok);
   if (result.ok) els.askText.value = "";
 });
-els.themeCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.themeCaptions.checked }));
+els.themeCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.themeCaptions.value }));
 els.themePunch.addEventListener("change", () => window.fabula.setProject({ punch: els.themePunch.value ? Number(els.themePunch.value) : null }));
 
 // ---- Transport ----

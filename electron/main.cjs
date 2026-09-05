@@ -164,9 +164,10 @@ function readCompose(dir) {
       screenSpans: map?.screenSpans ?? [],
       words,
       scenes,
-      captions: config.captions ? core.compose.resolvePhraseCaptions(words) : null,
+      captions: core.compose.captionsBurnedIn(config.captions) ? core.compose.resolvePhraseCaptions(words) : null,
       wordSpans: core.compose.resolveCaptions(words),
-      captionsOn: Boolean(config.captions),
+      captionsOn: core.compose.captionsBurnedIn(config.captions),
+      captionMode: core.compose.captionMode(config.captions),
       stage: core.stage.DEFAULT_STAGE,
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
       theme,
@@ -406,7 +407,7 @@ app.whenReady().then(() => {
         }
         config.theme = theme;
       }
-      if ("captions" in patch) config.captions = Boolean(patch.captions);
+      if ("captions" in patch) config.captions = core.compose.captionMode(patch.captions);
       if ("punch" in patch) config.punch = patch.punch ? { zoom: Number(patch.punch) } : null;
     })
   );

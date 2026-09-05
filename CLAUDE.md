@@ -55,6 +55,10 @@ option that does what they asked (`set_inserts` with the same ids keeps everythi
 `apply_insert` it, and say so; a `message` is a request in plain words about anything — do it,
 then keep listening. Leave the loop when they say they are done, then render.
 
+Captions have four modes (`set_captions`): open (burned in), closed (an SRT and VTT beside the
+render, nothing in the picture), both, none. Ask which the film is for; a YouTube upload usually
+wants closed so viewers can turn them off, or both when the style is part of the look.
+
 Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
 licences, SVGs rasterised) and `fetch_image` (a direct image, a page's share image, or a site's
 icon), which file them under `media/<project>/assets/` for `image` and `logos` graphics and the

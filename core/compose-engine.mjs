@@ -312,3 +312,46 @@ export function resolveInserts(inserts, words) {
     options: insert.options.map((option) => ({ ...option, scenes: resolveScenes(option.scenes.map((scene) => ({ ...scene, insertId: insert.id })), words) })),
   }));
 }
+
+
+// ---- Captions: burned in, a file for the player to offer, both, or none ----
+//
+// "Open" captions are painted into the picture; "closed" ones travel as a
+// subtitle file beside the film (YouTube shows them as CC and the viewer
+// switches them). compose.json keeps `captions` as one of these; the older
+// true/false still read as open/none.
+
+export const CAPTION_MODES = new Set(["open", "closed", "both", "none"]);
+
+export function captionMode(value) {
+  if (value === true) return "open";
+  if (value === false || value === undefined || value === null) return "none";
+  if (!CAPTION_MODES.has(value)) throw new Error(`captions must be one of ${[...CAPTION_MODES].join(", ")}`);
+  return value;
+}
+
+export const captionsBurnedIn = (value) => ["open", "both"].includes(captionMode(value));
+export const captionsAsFile = (value) => ["closed", "both"].includes(captionMode(value));
+
+const pad = (n, width) => String(n).padStart(width, "0");
+function timecode(seconds, separator) {
+  const total = Math.max(seconds, 0);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = Math.floor(total % 60);
+  const ms = Math.round((total - Math.floor(total)) * 1000);
+  return `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)}${separator}${pad(ms, 3)}`;
+}
+
+// The phrase captions as a subtitle file over [from, to], re-timed to start
+// at zero — the film's own clock, or a preview span's.
+export function subtitleFile(captions, format, from = 0, to = Infinity) {
+  const cues = captions
+    .filter((cue) => cue.end > from && cue.start < to)
+    .map((cue) => ({ start: Math.max(cue.start, from) - from, end: Math.min(cue.end, to) - from, text: cue.text }))
+    .filter((cue) => cue.end - cue.start > 0.05);
+  if (format === "vtt") {
+    return ["WEBVTT", "", ...cues.map((cue, i) => `${i + 1}\n${timecode(cue.start, ".")} --> ${timecode(cue.end, ".")}\n${cue.text}\n`)].join("\n");
+  }
+  return cues.map((cue, i) => `${i + 1}\n${timecode(cue.start, ",")} --> ${timecode(cue.end, ",")}\n${cue.text}\n`).join("\n");
+}
