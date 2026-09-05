@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("fabula", {
   chooseInsert: (insertId, optionId) => ipcRenderer.invoke("fabula:choose-insert", insertId, optionId),
   insertNote: (insertId, text) => ipcRenderer.invoke("fabula:insert-note", insertId, text),
   ask: (text) => ipcRenderer.invoke("fabula:ask", text),
+  render: (kind, options) => ipcRenderer.invoke("fabula:render", kind, options ?? {}),
+  reveal: (file) => ipcRenderer.invoke("fabula:reveal", file),
+  openOutput: (file) => ipcRenderer.invoke("fabula:open-output", file),
+  reanchor: () => ipcRenderer.invoke("fabula:reanchor"),
   ingestFile: (file) => ipcRenderer.invoke("fabula:ingest", webUtils.getPathForFile(file)),
   pickFile: () => ipcRenderer.invoke("fabula:pick"),
   onState: (callback) => {

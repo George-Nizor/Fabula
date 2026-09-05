@@ -219,20 +219,26 @@ export function readProgress(dir) {
   }
 }
 
+// The pid is recorded with the platform it belongs to: the window on Windows
+// starts a job on the WSL side through wsl.exe, and a Linux pid means
+// nothing to a Windows reader (nor the other way round). A job claims its
+// own pid on its first report, so the record always names the process
+// doing the work, not the launcher that started it.
 export function reportProgress(dir, stage, label, detail = "", extra = {}) {
   const file = path.join(dir, PROGRESS);
   let startedAt = new Date().toISOString();
   let pid = extra.pid;
+  let platform = extra.pid ? process.platform : undefined;
   const previous = readProgress(dir);
   if (previous) {
     const failed = typeof previous.detail === "string" && previous.detail.startsWith("failed:");
     if (previous.stage === stage && previous.startedAt && !failed) {
       startedAt = previous.startedAt;
-      pid ??= previous.pid;
+      if (!pid) { pid = previous.pid; platform = previous.platform; }
     }
   }
   const record = { stage, label, detail, startedAt, updatedAt: new Date().toISOString() };
-  if (pid) record.pid = pid;
+  if (pid) { record.pid = pid; record.platform = platform ?? process.platform; }
   fs.writeFileSync(file, JSON.stringify(record, null, 2));
 }
 
@@ -243,7 +249,7 @@ export function clearProgress(dir) {
 // Runs a step with progress bookkeeping around it, clearing on success and
 // leaving a failure note behind when it throws.
 export async function withProgress(dir, stage, label, step) {
-  reportProgress(dir, stage, label);
+  reportProgress(dir, stage, label, "", { pid: process.pid });
   try {
     const result = await step((detail) => reportProgress(dir, stage, label, detail));
     clearProgress(dir);
@@ -275,12 +281,13 @@ const STALE_PROGRESS_MS = 3 * 60 * 1000;
 
 // The job in flight, or null. A record whose process is gone is rewritten
 // as a failure so nothing waits on it; a pid-less record (an in-process step
-// from this or an older server) counts as running only while it is fresh.
+// from this or an older server), or one whose pid lives on another platform
+// than this reader, counts as running only while it is fresh.
 export function runningJob(dir) {
   const progress = readProgress(dir);
   if (!progress) return null;
   if (typeof progress.detail === "string" && progress.detail.startsWith("failed:")) return null;
-  if (progress.pid) {
+  if (progress.pid && (progress.platform ?? process.platform) === process.platform) {
     if (pidAlive(progress.pid)) return progress;
     reportProgress(dir, progress.stage, progress.label, `failed: the ${progress.stage} process (pid ${progress.pid}) died before finishing; see out/${progress.stage}.log`);
     return null;
@@ -304,7 +311,7 @@ export function startJob(dir, stage, label, command, args, options = {}) {
   const child = spawn(command, args, {
     detached: true,
     stdio: ["ignore", log, log],
-    cwd: REPO_ROOT,
+    cwd: "cwd" in options ? options.cwd : REPO_ROOT,
     env: { ...process.env, ...(options.env ?? {}) },
   });
   fs.closeSync(log);

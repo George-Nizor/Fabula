@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen } = require("electron");
+const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell } = require("electron");
 
 const MEDIA_ROOT = path.join(__dirname, "..", "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
@@ -28,13 +28,16 @@ if (checkFlag >= 0) {
 // simply lacks their derived fields until they land (a poll tick at worst).
 let core = null;
 Promise.all([
-  ...["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs", "stage-engine.mjs", "themes.mjs"].map((name) =>
+  ...["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs", "stage-engine.mjs", "themes.mjs", "reanchor.mjs"].map((name) =>
     import(pathToFileURL(path.join(__dirname, "..", "core", name)).href)
   ),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "pipeline.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "inbox.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "theme-store.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, pipeline, inbox, themeStore]) => { core = { shot, cut, compose, stage, themes, pipeline, inbox, themeStore }; })
+  import(pathToFileURL(path.join(__dirname, "..", "scripts", "project-state.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, reanchor, pipeline, inbox, themeStore, projectState]) => {
+  core = { shot, cut, compose, stage, themes, reanchor, pipeline, inbox, themeStore, projectState };
+})
   .catch((error) => console.error("core engines failed to load:", error));
 
 function readJson(file) {
@@ -61,6 +64,8 @@ const WSL_PREFIX = (() => {
   const match = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+/i.exec(__dirname);
   return match ? match[0] : null;
 })();
+const WSL_DISTRO = WSL_PREFIX ? WSL_PREFIX.slice(WSL_PREFIX.lastIndexOf("\\") + 1) : null;
+const REPO = path.join(__dirname, "..");
 
 function toPosixPath(localPath) {
   if (process.platform !== "win32") return localPath;
@@ -209,6 +214,119 @@ function readLook(dir) {
   }
 }
 
+// The Export page's reading: the deliverables in out/, what is out of date
+// and why, the job in flight or the last failure, and whether the film can
+// be rendered from here at all.
+function readExport(dir) {
+  if (!core) return null;
+  try {
+    const ps = core.projectState;
+    const paths = ps.projectPaths(dir);
+    const running = core.pipeline.runningJob(dir);
+    const progress = core.pipeline.readProgress(dir);
+    const failed = !running && progress && typeof progress.detail === "string" && progress.detail.startsWith("failed:");
+    const config = readJson(paths.compose) ?? {};
+    const have = {
+      review: fs.existsSync(paths.review),
+      clean: fs.existsSync(paths.clean),
+      cleanTranscript: fs.existsSync(paths.cleanTranscript) && core.pipeline.cleanTranscriptCurrent(paths.cleanTranscript, paths.clean, ps.readCleanMap(dir)),
+      scenes: (config.scenes ?? []).length > 0,
+      final: fs.existsSync(paths.final),
+      previousTranscript: fs.existsSync(paths.previousCleanTranscript),
+    };
+    return {
+      outputs: ps.outputs(dir),
+      stale: ps.staleness(dir),
+      running,
+      lastFailure: failed ? { stage: progress.stage, error: progress.detail.slice(8), log: path.join(dir, "out", `${progress.stage}.log`) } : null,
+      clean: ps.cleanSummary(dir),
+      captionMode: core.compose.captionMode(config.captions),
+      have,
+      canRenderFinal: have.clean && have.cleanTranscript && have.scenes,
+      canRefreshClean: have.review,
+      bridge: process.platform === "win32" ? (WSL_DISTRO ? `WSL (${WSL_DISTRO})` : null) : "local",
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Starts a render from the window with the same spec the MCP tools use.
+// On Linux the app itself is node enough to run the pipeline; on Windows
+// the pipeline lives on the WSL side and is reached through wsl.exe with a
+// login shell, so the same node and ffmpeg the server uses do the work.
+function startRender(kind, options = {}) {
+  const dir = projectDir();
+  if (!dir) return { ok: false, error: "No project is open." };
+  if (!core) return { ok: false, error: "Still loading; try again in a moment." };
+  const ps = core.projectState;
+  try {
+    const paths = ps.projectPaths(dir);
+    if (kind === "final") {
+      if (!fs.existsSync(paths.compose)) throw new Error("No scenes yet. Ask Claude to plan them first.");
+      if (!fs.existsSync(paths.clean)) throw new Error("No clean cut yet. Render it first.");
+      if (!core.pipeline.cleanTranscriptCurrent(paths.cleanTranscript, paths.clean, ps.readCleanMap(dir))) {
+        throw new Error("The clean transcript does not match the clean cut. Refresh the clean cut first.");
+      }
+    }
+    if (kind === "refresh" && !fs.existsSync(paths.review)) throw new Error("Nothing to cut yet: no review.");
+    const allowed = { fresh: Boolean(options.fresh) };
+    if (process.platform === "win32") {
+      const root = toPosixPath(REPO);
+      const posixDir = toPosixPath(dir);
+      if (!root || !posixDir || !WSL_DISTRO) throw new Error("Renders run in WSL, and this window cannot reach it from where it is installed.");
+      const spec = ps.jobSpec(kind, posixDir, { ...allowed, root });
+      const line = ps.shellLine(spec, { root });
+      core.pipeline.startJob(dir, spec.stage, spec.label, "wsl.exe", ["-d", WSL_DISTRO, "--", "bash", "-lc", line], { cwd: undefined });
+    } else {
+      const spec = ps.jobSpec(kind, dir, allowed);
+      ps.launchJob(dir, spec, { node: process.execPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, electron: process.execPath });
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error.message ?? error) };
+  }
+}
+
+// Only files of the open project may be opened or revealed from the page.
+function projectFile(file) {
+  const dir = projectDir();
+  if (!dir || typeof file !== "string") return null;
+  const resolved = path.resolve(file);
+  return resolved.startsWith(path.resolve(dir) + path.sep) && fs.existsSync(resolved) ? resolved : null;
+}
+
+// After a re-cut: move every scene's word anchors onto the new clean
+// transcript, the way the reanchor_scenes tool does, and say what could
+// not be placed.
+function reanchorProject() {
+  const dir = projectDir();
+  if (!dir || !core) return { ok: false, error: "No project is open." };
+  try {
+    const ps = core.projectState;
+    const paths = ps.projectPaths(dir);
+    if (!fs.existsSync(paths.compose)) throw new Error("No scenes to re-anchor.");
+    if (!fs.existsSync(paths.previousCleanTranscript)) throw new Error("The previous transcript was not kept; ask Claude to place the scenes again.");
+    const oldWords = core.cut.flattenWords(readJson(paths.previousCleanTranscript));
+    const newWords = core.cut.flattenWords(readJson(paths.cleanTranscript));
+    const config = readJson(paths.compose) ?? { scenes: [] };
+    const report = core.reanchor.reanchorScenes(config.scenes ?? [], oldWords, newWords);
+    for (const entry of report) {
+      if (!entry.ok) continue;
+      config.scenes[entry.index].fromWordId = entry.fromWordId;
+      config.scenes[entry.index].toWordId = entry.toWordId;
+    }
+    core.compose.validateScenes(config.scenes ?? [], newWords);
+    config.cutIdentity = ps.cleanTranscriptStamp(dir) ?? config.cutIdentity;
+    if (!config.cutIdentity) delete config.cutIdentity;
+    fs.writeFileSync(paths.compose, JSON.stringify(config, null, 2));
+    const unresolved = report.filter((r) => !r.ok);
+    return { ok: true, moved: report.length - unresolved.length, unresolved: unresolved.map((r) => ({ index: r.index, type: r.type, reason: r.reason })) };
+  } catch (error) {
+    return { ok: false, error: String(error.message ?? error) };
+  }
+}
+
 function readState() {
   const dir = projectDir();
   if (!dir) return null;
@@ -218,6 +336,7 @@ function readState() {
     compose: readCompose(dir),
     look: readLook(dir),
     progress: readJson(path.join(dir, "progress.json")),
+    export: readExport(dir),
   };
   // Staged but not yet transcribed: the window shows what to ask for.
   if (!state.review && stagedVideoPath(dir)) state.pending = { project: path.basename(dir) };
@@ -262,7 +381,7 @@ function stateStamp() {
   if (!dir) return "none";
   return [
     "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json", path.join("..", "themes"),
-    path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
+    "out", path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
   ]
     .map((name) => {
       try {
@@ -478,6 +597,31 @@ app.whenReady().then(() => {
     core.inbox.appendInbox(dir, { type: "message", text: message });
     event.sender.send("fabula:state", readState());
     return { ok: true };
+  });
+
+  // The Export page: renders start here with the server's own job specs;
+  // outputs open in the system player or their folder.
+  ipcMain.handle("fabula:render", (event, kind, options) => {
+    const result = startRender(String(kind), options && typeof options === "object" ? options : {});
+    event.sender.send("fabula:state", readState());
+    return result;
+  });
+  ipcMain.handle("fabula:reveal", (event, file) => {
+    const target = projectFile(file);
+    if (!target) return { ok: false, error: "That file is not in this project." };
+    shell.showItemInFolder(target);
+    return { ok: true };
+  });
+  ipcMain.handle("fabula:open-output", async (event, file) => {
+    const target = projectFile(file);
+    if (!target) return { ok: false, error: "That file is not in this project." };
+    const error = await shell.openPath(target);
+    return error ? { ok: false, error } : { ok: true };
+  });
+  ipcMain.handle("fabula:reanchor", (event) => {
+    const result = reanchorProject();
+    event.sender.send("fabula:state", readState());
+    return result;
   });
 
   // A picture for the brand: copied into the project's assets so the film

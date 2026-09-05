@@ -97,7 +97,7 @@ function glowImage(file, size, accent, strength) {
 let label = "Rendering the film";
 function say(text) {
   console.log(`[${new Date().toISOString()}] ${text}`);
-  pipeline.reportProgress(projectDir, STAGE, label, text);
+  pipeline.reportProgress(projectDir, STAGE, label, text, { pid: process.pid });
 }
 
 async function main() {

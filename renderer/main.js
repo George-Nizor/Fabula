@@ -616,16 +616,156 @@ function renderLookPage() {
 
 // ---- The Export page (filled in by the render step) ----
 
+// ---- Export ----
+//
+// The renders start here with the same job specs the MCP tools use, the
+// page says what is out of date and why, and every file the renders wrote
+// is a click from the system player or its folder.
+
+const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(Math.round(n / 1e3), 1)} KB`);
+const fmtWhen = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? `today ${time}` : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
+};
+const STAGE_NAMES = { render_clean: "The clean cut", render_final: "The film", transcribe: "The transcript", retranscribe: "The clean transcript", refresh_clean: "The clean cut", framing: "The framing scan" };
+const KIND_LABELS = { film: "film", clean: "clean cut", preview: "preview", captions: "captions" };
+const CAPTION_FILES = {
+  none: "Captions: none.",
+  open: "Captions are painted into the picture; the Look step chooses the style, or turns them into a file.",
+  closed: "Captions go beside the film as final.srt and final.vtt for the player to offer; nothing in the picture.",
+  both: "Captions are painted in, and written beside the film as final.srt and final.vtt too.",
+};
+let exportFlash = null; // { text, isError } from the last action on the page
+
+function make(tag, className = "", html) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (html !== undefined) node.innerHTML = html;
+  return node;
+}
+
+function actionButton(label, onClick, { primary = false, small = false, disabled = false, title = "" } = {}) {
+  const b = make("button", `button${primary ? " is-primary" : ""}${small ? " is-small" : ""}`);
+  b.type = "button";
+  b.textContent = label;
+  b.disabled = disabled;
+  if (title) b.title = title;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+async function startRender(kind, options = {}) {
+  exportFlash = null;
+  const result = await window.fabula.render(kind, options);
+  if (!result.ok) { exportFlash = { text: result.error, isError: true }; renderExportPage(); }
+}
+
+async function reanchorScenes() {
+  const r = await window.fabula.reanchor();
+  exportFlash = r.ok
+    ? { text: `Moved ${r.moved} scene${r.moved === 1 ? "" : "s"} onto the new transcript${r.unresolved.length ? `; ${r.unresolved.length} could not be placed — ask Claude to place ${r.unresolved.length === 1 ? "it" : "them"}` : ""}.` }
+    : { text: r.error, isError: true };
+  renderExportPage();
+}
+
 function renderExportPage() {
-  const l = look();
+  const e = state?.export;
   els.exportMain.replaceChildren();
-  const head = document.createElement("div");
-  head.className = "page-head";
-  head.innerHTML = "<h2>Export</h2><p class=\"page-lede\">The renders and what they wrote.</p>";
-  const note = document.createElement("p");
-  note.className = "field-note";
-  note.textContent = `Captions: ${l ? CAPTION_NOTES[l.captionMode] : ""} Renders run from the Claude session for now (render_clean, render_final); they land in media/${state?.project ?? ""}/out/.`;
-  els.exportMain.append(head, note);
+  els.exportMain.append(make("div", "page-head", "<h2>Export</h2><p class=\"page-lede\">Render from here and find what it wrote. The clean cut is rendered once; the film re-renders only the minutes that changed.</p>"));
+  if (!e) { els.exportMain.append(make("p", "field-note", "Nothing to export yet.")); return; }
+  const stale = Object.fromEntries(e.stale.map((s) => [s.artifact, s]));
+  const busy = Boolean(e.running);
+
+  if (e.running) {
+    const card = make("div", "export-card is-busy");
+    card.append(make("div", "export-card-head", `<span class="export-spinner"></span><b>${esc(e.running.label)}</b><span class="export-clock" id="export-clock"></span>`));
+    card.append(make("p", "export-detail", esc(e.running.detail ?? "")));
+    card.append(make("p", "field-note", `Writing out/${esc(e.running.stage)}.log. It keeps going if this window closes.`));
+    els.exportMain.append(card);
+  } else if (e.lastFailure) {
+    const card = make("div", "export-card is-failed");
+    card.append(make("div", "export-card-head", `<b>${esc(STAGE_NAMES[e.lastFailure.stage] ?? e.lastFailure.stage)} failed</b>`));
+    card.append(make("p", "export-detail", esc(e.lastFailure.error)));
+    const row = make("div", "export-actions");
+    row.append(actionButton("show the log", () => window.fabula.reveal(e.lastFailure.log), { small: true }));
+    card.append(row);
+    els.exportMain.append(card);
+  }
+  if (exportFlash) els.exportMain.append(make("p", `export-flash${exportFlash.isError ? " is-error" : ""}`, esc(exportFlash.text)));
+
+  // The film.
+  const film = make("section", "export-card");
+  film.append(make("h3", "", "The film"));
+  const final = e.outputs.find((o) => o.kind === "film");
+  let status;
+  if (final && stale["final.mp4"]) status = `Rendered ${fmtWhen(final.modifiedAt)}, ${fmtBytes(final.bytes)}. Out of date: ${stale["final.mp4"].because}.`;
+  else if (final) status = `Rendered ${fmtWhen(final.modifiedAt)}, ${fmtBytes(final.bytes)}. Up to date.`;
+  else if (!e.have.clean) status = "Needs the clean cut first.";
+  else if (!e.have.cleanTranscript) status = "Needs the clean cut's transcript; refresh the clean cut below.";
+  else if (!e.have.scenes) status = "No scenes yet. Ask Claude to plan them.";
+  else status = "Not rendered yet.";
+  film.append(make("p", `export-status${final && stale["final.mp4"] ? " is-stale" : ""}`, esc(status)));
+  const filmRow = make("div", "export-actions");
+  filmRow.append(actionButton(final ? "Render the film again" : "Render the film", () => startRender("final"), { primary: true, disabled: busy || !e.canRenderFinal }));
+  if (final) {
+    filmRow.append(actionButton("from scratch", () => startRender("final", { fresh: true }), { small: true, disabled: busy, title: "Ignore the cached chunks and render every one again" }));
+    filmRow.append(actionButton("play", () => window.fabula.openOutput(final.path), { small: true }));
+    filmRow.append(actionButton("show in folder", () => window.fabula.reveal(final.path), { small: true }));
+  }
+  film.append(filmRow);
+  film.append(make("p", "field-note", esc(CAPTION_FILES[e.captionMode] ?? "")));
+  els.exportMain.append(film);
+
+  // The clean cut.
+  const clean = make("section", "export-card");
+  clean.append(make("h3", "", "The clean cut"));
+  const problems = ["clean.mp4", "clean.json", "compose.json"].filter((k) => stale[k]).map((k) => stale[k]);
+  let cleanStatus;
+  if (!e.have.review) cleanStatus = "Nothing to cut yet.";
+  else if (!e.clean) cleanStatus = "Not rendered yet. The cuts and the framing become one file here, once; everything after only moves it around.";
+  else cleanStatus = `Rendered ${fmtWhen(e.clean.renderedAt)}, ${fmtBytes(e.clean.bytes)}, ${e.clean.encoder ?? ""}${e.clean.pieces ? `, ${e.clean.pieces} pieces` : ""}.${problems.length ? "" : " Up to date."}`;
+  clean.append(make("p", `export-status${problems.length ? " is-stale" : ""}`, esc(cleanStatus)));
+  if (problems.length) {
+    const list = make("ul", "export-stale");
+    for (const p of problems) list.append(make("li", "", `<b>${esc(p.artifact)}</b> — ${esc(p.because)}`));
+    clean.append(list);
+  }
+  const cleanRow = make("div", "export-actions");
+  const cleanStale = Boolean(stale["clean.mp4"] || stale["clean.json"]);
+  cleanRow.append(actionButton(e.clean ? "Refresh the clean cut" : "Render the clean cut", () => startRender("refresh"), {
+    primary: !e.clean || cleanStale, disabled: busy || !e.canRefreshClean,
+    title: "Renders the cut and transcribes it; each part is skipped when it is already current",
+  }));
+  if (stale["compose.json"]) {
+    cleanRow.append(actionButton("Re-anchor the scenes", reanchorScenes, { small: true, disabled: busy || !e.have.previousTranscript, title: "Move every scene onto the new transcript's words" }));
+  }
+  clean.append(cleanRow);
+  clean.append(make("p", "field-note", "Only needed after the cuts or the framing change. Layouts, titles, cards, captions and the look never need it."));
+  els.exportMain.append(clean);
+
+  // Files.
+  const files = make("section", "export-card");
+  files.append(make("h3", "", "Files"));
+  if (e.outputs.length === 0) {
+    files.append(make("p", "field-note", `Nothing written yet. Renders land in media/${esc(state.project)}/out/.`));
+  } else {
+    const table = make("table", "export-files");
+    for (const o of e.outputs) {
+      const tr = make("tr");
+      tr.append(make("td", "export-file-name", `<span class="export-kind is-${o.kind}">${KIND_LABELS[o.kind]}</span>${esc(o.name)}`));
+      tr.append(make("td", "export-file-meta", `${fmtBytes(o.bytes)} · ${fmtWhen(o.modifiedAt)}`));
+      const td = make("td", "export-file-actions");
+      if (o.kind !== "captions") td.append(actionButton("play", () => window.fabula.openOutput(o.path), { small: true }));
+      td.append(actionButton("folder", () => window.fabula.reveal(o.path), { small: true }));
+      tr.append(td);
+      table.append(tr);
+    }
+    files.append(table);
+  }
+  els.exportMain.append(files);
 }
 
 // ---- Insert points ----
@@ -778,6 +918,7 @@ function renderGuides(now) {
 
 function setMode(next) {
   if (next === "scenes" && !compose()) next = "cut";
+  if (next !== mode) exportFlash = null;
   mode = next;
   render();
 }
@@ -1189,6 +1330,10 @@ function tick() {
   requestAnimationFrame(tick);
   if (state?.progress?.startedAt && !els.progress.hidden) {
     els.progressClock.textContent = fmt((Date.now() - Date.parse(state.progress.startedAt)) / 1000, false);
+  }
+  if (mode === "export" && state?.export?.running?.startedAt) {
+    const clock = $("export-clock");
+    if (clock) clock.textContent = fmt((Date.now() - Date.parse(state.export.running.startedAt)) / 1000, false);
   }
   if (!state || els.player.hidden || !onStage()) return;
   const stamp = performance.now();

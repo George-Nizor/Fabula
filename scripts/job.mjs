@@ -4,9 +4,10 @@
 // window follows progress.json; a later `status` or `wait_render` reads the
 // result off disk. Run by hand for the same effect:
 //
-//   node scripts/job.mjs render_clean media/<project>
-//   node scripts/job.mjs transcribe   media/<project>
-//   node scripts/job.mjs retranscribe media/<project>
+//   node scripts/job.mjs render_clean  media/<project>
+//   node scripts/job.mjs transcribe    media/<project>
+//   node scripts/job.mjs retranscribe  media/<project>
+//   node scripts/job.mjs refresh_clean media/<project>   (render_clean, then retranscribe; each skipped when current)
 //
 // Exit 0 on success with progress.json cleared, 1 on failure with the note
 // left in progress.json and the error on stderr (captured to out/<stage>.log).
@@ -19,6 +20,8 @@ import {
   transcribe,
   renderClean,
   cleanPlan,
+  cleanCurrent,
+  cleanTranscriptCurrent,
   withProgress,
   readProgress,
   encoderCapabilities,
@@ -26,7 +29,7 @@ import {
 
 const [stage, dirArg] = process.argv.slice(2);
 if (!stage || !dirArg) {
-  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe> <project-dir>");
+  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe|refresh_clean> <project-dir>");
   process.exit(2);
 }
 const dir = path.resolve(REPO_ROOT, dirArg);
@@ -83,12 +86,33 @@ const steps = {
     const transcript = transcribe(clean, current, { stamp: { cutIdentity: map.cutIdentity, cleanIdentity: map.identity } });
     say(`transcribed the clean cut: ${transcript.segments.length} segments, stamped ${map.cutIdentity}`);
   },
+
+  // The window's one button for "the cuts moved": the clean render and its
+  // transcript, each skipped when it already matches, so pressing it twice
+  // costs nothing the second time.
+  async refresh_clean(report) {
+    const review = readJson(path.join(dir, "review.json"));
+    const framingFile = path.join(dir, "framing.json");
+    const framing = fs.existsSync(framingFile) ? readJson(framingFile) : null;
+    const video = sourceVideo();
+    const cleanFile = path.join(dir, "out", "clean.mp4");
+    const mapFile = path.join(dir, "out", "clean-map.json");
+    const map = fs.existsSync(mapFile) ? readJson(mapFile) : null;
+    const plan = cleanPlan({ review, framing, dims: framing ? null : probeDimensions(video.path), source: video.source });
+    if (plan.keeps.length === 0) throw new Error("every moment is cut; nothing to render");
+    if (cleanCurrent(map, plan, cleanFile)) say("clean.mp4 already matches the cut list and framing");
+    else await steps.render_clean(report);
+    const current = readJson(mapFile);
+    if (cleanTranscriptCurrent(path.join(dir, "clean.json"), cleanFile, current)) say("clean.json already describes this clean cut");
+    else await steps.retranscribe(report);
+  },
 };
 
 const labels = {
   render_clean: "Rendering the clean cut",
   transcribe: "Transcribing on the GPU",
   retranscribe: "Transcribing the clean cut",
+  refresh_clean: "Refreshing the clean cut",
 };
 
 const step = steps[stage];

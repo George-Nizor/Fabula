@@ -1015,3 +1015,71 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 
 .toggle select { margin-left: 0.3rem; font-size: 0.74rem; }
 #script-toggle.is-on { border-color: var(--accent); color: var(--accent); }
+
+/* ---- Export ---- */
+
+.export-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 20px 14px;
+  margin-top: 14px;
+  max-width: 760px;
+  box-shadow: var(--shadow-card);
+}
+
+.export-card h3 { margin: 0 0 6px; font-family: var(--serif); font-weight: 600; font-size: 1.1rem; }
+.export-card.is-busy { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.export-card.is-failed { border-color: var(--cut); }
+.export-card-head { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.export-clock { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--dim); font-size: 0.8rem; }
+
+.export-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: export-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes export-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.export-detail { margin: 6px 0 0; font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+.export-status { margin: 0 0 10px; font-size: 0.86rem; color: var(--ink); }
+.export-status.is-stale { color: var(--accent-deep); }
+.export-stale { margin: -4px 0 10px; padding-left: 1.1rem; font-size: 0.8rem; color: var(--dim); }
+.export-stale li { margin: 2px 0; }
+.export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 6px 0; }
+.export-flash { font-size: 0.82rem; color: var(--dim); margin: 10px 0 0; max-width: 760px; }
+.export-flash.is-error { color: var(--cut); }
+
+.button.is-primary { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+.button.is-primary:hover { background: #c4664a; color: #ffffff; }
+.button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.button:disabled:hover { border-color: var(--line-strong); color: var(--ink); }
+.button.is-primary:disabled:hover { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+
+.export-files { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+.export-files td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+.export-files tr:first-child td { border-top: none; }
+.export-file-meta { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.export-file-actions { text-align: right; white-space: nowrap; }
+.export-file-actions .button + .button { margin-left: 0.4rem; }
+
+.export-kind {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eceadf;
+  color: var(--dim);
+  margin-right: 6px;
+}
+
+.export-kind.is-film { background: color-mix(in srgb, var(--accent) 20%, #ffffff); color: var(--accent-deep); }

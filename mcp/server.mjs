@@ -25,15 +25,27 @@ import {
   reviewStats,
   scanFraming,
   withProgress,
-  cleanPlan,
   cleanCurrent,
   cleanTranscriptCurrent,
-  startJob,
   waitForJob,
   runningJob,
   readProgress,
   encoderCapabilities,
 } from "../scripts/pipeline.mjs";
+import {
+  stagedVideo,
+  projectPaths,
+  readCleanMap,
+  readComposeConfig,
+  cleanTranscriptStamp,
+  currentCleanPlan,
+  cleanSummary,
+  logTail,
+  lastJobStage,
+  staleness,
+  jobSpec,
+  launchJob,
+} from "../scripts/project-state.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -47,9 +59,9 @@ import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mj
 
 const MEDIA_ROOT = path.join(REPO_ROOT, "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
-const JOB = path.join(REPO_ROOT, "scripts", "job.mjs");
-const EXPORT = path.join(REPO_ROOT, "scripts", "export-compose.cjs");
-const ELECTRON = path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
+// Jobs are launched from the shared specs (scripts/project-state.mjs), the
+// same ones the window uses, so the two never drift in arguments.
+const RUNNER = { node: process.execPath };
 const DEFAULT_WAIT_SECONDS = 300;
 const MAX_WAIT_SECONDS = 1500;
 
@@ -57,46 +69,6 @@ function currentProjectDir() {
   if (!fs.existsSync(POINTER)) throw new Error("no open project; call open_project first");
   const pointer = JSON.parse(fs.readFileSync(POINTER, "utf8"));
   return path.join(MEDIA_ROOT, pointer.dir);
-}
-
-// Footage is referenced where it lives (source.json); a raw.<ext> copy is the
-// older staging and still honoured.
-function stagedVideo(dir) {
-  const raw = fs.readdirSync(dir).find((name) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(name));
-  if (raw) return path.join(dir, raw);
-  try {
-    return JSON.parse(fs.readFileSync(path.join(dir, "source.json"), "utf8")).path ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// The footage as an identity: where it is and how big. Enough to notice a
-// swapped recording without hashing nineteen gigabytes.
-function sourceRecord(dir) {
-  const video = stagedVideo(dir);
-  if (!video) return null;
-  try {
-    const source = JSON.parse(fs.readFileSync(path.join(dir, "source.json"), "utf8"));
-    if (source.path === video && source.bytes) return { path: source.path, bytes: source.bytes };
-  } catch { /* staged copy */ }
-  return { path: video, bytes: fs.statSync(video).size };
-}
-
-function projectPaths(dir) {
-  return {
-    video: stagedVideo(dir),
-    transcript: path.join(dir, "raw.json"),
-    review: path.join(dir, "review.json"),
-    clean: path.join(dir, "out", "clean.mp4"),
-    cleanTranscript: path.join(dir, "clean.json"),
-    compose: path.join(dir, "compose.json"),
-    previousCleanTranscript: path.join(dir, "clean.previous.json"),
-    final: path.join(dir, "out", "final.mp4"),
-    framing: path.join(dir, "framing.json"),
-    cleanMap: path.join(dir, "out", "clean-map.json"),
-    screen: path.join(dir, "out", "screen.mp4"),
-  };
 }
 
 function readJson(file) {
@@ -108,11 +80,6 @@ function readFraming(dir) {
   return fs.existsSync(framing) ? readJson(framing) : null;
 }
 
-function readCleanMap(dir) {
-  const { cleanMap } = projectPaths(dir);
-  return fs.existsSync(cleanMap) ? readJson(cleanMap) : null;
-}
-
 function readReview(dir) {
   const { review } = projectPaths(dir);
   if (!fs.existsSync(review)) throw new Error("no review.json yet; call cut_pass first");
@@ -121,11 +88,6 @@ function readReview(dir) {
 
 function writeReview(dir, review) {
   fs.writeFileSync(projectPaths(dir).review, JSON.stringify(review, null, 2));
-}
-
-function readComposeConfig(dir) {
-  const { compose } = projectPaths(dir);
-  return fs.existsSync(compose) ? readJson(compose) : { scenes: [] };
 }
 
 function writeComposeConfig(dir, config) {
@@ -161,45 +123,6 @@ function cleanWords(dir) {
   return flattenWords(readJson(paths.cleanTranscript));
 }
 
-function cleanTranscriptStamp(dir) {
-  const paths = projectPaths(dir);
-  try {
-    return readJson(paths.cleanTranscript).fabula?.cutIdentity ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// The clean cut the review and framing describe right now, with its
-// identities; compared against the map beside out/clean.mp4.
-function currentCleanPlan(dir) {
-  const paths = projectPaths(dir);
-  const review = readReview(dir);
-  return cleanPlan({
-    review,
-    framing: readFraming(dir),
-    dims: probeDimensions(paths.video),
-    source: sourceRecord(dir),
-  });
-}
-
-function cleanSummary(dir) {
-  const paths = projectPaths(dir);
-  const map = readCleanMap(dir);
-  if (!map || !fs.existsSync(paths.clean)) return null;
-  return {
-    identity: map.identity ?? null,
-    renderedAt: map.renderedAt ?? null,
-    encoder: map.encoder ?? null,
-    bytes: fs.statSync(paths.clean).size,
-    fps: map.fps,
-    head: map.head,
-    screen: map.screen,
-    screenSpans: map.screenSpans,
-    pieces: map.pieces?.length ?? null,
-  };
-}
-
 function ok(payload) {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
 }
@@ -217,18 +140,6 @@ function describeCut(cut, index, wordText) {
     near: anchor,
   };
 }
-
-// The last lines of a job's log, without Chromium's D-Bus grumbling (the
-// headless export has no session bus and says so a few hundred times).
-const logTail = (file, lines = 6) => {
-  try {
-    return fs.readFileSync(file, "utf8").trim().split("\n")
-      .filter((line) => !/^\[\d+:\d+\/\d+\.\d+:ERROR:dbus\//.test(line))
-      .slice(-lines).join("\n");
-  } catch {
-    return null;
-  }
-};
 
 // Waits on the running job and reports what came of it. A failure is an
 // error with the job's own note and where its log is; "running" comes back
@@ -250,19 +161,6 @@ async function settle(dir, seconds, describeDone) {
     });
   }
   return ok({ done: true, ...describeDone() });
-}
-
-// What the last job left behind, so wait_render can describe a finish it
-// did not start. The stage is read from the log's presence order: the most
-// recently written out/<stage>.log wins.
-function lastJobStage(dir) {
-  const outDir = path.join(dir, "out");
-  if (!fs.existsSync(outDir)) return null;
-  const logs = fs.readdirSync(outDir)
-    .filter((name) => /^(render_clean|render_final|transcribe|retranscribe)\.log$/.test(name))
-    .map((name) => ({ stage: name.replace(/\.log$/, ""), mtime: fs.statSync(path.join(outDir, name)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  return logs[0]?.stage ?? null;
 }
 
 function describeFinished(dir, stage) {
@@ -331,7 +229,7 @@ server.registerTool("transcribe", {
   if (fs.existsSync(paths.transcript) && !force) {
     return ok({ skipped: true, transcript: paths.transcript, words: flattenWords(readJson(paths.transcript)).length });
   }
-  startJob(dir, "transcribe", "Transcribing on the GPU", process.execPath, [JOB, "transcribe", dir]);
+  launchJob(dir, jobSpec("transcribe", dir), RUNNER);
   return settle(dir, wait_seconds, () => describeFinished(dir, "transcribe"));
 });
 
@@ -527,7 +425,7 @@ server.registerTool("render_clean", {
     });
   }
   if (plan.keeps.length === 0) throw new Error("every moment is cut; nothing to render");
-  startJob(dir, "render_clean", "Rendering the clean cut", process.execPath, [JOB, "render_clean", dir]);
+  launchJob(dir, jobSpec("clean", dir), RUNNER);
   return settle(dir, wait_seconds, () => describeFinished(dir, "render_clean"));
 });
 
@@ -545,7 +443,7 @@ server.registerTool("retranscribe_clean", {
   if (!force && cleanTranscriptCurrent(paths.cleanTranscript, paths.clean, readCleanMap(dir))) {
     return ok({ skipped: true, transcript: paths.cleanTranscript, words: cleanWords(dir).length });
   }
-  startJob(dir, "retranscribe", "Transcribing the clean cut", process.execPath, [JOB, "retranscribe", dir]);
+  launchJob(dir, jobSpec("retranscribe", dir), RUNNER);
   return settle(dir, wait_seconds, () => describeFinished(dir, "retranscribe"));
 });
 
@@ -963,7 +861,7 @@ server.registerTool("render_final", {
   if (!cleanCurrent(map, plan, paths.clean)) {
     warnings.push("clean.mp4 is stale: the cut list or framing changed after it was rendered. The film renders from the clean cut on disk; render_clean → retranscribe_clean → re-anchor if the change was meant.");
   }
-  const args = [];
+  const options = { fresh };
   let output = paths.final;
   if (from_word_id !== undefined || to_word_id !== undefined) {
     const words = cleanWords(dir);
@@ -972,19 +870,9 @@ server.registerTool("render_final", {
     const last = byId.get(to_word_id ?? words.at(-1).id);
     if (!first || !last) throw new Error(`word ids must be 0–${words.length - 1}`);
     output = path.join(dir, "out", `preview-${first.id}-${last.id}.mp4`);
-    args.push(`--from=${Math.max(first.start - 0.5, 0)}`, `--to=${last.end + 0.5}`, `--out=${output}`);
+    Object.assign(options, { from: Math.max(first.start - 0.5, 0), to: last.end + 0.5, out: output });
   }
-  if (fresh) args.push("--fresh");
-  startJob(dir, "render_final", output === paths.final ? "Rendering the film" : "Rendering a preview span", ELECTRON, [
-    "--no-sandbox", "--no-zygote", "--ozone-platform=headless", EXPORT, ...args, dir,
-  ], {
-    env: {
-      LD_LIBRARY_PATH: [
-        path.join(REPO_ROOT, "tools", "wsl-libs", "usr", "lib", "x86_64-linux-gnu"),
-        process.env.LD_LIBRARY_PATH,
-      ].filter(Boolean).join(":"),
-    },
-  });
+  launchJob(dir, jobSpec("final", dir, options), RUNNER);
   return settle(dir, wait_seconds, () => ({ ...describeFinished(dir, "render_final"), output, bytes: fs.existsSync(output) ? fs.statSync(output).size : null, warnings }));
 });
 
@@ -998,46 +886,6 @@ server.registerTool("wait_render", {
   if (!stage) return ok({ done: true, hint: "no job has run in this project" });
   return settle(dir, wait_seconds, () => describeFinished(dir, stage));
 });
-
-// What is out of date relative to what feeds it, and the tool that fixes
-// it. This is the order of the pipeline read backwards: an agent that reads
-// it never has to guess which step to repeat after a change. The clean cut
-// and its transcript compare by identity, never by file time.
-function staleness(dir, paths) {
-  const mtime = (file) => (fs.existsSync(file) ? fs.statSync(file).mtimeMs : null);
-  const out = [];
-  const map = readCleanMap(dir);
-  const clean = mtime(paths.clean);
-  if (clean !== null && fs.existsSync(paths.review)) {
-    const plan = currentCleanPlan(dir);
-    if (!cleanCurrent(map, plan, paths.clean)) {
-      out.push({
-        artifact: "clean.mp4",
-        because: map?.identity ? "the cut list or framing changed after it was rendered" : "it was rendered by an older Fabula that recorded no identity",
-        next: "render_clean",
-      });
-    }
-  }
-  if (clean !== null && !cleanTranscriptCurrent(paths.cleanTranscript, paths.clean, map)) {
-    out.push({ artifact: "clean.json", because: "it does not describe the clean cut on disk", next: "retranscribe_clean" });
-  }
-  if (fs.existsSync(paths.compose) && fs.existsSync(paths.cleanTranscript)) {
-    const config = readComposeConfig(dir);
-    const stamp = cleanTranscriptStamp(dir);
-    const moved = config.cutIdentity && stamp
-      ? config.cutIdentity !== stamp
-      : mtime(paths.compose) < mtime(paths.cleanTranscript);
-    if (moved) {
-      out.push({ artifact: "compose.json", because: "the clean transcript changed after the scenes were written; word ids may have moved", next: "reanchor_scenes (then get_scenes to check what it could not place)" });
-    }
-  }
-  const final = mtime(paths.final);
-  const compose = mtime(paths.compose);
-  if (final !== null && ((compose !== null && compose > final) || (clean !== null && clean > final))) {
-    out.push({ artifact: "final.mp4", because: "the scenes or the clean cut changed after the film was rendered", next: "render_final (cached chunks make this cheap)" });
-  }
-  return out;
-}
 
 server.registerTool("status", {
   description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics, the running background job if any, what is stale and which tool fixes it. Read it before repeating a step.",
@@ -1069,7 +917,7 @@ server.registerTool("status", {
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   state.punch = readPunch(dir);
   state.clean = cleanSummary(dir);
-  state.stale = staleness(dir, paths);
+  state.stale = staleness(dir);
   return ok(state);
 });
 
