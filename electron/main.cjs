@@ -32,7 +32,8 @@ Promise.all([
     import(pathToFileURL(path.join(__dirname, "..", "core", name)).href)
   ),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "pipeline.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, pipeline]) => { core = { shot, cut, compose, stage, themes, pipeline }; })
+  import(pathToFileURL(path.join(__dirname, "..", "scripts", "inbox.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, pipeline, inbox]) => { core = { shot, cut, compose, stage, themes, pipeline, inbox }; })
   .catch((error) => console.error("core engines failed to load:", error));
 
 function readJson(file) {
@@ -147,6 +148,15 @@ function readCompose(dir) {
     }
     const theme = core.themes.resolveTheme(config.theme ?? null);
     if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
+    const inserts = core.compose.resolveInserts(config.inserts ?? [], words);
+    for (const insert of inserts) {
+      for (const option of insert.options) {
+        for (const scene of option.scenes) {
+          if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
+          for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
+        }
+      }
+    }
     const duration = words.at(-1)?.end ?? 0;
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
@@ -161,6 +171,8 @@ function readCompose(dir) {
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
       theme,
       themeConfig: config.theme ?? {},
+      inserts,
+      pendingToAgent: core.inbox.pendingInbox(dir).length,
       punch,
       punchSpans: punch && map?.pieces ? core.shot.punchSpans(map.pieces, punch.zoom) : [],
     };
@@ -220,7 +232,7 @@ function stateStamp() {
   const dir = projectDir();
   if (!dir) return "none";
   return [
-    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json",
+    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json",
     path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
   ]
     .map((name) => {
@@ -354,6 +366,7 @@ app.whenReady().then(() => {
       mutate(config);
       const words = core.cut.flattenWords(readJson(path.join(dir, "clean.json")));
       core.compose.validateScenes(config.scenes ?? [], words);
+      if (config.inserts) core.compose.validateInserts(config.inserts, words);
       core.themes.validateTheme(config.theme);
       if (config.punch && !(config.punch.zoom >= 1.02 && config.punch.zoom <= 1.5)) throw new Error("punch zoom must be 1.02–1.5");
       fs.writeFileSync(file, JSON.stringify(config, null, 2));
@@ -397,6 +410,37 @@ app.whenReady().then(() => {
       if ("punch" in patch) config.punch = patch.punch ? { zoom: Number(patch.punch) } : null;
     })
   );
+
+  // Insert points: a choice materialises an option's scenes (validated like
+  // any other write) and tells the agent; a request in words is filed for
+  // the agent to answer.
+  const editInsert = (event, insertId, optionId, note) =>
+    editCompose(event, (config) => {
+      const next = core.compose.applyInsertChoice(config, insertId, optionId, note);
+      config.scenes = next.scenes;
+      config.inserts = next.inserts;
+    });
+  ipcMain.handle("fabula:choose-insert", (event, insertId, optionId) => {
+    const result = editInsert(event, insertId, optionId);
+    if (result.ok) core.inbox.appendInbox(projectDir(), { type: "insert-chosen", insertId, optionId });
+    return result;
+  });
+  ipcMain.handle("fabula:insert-note", (event, insertId, text) => {
+    const note = String(text ?? "").trim().slice(0, 500);
+    if (!note) return { ok: false, error: "Say what you want there." };
+    const result = editInsert(event, insertId, "other", note);
+    if (result.ok) core.inbox.appendInbox(projectDir(), { type: "insert-other", insertId, text: note });
+    return result;
+  });
+  ipcMain.handle("fabula:ask", (event, text) => {
+    const message = String(text ?? "").trim().slice(0, 1000);
+    if (!message) return { ok: false, error: "Type something first." };
+    const dir = projectDir();
+    if (!dir) return { ok: false, error: "No project is open." };
+    core.inbox.appendInbox(dir, { type: "message", text: message });
+    event.sender.send("fabula:state", readState());
+    return { ok: true };
+  });
 
   // A picture for the brand: copied into the project's assets so the film
   // never depends on a file elsewhere on the disk.

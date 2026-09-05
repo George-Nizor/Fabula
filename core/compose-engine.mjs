@@ -239,3 +239,76 @@ export function renderSchedule(resolvedScenes, captionSpans, durationSeconds, op
 export function activeAt(resolved, t) {
   return resolved.filter((item) => item.start <= t && t < item.end);
 }
+
+
+// ---- Insert points: where a visual could go, and what could go there ----
+//
+// After the cut, the agent marks the moments it would dress and offers a
+// few ready-made options for each; the person picks in the window (or asks
+// for something else in words). An option is a complete list of scenes
+// anchored inside the insert's span; choosing it materialises those scenes
+// into the plan, tagged with the insert's id so choosing again replaces
+// them.
+
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+export function validateInserts(inserts, words) {
+  if (!Array.isArray(inserts)) throw new Error("inserts must be an array");
+  const byId = new Map(words.map((word) => [word.id, word]));
+  const seen = new Set();
+  inserts.forEach((insert, index) => {
+    const at = `insert ${index}`;
+    if (typeof insert.id !== "string" || !ID_RE.test(insert.id)) throw new Error(`${at}: id must be a short slug (a-z, 0-9, dashes)`);
+    if (seen.has(insert.id)) throw new Error(`${at}: duplicate id "${insert.id}"`);
+    seen.add(insert.id);
+    if (!byId.has(insert.fromWordId) || !byId.has(insert.toWordId)) throw new Error(`${at}: word ids must be 0–${words.length - 1}`);
+    if (byId.get(insert.toWordId).start < byId.get(insert.fromWordId).start) throw new Error(`${at}: toWordId precedes fromWordId`);
+    if (typeof insert.why !== "string" || insert.why.length === 0 || insert.why.length > 120) throw new Error(`${at}: why must say in a line what the moment is`);
+    if (!Array.isArray(insert.options) || insert.options.length < 1 || insert.options.length > 5) throw new Error(`${at}: 1–5 options`);
+    const optionIds = new Set();
+    insert.options.forEach((option, k) => {
+      const where = `${at} option ${k}`;
+      if (typeof option.id !== "string" || !ID_RE.test(option.id)) throw new Error(`${where}: id must be a short slug`);
+      if (optionIds.has(option.id)) throw new Error(`${where}: duplicate option id "${option.id}"`);
+      optionIds.add(option.id);
+      if (typeof option.label !== "string" || option.label.length === 0 || option.label.length > 60) throw new Error(`${where}: label up to 60 characters`);
+      if (!Array.isArray(option.scenes) || option.scenes.length === 0) throw new Error(`${where}: needs at least one scene`);
+      validateScenes(option.scenes, words);
+    });
+    if (insert.chosen !== undefined && insert.chosen !== null && insert.chosen !== "other" && !optionIds.has(insert.chosen)) {
+      throw new Error(`${at}: chosen "${insert.chosen}" is not one of its options`);
+    }
+    if (insert.note !== undefined && insert.note !== null && (typeof insert.note !== "string" || insert.note.length > 500)) throw new Error(`${at}: note up to 500 characters`);
+  });
+}
+
+// The plan with one insert's choice materialised: its earlier scenes go,
+// the chosen option's scenes come in tagged with the insert's id. optionId
+// null clears the choice; "other" records a request and places nothing.
+export function applyInsertChoice(config, insertId, optionId, note) {
+  const inserts = (config.inserts ?? []).map((insert) => ({ ...insert }));
+  const insert = inserts.find((item) => item.id === insertId);
+  if (!insert) throw new Error(`no insert "${insertId}"`);
+  const scenes = (config.scenes ?? []).filter((scene) => scene.insertId !== insertId);
+  if (optionId && optionId !== "other") {
+    const option = insert.options.find((item) => item.id === optionId);
+    if (!option) throw new Error(`insert "${insertId}" has no option "${optionId}"`);
+    for (const scene of option.scenes) scenes.push({ ...scene, insertId });
+    scenes.sort((a, b) => a.fromWordId - b.fromWordId);
+  }
+  insert.chosen = optionId ?? null;
+  if (note !== undefined) insert.note = note;
+  return { ...config, scenes, inserts };
+}
+
+// Inserts with seconds, and every option's scenes resolved, for the window
+// to preview a choice without a round trip.
+export function resolveInserts(inserts, words) {
+  const byId = new Map(words.map((word) => [word.id, word]));
+  return (inserts ?? []).map((insert) => ({
+    ...insert,
+    start: byId.get(insert.fromWordId)?.start ?? 0,
+    end: byId.get(insert.toWordId)?.end ?? 0,
+    options: insert.options.map((option) => ({ ...option, scenes: resolveScenes(option.scenes.map((scene) => ({ ...scene, insertId: insert.id })), words) })),
+  }));
+}

@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("fabula", {
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   setProject: (patch) => ipcRenderer.invoke("fabula:set-project", patch),
   pickAsset: () => ipcRenderer.invoke("fabula:pick-asset"),
+  chooseInsert: (insertId, optionId) => ipcRenderer.invoke("fabula:choose-insert", insertId, optionId),
+  insertNote: (insertId, text) => ipcRenderer.invoke("fabula:insert-note", insertId, text),
+  ask: (text) => ipcRenderer.invoke("fabula:ask", text),
   ingestFile: (file) => ipcRenderer.invoke("fabula:ingest", webUtils.getPathForFile(file)),
   pickFile: () => ipcRenderer.invoke("fabula:pick"),
   onState: (callback) => {
@@ -28,6 +31,7 @@ import(pathToFileURL(path.join(__dirname, "..", "core", "stage-engine.mjs")).hre
   .then((engine) => {
     contextBridge.exposeInMainWorld("FabulaStageEngine", {
       layoutAt: (timeline, t, aspect, stage) => engine.layoutAt(timeline, t, aspect, stage),
+      resolveLayoutTimeline: (scenes, duration) => engine.resolveLayoutTimeline(scenes, duration),
     });
   })
   .catch((error) => console.error("stage engine bridge failed:", error));

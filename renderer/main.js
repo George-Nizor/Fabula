@@ -25,6 +25,10 @@ const els = {
   trackLayout: $("track-layout"), laneLayout: $("lane-layout"),
   trackScreen: $("track-screen"), laneScreen: $("lane-screen"),
   trackScenes: $("track-scenes"), laneScenes: $("lane-scenes"),
+  trackInserts: $("track-inserts"), laneInserts: $("lane-inserts"),
+  inspInsert: $("insp-insert"), insertWhy: $("insert-why"), insertOptions: $("insert-options"), insertNone: $("insert-none"),
+  insertNote: $("insert-note"), insertNoteSend: $("insert-note-send"), insertClose: $("insert-close"), insertStatus: $("insert-status"),
+  askText: $("ask-text"), askSend: $("ask-send"), askStatus: $("ask-status"),
   playhead: $("tl-playhead"),
   inspector: $("inspector"), inspTitle: $("insp-title"), inspProject: $("insp-project"), inspBody: $("insp-body"),
   inspCutSummary: $("insp-cut-summary"), sumCuts: $("sum-cuts"), sumRemoved: $("sum-removed"), sumShots: $("sum-shots"), sumFraming: $("sum-framing"),
@@ -48,8 +52,30 @@ let mode = "cut";
 let wordSpans = [];
 let highlighted = null;
 let selectedScene = null; // index into compose.scenes
+let selectedInsert = null; // insert id
+let previewOption = null; // option id being hovered in the picker
+let paintCache = null; // { key, compose } the merged compose a preview paints
 let userChoseTab = false;
 let statusTimer = null;
+
+const inserts = () => compose()?.inserts ?? [];
+const insertById = (id) => inserts().find((insert) => insert.id === id) ?? null;
+const insertState = (insert) => (insert.chosen === "other" ? "other" : insert.chosen ? "chosen" : "open");
+
+// What the stage paints: the plan as written, or, while an option is under
+// the pointer in the picker, the plan with that option in the insert's place.
+function composeForPaint() {
+  const c = compose();
+  const insert = selectedInsert ? insertById(selectedInsert) : null;
+  const option = insert && previewOption ? insert.options.find((o) => o.id === previewOption) : null;
+  if (!c || !insert || !option || option.id === insert.chosen) return c;
+  const key = `${state?.project}:${insert.id}:${option.id}:${c.scenes.length}`;
+  if (paintCache?.key === key) return paintCache.compose;
+  const scenes = [...c.scenes.filter((scene) => scene.insertId !== insert.id), ...option.scenes].sort((a, b) => a.start - b.start);
+  const layoutTimeline = window.FabulaStageEngine ? window.FabulaStageEngine.resolveLayoutTimeline(scenes, composeDuration()) : c.layoutTimeline;
+  paintCache = { key, compose: { ...c, scenes, layoutTimeline } };
+  return paintCache.compose;
+}
 
 document.body.classList.add(window.fabula.platform);
 
@@ -164,7 +190,20 @@ function renderComposeTranscript() {
   const c = compose();
   els.transcript.replaceChildren();
   wordSpans = [];
+  const marksAt = new Map();
+  for (const insert of c.inserts ?? []) {
+    if (!marksAt.has(insert.fromWordId)) marksAt.set(insert.fromWordId, []);
+    marksAt.get(insert.fromWordId).push(insert);
+  }
   for (const word of c.words) {
+    for (const insert of marksAt.get(word.id) ?? []) {
+      const mark = document.createElement("span");
+      mark.className = `insert-mark is-${insertState(insert)}${insert.id === selectedInsert ? " is-open" : ""}`;
+      mark.textContent = insertState(insert) === "chosen" ? "✓" : insertState(insert) === "other" ? "…" : "+";
+      mark.title = `${insert.why}${insert.chosen ? ` · ${insert.chosen === "other" ? "asked for something else" : insert.chosen}` : " · choose what goes here"}`;
+      mark.dataset.insert = insert.id;
+      els.transcript.append(mark, " ");
+    }
     const span = document.createElement("span");
     span.className = "word";
     span.title = `${fmt(word.start)}–${fmt(word.end)}`;
@@ -268,6 +307,16 @@ function renderComposeTimeline() {
     els.laneScreen.append(block);
   }
 
+  els.trackInserts.hidden = (c.inserts ?? []).length === 0;
+  els.laneInserts.replaceChildren();
+  for (const insert of c.inserts ?? []) {
+    const mark = document.createElement("div");
+    mark.className = `tl-insert is-${insertState(insert)}${insert.id === selectedInsert ? " is-open" : ""}`;
+    mark.title = insert.why;
+    mark.style.left = `${(insert.start / total) * 100}%`;
+    mark.dataset.insert = insert.id;
+    els.laneInserts.append(mark);
+  }
   els.laneScenes.replaceChildren();
   c.scenes.forEach((scene, index) => {
     if (scene.type === "stage") return;
@@ -362,10 +411,69 @@ function renderProjectPanel() {
   }
 }
 
+// ---- Insert points ----
+
+function openInsert(id) {
+  const insert = insertById(id);
+  if (!insert) return;
+  selectedScene = null;
+  selectedInsert = id;
+  previewOption = null;
+  els.inspProject.hidden = true;
+  els.inspBody.hidden = true;
+  els.inspInsert.hidden = false;
+  renderInsertPanel();
+  // Land where an option has settled: past the head's flight and a card's
+  // build, so a paused frame shows the choice, not its first frame.
+  seek(insert.start + Math.min(2.2, (insert.end - insert.start) * 0.5));
+  renderComposeTimeline();
+  renderComposeTranscript();
+}
+
+function renderInsertPanel() {
+  const insert = selectedInsert ? insertById(selectedInsert) : null;
+  if (!insert) { closeInspector(); return; }
+  els.inspTitle.textContent = `insert · ${fmt(insert.start)}–${fmt(insert.end)}`;
+  els.insertWhy.textContent = insert.why;
+  els.insertOptions.replaceChildren();
+  for (const option of insert.options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `insert-option${option.id === insert.chosen ? " is-chosen" : ""}`;
+    const label = document.createElement("span");
+    label.className = "insert-option-label";
+    label.textContent = option.label;
+    const kinds = document.createElement("span");
+    kinds.className = "insert-option-kinds";
+    kinds.textContent = [...new Set(option.scenes.map((s) => (s.type === "graphic" ? s.graphic.kind : s.type === "stage" ? `${s.layout} layout` : s.type)))].join(" · ");
+    button.append(label, kinds);
+    button.dataset.option = option.id;
+    button.addEventListener("mouseenter", () => { previewOption = option.id; });
+    button.addEventListener("mouseleave", () => { if (previewOption === option.id) previewOption = null; });
+    button.addEventListener("click", async () => {
+      const result = await window.fabula.chooseInsert(insert.id, option.id);
+      flashInsert(result.ok ? "chosen" : result.error, !result.ok);
+    });
+    els.insertOptions.append(button);
+  }
+  els.insertNone.classList.toggle("is-chosen", !insert.chosen);
+  if (document.activeElement !== els.insertNote) els.insertNote.value = insert.chosen === "other" ? (insert.note ?? "") : "";
+  els.insertStatus.textContent = insert.chosen === "other" ? "sent to Claude" : "";
+  els.insertStatus.classList.remove("is-error");
+}
+
+function flashInsert(text, isError = false) {
+  els.insertStatus.textContent = text;
+  els.insertStatus.classList.toggle("is-error", isError);
+}
+
 function openInspector(index) {
   const scene = compose()?.scenes[index];
   if (!scene) return;
   selectedScene = index;
+  selectedInsert = null;
+  previewOption = null;
+  els.inspInsert.hidden = true;
   els.inspProject.hidden = true;
   els.inspBody.hidden = false;
   els.inspTitle.textContent = `${scene.type} · ${fmt(scene.start)}–${fmt(scene.end)}`;
@@ -394,8 +502,11 @@ function openInspector(index) {
 
 function closeInspector() {
   selectedScene = null;
+  selectedInsert = null;
+  previewOption = null;
   els.inspProject.hidden = false;
   els.inspBody.hidden = true;
+  els.inspInsert.hidden = true;
   if (review()) renderProjectPanel();
   if (mode === "compose" && compose()) renderComposeTimeline();
 }
@@ -522,7 +633,9 @@ function render() {
     renderComposeTranscript();
   }
   els.timeSep.textContent = mode === "cut" ? " · " : " / ";
-  if (selectedScene === null) { els.inspProject.hidden = false; els.inspBody.hidden = true; renderProjectPanel(); }
+  if (selectedInsert !== null && mode === "compose") {
+    if (insertById(selectedInsert)) renderInsertPanel(); else closeInspector();
+  } else if (selectedScene === null) { els.inspProject.hidden = false; els.inspBody.hidden = true; els.inspInsert.hidden = true; renderProjectPanel(); }
   els.player.hidden = !els.video.src;
   els.dock.hidden = els.player.hidden;
   highlighted = null;
@@ -545,6 +658,7 @@ els.tabCompose.addEventListener("click", () => { userChoseTab = true; mode = "co
 els.transcript.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.dataset.insert !== undefined) { openInsert(target.dataset.insert); return; }
   if (mode === "cut" && target.dataset.cutIndex !== undefined) {
     const index = Number(target.dataset.cutIndex);
     window.fabula.setCut(index, !review().cuts[index].enabled);
@@ -559,6 +673,7 @@ els.transcript.addEventListener("click", (event) => {
 els.timeline.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.dataset.insert !== undefined) { openInsert(target.dataset.insert); return; }
   if (target.dataset.seek !== undefined) {
     seek(Number(target.dataset.seek) + 0.01);
     if (target.dataset.scene !== undefined) openInspector(Number(target.dataset.scene));
@@ -613,6 +728,24 @@ const applyWatermark = () => window.fabula.setProject({ theme: { watermark: els.
 els.themeWatermark.addEventListener("change", applyWatermark);
 els.themeWatermark.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); els.themeWatermark.blur(); } });
 els.themeReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
+
+els.insertNone.addEventListener("click", async () => {
+  if (!selectedInsert) return;
+  const result = await window.fabula.chooseInsert(selectedInsert, null);
+  flashInsert(result.ok ? "nothing placed" : result.error, !result.ok);
+});
+els.insertNoteSend.addEventListener("click", async () => {
+  if (!selectedInsert) return;
+  const result = await window.fabula.insertNote(selectedInsert, els.insertNote.value);
+  flashInsert(result.ok ? "sent to Claude" : result.error, !result.ok);
+});
+els.insertClose.addEventListener("click", closeInspector);
+els.askSend.addEventListener("click", async () => {
+  const result = await window.fabula.ask(els.askText.value);
+  els.askStatus.textContent = result.ok ? "sent to Claude" : result.error;
+  els.askStatus.classList.toggle("is-error", !result.ok);
+  if (result.ok) els.askText.value = "";
+});
 els.themeCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.themeCaptions.checked }));
 els.themePunch.addEventListener("change", () => window.fabula.setProject({ punch: els.themePunch.value ? Number(els.themePunch.value) : null }));
 
@@ -660,7 +793,7 @@ document.addEventListener("keydown", (event) => {
   } else if ((event.key === "[" || event.key === "]") && mode === "cut") {
     const cut = nearestCut(event.key === "]" ? 1 : -1);
     if (cut) seek(Math.max(cut.start - 0.6, 0));
-  } else if (event.key === "Escape" && selectedScene !== null) {
+  } else if (event.key === "Escape" && (selectedScene !== null || selectedInsert !== null)) {
     closeInspector();
   }
 });
@@ -719,7 +852,7 @@ function tick() {
       if (!els.video.paused && els.screen.paused) els.screen.play().catch(() => {});
       if (els.video.paused && !els.screen.paused) els.screen.pause();
     }
-    window.FabulaStage.update(els.overlay, els.head, c, now, null, c.screenUrl ? els.screen : null);
+    window.FabulaStage.update(els.overlay, els.head, composeForPaint(), now, null, c.screenUrl ? els.screen : null);
   }
 
   const lane = (mode === "cut" ? els.laneCuts : els.laneScenes).getBoundingClientRect();

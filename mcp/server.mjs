@@ -36,7 +36,8 @@ import {
 } from "../scripts/pipeline.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, validateInserts, applyInsertChoice, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS } from "../core/stage-engine.mjs";
 import { reanchorScenes } from "../core/reanchor.mjs";
@@ -563,11 +564,127 @@ server.registerTool("get_scenes", {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
   return ok({
-    scenes: (config.scenes ?? []).map((scene, index) => ({ index, ...scene })),
+    scenes: (config.scenes ?? []).map((scene, index) => ({ index, ...scene, ...(scene.insertId ? { insert_id: scene.insertId } : {}) })),
     captions: Boolean(config.captions),
     theme: config.theme ?? null,
     punch: readPunch(dir),
+    inserts: (config.inserts ?? []).map((insert) => ({ id: insert.id, chosen: insert.chosen ?? null, note: insert.note ?? null })),
   });
+});
+
+// ---- Insert points and the dialogue ----
+
+const optionSceneShape = z.object({
+  type: z.enum([...SCENE_TYPES]),
+  from_word_id: z.number().int().min(0),
+  to_word_id: z.number().int().min(0),
+  text: z.string().optional(), subtitle: z.string().optional(), style: z.string().optional(),
+  accent: z.string().optional(), flair: z.boolean().optional(),
+  layout: z.enum([...LAYOUTS]).optional(), corner: z.enum(["br", "bl", "tr", "tl"]).optional(),
+  graphic: z.any().optional(),
+});
+
+const shapeScene = (scene) => {
+  const { from_word_id, to_word_id, ...rest } = scene;
+  const out = { ...rest, fromWordId: from_word_id, toWordId: to_word_id };
+  for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
+  return out;
+};
+
+server.registerTool("set_inserts", {
+  description:
+    "Mark the moments a visual could go and offer ready-made options for each: an insert point is a word span, a line saying what the moment is, and 2–4 options, each a complete list of scenes inside the span (a side card, the spoken words, a full-stage cover, a callout…). The window shows the points in the transcript and the timeline; the person picks an option, or asks for something else in words. Put the option you would choose first. Replaces the list; choices and notes on inserts with the same id are kept. Read get_inserts first when the person has been choosing.",
+  inputSchema: {
+    inserts: z.array(z.object({
+      id: z.string().describe("short slug, stable across edits"),
+      from_word_id: z.number().int().min(0),
+      to_word_id: z.number().int().min(0),
+      why: z.string().max(120).describe("what the moment is, in a line"),
+      options: z.array(z.object({
+        id: z.string().describe("short slug"),
+        label: z.string().max(60).describe("what the person sees on the button"),
+        scenes: z.array(optionSceneShape).min(1),
+      })).min(1).max(5),
+    })).max(60),
+    apply_first: z.boolean().optional().describe("Materialise each insert's first option now, so the film has a plan before anyone chooses (default true)"),
+  },
+}, async ({ inserts, apply_first }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const previous = readComposeConfig(dir);
+  const earlier = new Map((previous.inserts ?? []).map((insert) => [insert.id, insert]));
+  const shaped = inserts.map((insert) => ({
+    id: insert.id, fromWordId: insert.from_word_id, toWordId: insert.to_word_id, why: insert.why,
+    options: insert.options.map((option) => ({ id: option.id, label: option.label, scenes: option.scenes.map(shapeScene) })),
+    chosen: earlier.get(insert.id)?.chosen ?? null,
+    note: earlier.get(insert.id)?.note ?? null,
+  }));
+  validateInserts(shaped, words);
+  // Scenes of inserts that no longer exist go with them.
+  const keep = new Set(shaped.map((insert) => insert.id));
+  let config = { ...previous, inserts: shaped, scenes: (previous.scenes ?? []).filter((scene) => !scene.insertId || keep.has(scene.insertId)) };
+  for (const insert of shaped) {
+    const stillValid = insert.chosen && insert.chosen !== "other" && insert.options.some((option) => option.id === insert.chosen);
+    if (stillValid) config = applyInsertChoice(config, insert.id, insert.chosen);
+    else if (insert.chosen === "other") { /* the person asked for something else; leave it to the dialogue */ }
+    else if (apply_first !== false) config = applyInsertChoice(config, insert.id, insert.options[0].id);
+    else config = applyInsertChoice(config, insert.id, null);
+  }
+  validateScenes(config.scenes, words);
+  writeComposeConfig(dir, config);
+  return ok({ inserts: config.inserts.map((insert) => ({ id: insert.id, chosen: insert.chosen, options: insert.options.map((o) => o.id) })), scenes: config.scenes.length });
+});
+
+server.registerTool("get_inserts", {
+  description: "The insert points with what the person chose (an option id, \"other\" with their note, or nothing yet) and each insert's options. Read before set_inserts or answering a note.",
+  inputSchema: {},
+}, async () => {
+  const config = readComposeConfig(currentProjectDir());
+  return ok({
+    inserts: (config.inserts ?? []).map((insert) => ({
+      id: insert.id, from_word_id: insert.fromWordId, to_word_id: insert.toWordId, why: insert.why,
+      chosen: insert.chosen ?? null, note: insert.note ?? null,
+      options: insert.options.map((option) => ({ id: option.id, label: option.label, scenes: option.scenes.length })),
+    })),
+    pending: pendingInbox(currentProjectDir()).length,
+  });
+});
+
+server.registerTool("apply_insert", {
+  description: "Materialise one insert's option into the plan (or clear it with option_id null). Use after adding an option that answers the person's note.",
+  inputSchema: {
+    id: z.string(),
+    option_id: z.string().nullable(),
+  },
+}, async ({ id, option_id }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const config = applyInsertChoice(readComposeConfig(dir), id, option_id);
+  validateScenes(config.scenes, words);
+  writeComposeConfig(dir, config);
+  return ok({ id, chosen: option_id, scenes: config.scenes.length });
+});
+
+server.registerTool("wait_for_input", {
+  description:
+    "Wait for the person to do something in the window: choose an option on an insert point, ask for something else on one (type insert-other, with their words), or send a message (type message). Returns the events as soon as there are any, or none after wait_seconds; call it again to keep listening. This is the dialogue: after your pass, sit in this loop; answer an insert-other by adding an option to that insert (set_inserts keeps the rest) and apply_insert it, answer a message by doing what it asks, and say what you did.",
+  inputSchema: { wait_seconds: waitSchema },
+}, async ({ wait_seconds }) => {
+  const dir = currentProjectDir();
+  const deadline = Date.now() + (wait_seconds ?? DEFAULT_WAIT_SECONDS) * 1000;
+  for (;;) {
+    const events = takeInbox(dir);
+    if (events.length > 0) {
+      const config = readComposeConfig(dir);
+      const byId = new Map((config.inserts ?? []).map((insert) => [insert.id, insert]));
+      return ok({
+        events: events.map((event) => ({ ...event, why: event.insertId ? byId.get(event.insertId)?.why ?? null : undefined })),
+        pendingInserts: (config.inserts ?? []).filter((insert) => insert.chosen === "other").map((insert) => ({ id: insert.id, note: insert.note })),
+      });
+    }
+    if (Date.now() >= deadline) return ok({ events: [], hint: "nothing from the window yet; call wait_for_input again to keep listening" });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 });
 
 server.registerTool("set_scenes", {
@@ -583,6 +700,7 @@ server.registerTool("set_scenes", {
       style: z.string().optional().describe(`title: ${[...TITLE_STYLES].join("/")}; callout: ${[...CALLOUT_STYLES].join("/")}; omit for the theme's default`),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("per-scene accent override"),
       flair: z.boolean().optional().describe("title only: a particle burst behind the text"),
+      insert_id: z.string().optional().describe("the insert point this scene was chosen for (carried from get_scenes; do not invent)"),
       layout: z.enum([...LAYOUTS]).optional().describe("stage scenes only"),
       corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage pip/full only"),
       graphic: z.object({
@@ -633,6 +751,7 @@ server.registerTool("set_scenes", {
     layout: scene.layout,
     corner: scene.corner,
     graphic: scene.graphic,
+    ...(scene.insert_id ? { insertId: scene.insert_id } : {}),
   }));
   validateScenes(shaped, words);
   const previous = readComposeConfig(dir);
@@ -642,12 +761,14 @@ server.registerTool("set_scenes", {
     scenes: shaped,
     captions,
     theme: mergedTheme,
+    inserts: previous.inserts,
     punch: punch_zoom === undefined ? readPunch(dir) : (punch_zoom === null ? null : { zoom: punch_zoom }),
     // The cut these word ids belong to; status compares it with the
     // transcript's own stamp to say when scenes need re-anchoring.
     cutIdentity: cleanTranscriptStamp(dir),
   };
   if (!config.theme) delete config.theme;
+  if (!config.inserts) delete config.inserts;
   if (!config.cutIdentity) delete config.cutIdentity;
   writeComposeConfig(dir, config);
   // Screen scenes outside a screen span play a dark card: worth saying.

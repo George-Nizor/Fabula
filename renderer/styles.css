@@ -432,6 +432,84 @@ body.insp-collapsed .inspector { display: none; }
   height: 100%;
 }
 
+/* ---- Insert points: where a visual could go ---- */
+
+.insert-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35em;
+  height: 1.35em;
+  padding: 0 0.3em;
+  margin-right: 0.15em;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--ui);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 0.15em;
+  cursor: pointer;
+  user-select: none;
+}
+.insert-mark.is-chosen { background: var(--accent); color: #fff; }
+.insert-mark.is-other { border-style: dashed; }
+.insert-mark.is-open { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+.tl-insert {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  transform: rotate(45deg);
+  border: 1.5px solid var(--accent);
+  background: var(--paper);
+  cursor: pointer;
+}
+.tl-insert.is-chosen { background: var(--accent); }
+.tl-insert.is-other { border-style: dashed; }
+.tl-insert.is-open { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+.insert-why { margin: 10px 0 12px; color: var(--ink-soft); font-family: var(--serif); font-size: 0.95rem; line-height: 1.4; }
+
+.insert-options { display: flex; flex-direction: column; gap: 6px; }
+
+.insert-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.insert-option:hover { border-color: var(--accent); }
+.insert-option.is-chosen { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.insert-option-label { font-weight: 600; font-size: 0.86rem; }
+.insert-option-kinds { font-size: 0.72rem; color: var(--dim); letter-spacing: 0.02em; }
+.insp-mini.is-chosen { border-color: var(--accent); color: var(--accent); }
+
+.insp-field textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  resize: vertical;
+}
+
 /* ---- Inspector ---- */
 
 .inspector {

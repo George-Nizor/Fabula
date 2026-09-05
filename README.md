@@ -37,6 +37,12 @@ Fabula is a two-hander: the window is where you watch and tweak, Claude is who d
    behind the gate. Your manual edits and Claude's edits live in the same files, so neither side
    tramples the other.
 
+The loop can also be a conversation in the window. Ask Claude to mark the film with insert
+points instead of writing every scene: each one shows in the transcript and the timeline with a
+few ready-made options (a side card, the spoken words, a full-screen cover…). Hover to preview
+one on the stage, click to choose, or type what you want there and send it to Claude, who adds
+it as an option. The Ask Claude box in the inspector takes anything else in plain words.
+
 The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `screen.mp4` the recording's
 screen track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4`
 a span rendered on its own.

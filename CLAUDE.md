@@ -45,6 +45,16 @@ captions; a `screen` graphic plays the recording's own screen beside the head wh
 `get_framing` reports a screen span) → `render_final` over a word range first (a minute), the
 whole film once the spans look right.
 
+**The dialogue, when the person wants a say.** Instead of writing every scene yourself, mark the
+moments with `set_inserts`: each insert point is a word span, a line saying what the moment is,
+and two to four ready-made options (your recommendation first; it is placed at once so the film
+always has a plan). The window shows the points in the transcript and the timeline; the person
+previews and picks, or asks for something else in words. Then sit in `wait_for_input`: an
+`insert-chosen` event needs nothing from you; an `insert-other` carries their words — add an
+option that does what they asked (`set_inserts` with the same ids keeps everything else),
+`apply_insert` it, and say so; a `message` is a request in plain words about anything — do it,
+then keep listening. Leave the loop when they say they are done, then render.
+
 Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
 licences, SVGs rasterised) and `fetch_image` (a direct image, a page's share image, or a site's
 icon), which file them under `media/<project>/assets/` for `image` and `logos` graphics and the

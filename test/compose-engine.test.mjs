@@ -127,3 +127,37 @@ test("full-stage kinds validate, and a custom graphic may carry nothing that run
   bad({ kind: "custom", html: "<img src=\"https://example.com/x.png\">" }, /may not contain/);
   bad({ kind: "custom", html: "<div>x</div>", css: "@import url(evil.css);" }, /may not contain/);
 });
+
+test("insert points validate, materialise a choice, and replace it on a second choice", async () => {
+  const { validateInserts, applyInsertChoice, resolveInserts } = await import("../core/compose-engine.mjs");
+  const option = (id, label, scenes) => ({ id, label, scenes });
+  const inserts = [{
+    id: "features", fromWordId: 0, toWordId: 2, why: "the feature list",
+    options: [
+      option("side", "Side card", [{ type: "stage", fromWordId: 0, toWordId: 2, layout: "side" }, { type: "graphic", fromWordId: 0, toWordId: 2, graphic: { kind: "list", items: [{ label: "a" }] } }]),
+      option("kinetic", "Spoken words", [{ type: "kinetic", fromWordId: 0, toWordId: 2 }]),
+    ],
+  }];
+  validateInserts(inserts, words);
+  assert.throws(() => validateInserts([{ ...inserts[0], id: "Bad Id" }], words), /slug/);
+  assert.throws(() => validateInserts([{ ...inserts[0], chosen: "nope" }], words), /not one of its options/);
+  assert.throws(() => validateInserts([{ ...inserts[0], options: [] }], words), /1–5 options/);
+  const config = { scenes: [{ type: "title", fromWordId: 1, toWordId: 2, text: "keep me" }], inserts };
+  const chosen = applyInsertChoice(config, "features", "side");
+  assert.equal(chosen.scenes.length, 3);
+  assert.equal(chosen.scenes.filter((s) => s.insertId === "features").length, 2);
+  assert.equal(chosen.inserts[0].chosen, "side");
+  const swapped = applyInsertChoice(chosen, "features", "kinetic");
+  assert.equal(swapped.scenes.length, 2);
+  assert.equal(swapped.scenes.find((s) => s.insertId)?.type, "kinetic");
+  assert.equal(swapped.scenes.find((s) => s.text === "keep me")?.type, "title", "scenes outside the insert stay");
+  const cleared = applyInsertChoice(swapped, "features", null);
+  assert.equal(cleared.scenes.length, 1);
+  assert.equal(cleared.inserts[0].chosen, null);
+  const other = applyInsertChoice(cleared, "features", "other", "make it a chart of the three stages");
+  assert.equal(other.inserts[0].note, "make it a chart of the three stages");
+  const resolved = resolveInserts(inserts, words);
+  assert.equal(resolved[0].start, 0);
+  assert.equal(resolved[0].options[0].scenes[0].insertId, "features");
+  assert.equal(typeof resolved[0].options[0].scenes[0].start, "number");
+});
