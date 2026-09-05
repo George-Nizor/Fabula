@@ -362,15 +362,23 @@ body.insp-collapsed .inspector { display: none; }
   padding: 22px;
   min-width: 0;
   min-height: 0;
+  /* The well is a size container so the frame can be sized by whichever of
+     its width or height is the tighter fit (cqw/cqh below). */
+  container-type: size;
 }
 
+/* The frame keeps the picture's aspect at every window size: as wide as the
+   well allows, unless the well is too short for that, in which case as tall
+   as the well allows. Never clipped, never squashed. --ar is the picture's
+   aspect (width / height), set from the footage in Cut; the stage is 16:9. */
 .videoframe {
   position: relative;
   container-type: size;
   overflow: hidden;
   border-radius: 14px;
-  max-width: 100%;
-  max-height: 100%;
+  --ar: 1.77778;
+  aspect-ratio: var(--ar);
+  width: min(100cqw, calc(100cqh * var(--ar)));
   box-shadow: 0 10px 40px rgba(31, 30, 29, 0.22), 0 2px 8px rgba(31, 30, 29, 0.12);
   background: #0b0e12;
 }
@@ -384,7 +392,6 @@ body.insp-collapsed .inspector { display: none; }
 /* Cut mode: the head card is not a box of its own, the raw video sizes the
    frame as before (the card's 100% sizing is for the stage only). Compose
    mode positions it as the stage's head layer. */
-.videoframe:not(.is-stage) { width: 100%; }
 .videoframe:not(.is-stage) .stage-head { display: contents; }
 .videoframe:not(.is-stage) .stage-head video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
 
@@ -420,8 +427,7 @@ body.insp-collapsed .inspector { display: none; }
 /* Compose mode: the frame becomes the 1080p stage and the video a layer on
    it, positioned inline by the stage engine. */
 .videoframe.is-stage {
-  aspect-ratio: 16 / 9;
-  width: 100%;
+  --ar: 1.77778;
   align-self: center;
 }
 

@@ -916,6 +916,13 @@ function renderGuides(now) {
 
 // ---- Render ----
 
+// The frame's aspect is one CSS variable the stylesheet sizes from (width
+// or height, whichever the well constrains). Null means the 16:9 stage.
+function setFrameAspect(frame, ratio) {
+  if (ratio && Number.isFinite(ratio)) frame.style.setProperty("--ar", ratio.toFixed(5));
+  else frame.style.removeProperty("--ar");
+}
+
 function setMode(next) {
   if (next === "scenes" && !compose()) next = "cut";
   if (next !== mode) exportFlash = null;
@@ -983,7 +990,7 @@ function render() {
     frame.classList.remove("is-stage", "stage-field");
     // The frame is a size container (cq units); the raw footage's own aspect
     // gives it a size, since its contents cannot.
-    frame.style.aspectRatio = els.video.videoWidth ? `${els.video.videoWidth} / ${els.video.videoHeight}` : "16 / 9";
+    setFrameAspect(frame, els.video.videoWidth ? els.video.videoWidth / els.video.videoHeight : null);
     els.head.style.left = els.head.style.top = "";
     els.head.style.width = els.head.style.height = "";
     els.head.style.borderRadius = "";
@@ -1006,7 +1013,7 @@ function render() {
     els.video.style.transform = "";
     els.guides.hidden = true;
     frame.classList.add("is-stage", "stage-field");
-    frame.style.aspectRatio = "";
+    setFrameAspect(frame, null);
     if (compose().screenUrl && els.screen.src !== compose().screenUrl) els.screen.src = compose().screenUrl;
     els.trackCuts.hidden = true;
     els.trackLayout.hidden = els.trackScenes.hidden = false;
@@ -1268,7 +1275,7 @@ els.video.addEventListener("pause", () => {
 });
 els.video.addEventListener("loadedmetadata", () => {
   if (mode === "scenes" && compose()) { els.timeTotal.textContent = fmt(composeDuration(), false); renderSceneTimeline(); }
-  else if (els.video.videoWidth) els.video.closest(".videoframe").style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
+  else if (els.video.videoWidth) setFrameAspect(els.video.closest(".videoframe"), els.video.videoWidth / els.video.videoHeight);
   delete els.guides.dataset.key;
 });
 
