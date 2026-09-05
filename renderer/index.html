@@ -87,6 +87,9 @@
         <div class="insp-keys">
           <span><kbd>space</kbd> play</span>
           <span><kbd>←</kbd><kbd>→</kbd> 2 s · <kbd>shift</kbd> 10 s</span>
+          <span><kbd>,</kbd><kbd>.</kbd> one frame</span>
+          <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> back · stop · play, twice for faster</span>
+          <span><kbd>ctrl</kbd> + wheel zooms · drag the ruler to scrub</span>
           <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut</span>
         </div>
       </div>
@@ -234,15 +237,22 @@
       <label class="toggle" id="captions-wrap" hidden>captions
         <select id="stage-captions"><option value="none">off</option><option value="open">burned in</option><option value="closed">CC file</option><option value="both">both</option></select>
       </label>
+      <span class="zoomctl" id="zoomctl">
+        <button type="button" class="zoombtn" id="zoom-out" title="Zoom out · ctrl + wheel over the timeline" aria-label="Zoom out">−</button>
+        <span class="zoom-level" id="zoom-level" title="How much of the film the timeline shows">all</span>
+        <button type="button" class="zoombtn" id="zoom-in" title="Zoom in · ctrl + wheel over the timeline" aria-label="Zoom in">+</button>
+        <button type="button" class="insp-mini" id="zoom-fit" title="Show the whole film">fit</button>
+      </span>
       <span class="transport-note" id="transport-note"></span>
     </div>
     <div class="timeline" id="timeline">
-      <div class="tl-track tl-track-ruler"><span class="tl-label"></span><div class="tl-ruler" id="lane-ruler"></div></div>
-      <div class="tl-track" id="track-cuts"><span class="tl-label">cuts</span><div class="tl-lane" id="lane-cuts"></div></div>
-      <div class="tl-track" id="track-layout" hidden><span class="tl-label">stage</span><div class="tl-lane" id="lane-layout"></div></div>
-      <div class="tl-track" id="track-screen" hidden><span class="tl-label">screen</span><div class="tl-lane is-quiet" id="lane-screen"></div></div>
-      <div class="tl-track" id="track-scenes" hidden><span class="tl-label">scenes</span><div class="tl-lane" id="lane-scenes"></div></div>
-      <div class="tl-track" id="track-inserts" hidden><span class="tl-label">inserts</span><div class="tl-lane is-quiet" id="lane-inserts"></div></div>
+      <div class="tl-track tl-track-map"><span class="tl-label"></span><div class="tl-minimap" id="tl-minimap" title="The whole film. Drag the window to pan, click to go there."><div class="tl-map-inner" id="map-inner"></div><div class="tl-map-view" id="map-view"></div><div class="tl-map-head" id="map-head"></div></div></div>
+      <div class="tl-track tl-track-ruler"><span class="tl-label"></span><div class="tl-ruler"><div class="tl-inner" id="lane-ruler"></div></div></div>
+      <div class="tl-track" id="track-cuts"><span class="tl-label">cuts</span><div class="tl-lane"><div class="tl-inner" id="lane-cuts"></div></div></div>
+      <div class="tl-track" id="track-layout" hidden><span class="tl-label">stage</span><div class="tl-lane"><div class="tl-inner" id="lane-layout"></div></div></div>
+      <div class="tl-track" id="track-screen" hidden><span class="tl-label">screen</span><div class="tl-lane is-quiet"><div class="tl-inner" id="lane-screen"></div></div></div>
+      <div class="tl-track" id="track-scenes" hidden><span class="tl-label">scenes</span><div class="tl-lane"><div class="tl-inner" id="lane-scenes"></div></div></div>
+      <div class="tl-track" id="track-inserts" hidden><span class="tl-label">inserts</span><div class="tl-lane is-quiet"><div class="tl-inner" id="lane-inserts"></div></div></div>
       <div class="tl-playhead" id="tl-playhead"></div>
     </div>
   </footer>

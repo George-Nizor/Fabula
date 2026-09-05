@@ -35,6 +35,8 @@ const els = {
   insertNote: $("insert-note"), insertNoteSend: $("insert-note-send"), insertClose: $("insert-close"), insertStatus: $("insert-status"),
   askText: $("ask-text"), askSend: $("ask-send"), askStatus: $("ask-status"),
   playhead: $("tl-playhead"),
+  zoomOut: $("zoom-out"), zoomIn: $("zoom-in"), zoomFit: $("zoom-fit"), zoomLevel: $("zoom-level"),
+  minimap: $("tl-minimap"), mapInner: $("map-inner"), mapView: $("map-view"), mapHead: $("map-head"),
   inspector: $("inspector"), inspTitle: $("insp-title"), inspProject: $("insp-project"), inspBody: $("insp-body"),
   inspCutSummary: $("insp-cut-summary"), sumCuts: $("sum-cuts"), sumRemoved: $("sum-removed"), sumShots: $("sum-shots"), sumFraming: $("sum-framing"),
   themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
@@ -64,6 +66,15 @@ let userChoseTab = false;
 let statusTimer = null;
 let railWanted = true; // the transcript rail in Cut, as the person left it
 let scriptOpen = false; // the script drawer in Scenes
+let shuttle = 0; // J/K/L: negative rates run the picture backwards from the frame loop
+let lastTick = 0;
+
+// The timeline window: zoom 1 is the whole film; the lanes show
+// [start, start + total / zoom]. One window per stage, reset per project.
+const views = { cut: { start: 0, zoom: 1 }, scenes: { start: 0, zoom: 1 } };
+let viewProject = null;
+const view = () => views[mode === "cut" ? "cut" : "scenes"];
+const MIN_VISIBLE_SECONDS = 4;
 
 const CAPTION_NOTES = {
   none: "No captions anywhere.",
@@ -127,9 +138,92 @@ function totalSeconds() {
   return mode === "cut" ? review().duration : composeDuration();
 }
 
-function seek(t) {
+function seek(t, { follow = true } = {}) {
   const total = totalSeconds();
-  els.video.currentTime = Math.min(Math.max(t, 0), Math.max(total - 0.05, 0));
+  const at = Math.min(Math.max(t, 0), Math.max(total - 0.05, 0));
+  els.video.currentTime = at;
+  if (follow) followTime(at);
+}
+
+// ---- The timeline window ----
+
+const visibleSeconds = () => totalSeconds() / view().zoom;
+const laneBox = () => (mode === "cut" ? els.laneCuts : els.laneScenes).parentElement.getBoundingClientRect();
+const timeAtPointer = (clientX) => {
+  const box = laneBox();
+  const frac = box.width > 0 ? Math.min(Math.max((clientX - box.left) / box.width, 0), 1) : 0;
+  return view().start + frac * visibleSeconds();
+};
+
+// A moment outside the window pulls the window along: the playhead lands a
+// tenth of the way in, so what comes next has room.
+function followTime(t) {
+  const v = view();
+  if (v.zoom <= 1) return;
+  const visible = visibleSeconds();
+  if (t >= v.start && t <= v.start + visible * 0.97) return;
+  v.start = t - visible * 0.1;
+  applyView();
+}
+
+function setZoom(zoom, anchorTime = null) {
+  const v = view();
+  const total = totalSeconds();
+  const next = Math.min(Math.max(zoom, 1), Math.max(total / MIN_VISIBLE_SECONDS, 1));
+  const anchor = anchorTime ?? v.start + visibleSeconds() / 2;
+  const frac = visibleSeconds() > 0 ? (anchor - v.start) / visibleSeconds() : 0.5;
+  v.zoom = next;
+  v.start = anchor - frac * (total / next);
+  applyView();
+}
+
+let tinyPending = false;
+function applyView() {
+  const total = totalSeconds();
+  if (!total) return;
+  const v = view();
+  const visible = total / v.zoom;
+  v.start = Math.min(Math.max(v.start, 0), Math.max(total - visible, 0));
+  const width = `${v.zoom * 100}%`;
+  const left = `${-(v.start / total) * v.zoom * 100}%`;
+  for (const inner of els.timeline.querySelectorAll(".tl-inner")) {
+    if (inner.style.width !== width) inner.style.width = width;
+    if (inner.style.left !== left) inner.style.left = left;
+  }
+  renderRuler(total, v.start, visible);
+  els.zoomLevel.textContent = v.zoom <= 1.001 ? "all" : fmt(visible, false);
+  els.zoomOut.disabled = v.zoom <= 1.001;
+  els.zoomIn.disabled = v.zoom >= Math.max(total / MIN_VISIBLE_SECONDS, 1) - 0.001;
+  els.mapView.style.left = `${(v.start / total) * 100}%`;
+  els.mapView.style.width = `${(visible / total) * 100}%`;
+  els.mapView.classList.toggle("is-all", v.zoom <= 1.001);
+  els.playhead.style.top = `${els.laneRuler.parentElement.parentElement.offsetTop}px`;
+  if (!tinyPending) {
+    tinyPending = true;
+    requestAnimationFrame(() => { tinyPending = false; hideTinyLabels(); });
+  }
+}
+
+// The whole film in one strip: cuts in Cut, the placed layouts and the
+// scenes in Scenes. It is the map the window moves over.
+function renderMinimap() {
+  const total = totalSeconds();
+  els.mapInner.replaceChildren();
+  const add = (start, end, cls) => {
+    const block = document.createElement("div");
+    block.className = `tl-map-block ${cls}`;
+    block.style.left = `${(start / total) * 100}%`;
+    block.style.width = `${Math.max(((end - start) / total) * 100, 0.1)}%`;
+    els.mapInner.append(block);
+  };
+  if (mode === "cut") {
+    for (const cut of enabledCuts()) add(cut.start, cut.end, "is-cut");
+  } else {
+    const c = compose();
+    for (const segment of c.layoutTimeline ?? []) if (segment.layout !== "focus") add(segment.start, segment.end, "is-dim");
+    for (const span of c.screenSpans ?? []) add(span.start, span.end, "is-screen");
+    for (const scene of c.scenes) if (scene.type !== "stage") add(scene.start, scene.end, "");
+  }
 }
 
 function composeDuration() {
@@ -251,10 +345,15 @@ function rulerStep(total) {
   return steps.find((step) => total / step <= 9) ?? 3600;
 }
 
-function renderRuler(total) {
+let rulerKey = "";
+function renderRuler(total, start = 0, visible = total) {
+  const step = rulerStep(visible);
+  const first = Math.max(Math.floor(start / step) * step, 0);
+  const key = `${total}:${step}:${first}:${visible}`;
+  if (key === rulerKey) return;
+  rulerKey = key;
   els.laneRuler.replaceChildren();
-  const step = rulerStep(total);
-  for (let t = 0; t < total - step * 0.3; t += step) {
+  for (let t = first; t < Math.min(start + visible + step, total - step * 0.3); t += step) {
     const tick = document.createElement("span");
     tick.className = "tl-tick";
     tick.style.left = `${(t / total) * 100}%`;
@@ -273,7 +372,6 @@ function place(el, start, end, total, minPercent = 0.8) {
 function renderCutTimeline() {
   const r = review();
   const total = r.duration;
-  renderRuler(total);
   els.laneCuts.replaceChildren();
   r.cuts.forEach((cut, index) => {
     const block = document.createElement("div");
@@ -284,6 +382,8 @@ function renderCutTimeline() {
     block.dataset.cutIndex = String(index);
     els.laneCuts.append(block);
   });
+  renderMinimap();
+  applyView();
 }
 
 // Scenes: one lane for where the head sits, one for the screen track where
@@ -296,7 +396,6 @@ const settledAt = (start, end) => start + Math.min(0.75, Math.max((end - start) 
 function renderSceneTimeline() {
   const c = compose();
   const total = composeDuration();
-  renderRuler(total);
 
   els.laneLayout.replaceChildren();
   for (const segment of c.layoutTimeline ?? []) {
@@ -353,7 +452,8 @@ function renderSceneTimeline() {
     if (index === selectedScene) block.classList.add("is-selected");
     els.laneScenes.append(block);
   });
-  hideTinyLabels();
+  renderMinimap();
+  applyView();
 }
 
 // A thirteen-minute film packs the lanes; a label that would show two
@@ -365,7 +465,7 @@ function hideTinyLabels() {
     }
   });
 }
-window.addEventListener("resize", hideTinyLabels);
+window.addEventListener("resize", () => { if (state && onStage()) applyView(); });
 
 // ---- Inspector ----
 
@@ -684,6 +784,12 @@ function setMode(next) {
 
 function render() {
   renderProgress();
+  if (state?.project !== viewProject) {
+    viewProject = state?.project ?? null;
+    views.cut = { start: 0, zoom: 1 };
+    views.scenes = { start: 0, zoom: 1 };
+    rulerKey = "";
+  }
   if (!review()) {
     els.session.hidden = true;
     els.stages.hidden = true;
@@ -822,12 +928,91 @@ els.timeline.addEventListener("click", (event) => {
     if (target.dataset.scene !== undefined) openInspector(Number(target.dataset.scene));
     return;
   }
-  const lane = target.closest(".tl-lane, .tl-ruler");
-  if (lane) {
-    const box = lane.getBoundingClientRect();
-    seek(((event.clientX - box.left) / box.width) * totalSeconds());
-  }
 });
+
+// Drag on the ruler or a lane's background scrubs: the picture follows the
+// pointer, paused while the finger is down, and resumes if it was playing.
+let scrub = null;
+els.timeline.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || target.dataset.seek !== undefined || target.dataset.insert !== undefined) return;
+  if (!target.closest(".tl-lane, .tl-ruler")) return;
+  scrub = { wasPlaying: !els.video.paused, pointerId: event.pointerId };
+  stopShuttle();
+  if (scrub.wasPlaying) els.video.pause();
+  els.timeline.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-scrubbing");
+  seek(timeAtPointer(event.clientX), { follow: false });
+  event.preventDefault();
+});
+els.timeline.addEventListener("pointermove", (event) => {
+  if (!scrub || event.pointerId !== scrub.pointerId) return;
+  seek(timeAtPointer(event.clientX), { follow: false });
+});
+const endScrub = (event) => {
+  if (!scrub || event.pointerId !== scrub.pointerId) return;
+  document.body.classList.remove("is-scrubbing");
+  if (scrub.wasPlaying) els.video.play().catch(() => {});
+  scrub = null;
+};
+els.timeline.addEventListener("pointerup", endScrub);
+els.timeline.addEventListener("pointercancel", endScrub);
+
+// Wheel over the timeline: ctrl (or a pinch) zooms around the pointer; a
+// plain wheel pans a zoomed window.
+els.timeline.addEventListener("wheel", (event) => {
+  if (!state || !onStage()) return;
+  const v = view();
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    const overLane = event.target instanceof HTMLElement && event.target.closest(".tl-lane, .tl-ruler");
+    setZoom(v.zoom * Math.exp(-event.deltaY * 0.0025), overLane ? timeAtPointer(event.clientX) : null);
+    return;
+  }
+  if (v.zoom <= 1) return;
+  event.preventDefault();
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  const box = laneBox();
+  if (box.width > 0) { v.start += (delta / box.width) * visibleSeconds(); applyView(); }
+}, { passive: false });
+
+els.zoomIn.addEventListener("click", () => setZoom(view().zoom * 2, els.video.currentTime));
+els.zoomOut.addEventListener("click", () => setZoom(view().zoom / 2, els.video.currentTime));
+els.zoomFit.addEventListener("click", () => setZoom(1));
+
+// Minimap: drag the window to pan; click anywhere else to go there.
+let panning = null;
+const mapTime = (clientX) => {
+  const box = els.minimap.getBoundingClientRect();
+  return Math.min(Math.max((clientX - box.left) / box.width, 0), 1) * totalSeconds();
+};
+els.minimap.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || !state || !onStage()) return;
+  const v = view();
+  const at = mapTime(event.clientX);
+  if (event.target === els.mapView && v.zoom > 1) {
+    panning = { pointerId: event.pointerId, offset: at - v.start };
+    els.minimap.setPointerCapture(event.pointerId);
+    document.body.classList.add("is-panning");
+  } else {
+    if (v.zoom > 1) { v.start = at - visibleSeconds() / 2; applyView(); }
+    seek(at, { follow: false });
+  }
+  event.preventDefault();
+});
+els.minimap.addEventListener("pointermove", (event) => {
+  if (!panning || event.pointerId !== panning.pointerId) return;
+  view().start = mapTime(event.clientX) - panning.offset;
+  applyView();
+});
+const endPan = (event) => {
+  if (!panning || event.pointerId !== panning.pointerId) return;
+  document.body.classList.remove("is-panning");
+  panning = null;
+};
+els.minimap.addEventListener("pointerup", endPan);
+els.minimap.addEventListener("pointercancel", endPan);
 
 // Inspector: every control applies as it changes. Text applies on Enter or
 // when focus leaves, so half a word never hits the plan.
@@ -906,11 +1091,33 @@ els.askSend.addEventListener("click", async () => {
 const PLAY_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>';
 const PAUSE_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><rect x="2.4" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect><rect x="7" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect></svg>';
 
+// J/K/L. L plays, and again doubles the rate up to 4×; J runs the picture
+// backwards the same way from the frame loop, since a video element will
+// not; K stops both. Space and the button are plain play/pause at 1×.
+function stopShuttle() {
+  shuttle = 0;
+  if (els.video.playbackRate !== 1) els.video.playbackRate = 1;
+}
+function shuttleForward() {
+  if (shuttle < 0 || els.video.paused) { stopShuttle(); els.video.play().catch(() => {}); return; }
+  els.video.playbackRate = Math.min(els.video.playbackRate * 2, 4);
+}
+function shuttleBack() {
+  if (!els.video.paused) els.video.pause();
+  els.video.playbackRate = 1;
+  shuttle = shuttle < 0 ? Math.max(shuttle * 2, -4) : -1;
+  lastTick = performance.now();
+  els.playpause.innerHTML = PAUSE_ICON;
+}
+
 els.playpause.addEventListener("click", () => {
+  if (shuttle < 0) { stopShuttle(); els.playpause.innerHTML = PLAY_ICON; return; }
+  stopShuttle();
   if (els.video.paused) els.video.play();
   else els.video.pause();
 });
 els.video.addEventListener("play", () => {
+  shuttle = 0;
   els.playpause.innerHTML = PAUSE_ICON;
   els.playpause.setAttribute("aria-label", "Pause");
 });
@@ -942,6 +1149,28 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     const step = (event.shiftKey ? 10 : 2) * (event.key === "ArrowLeft" ? -1 : 1);
     seek(els.video.currentTime + step);
+  } else if (event.key === "," || event.key === ".") {
+    event.preventDefault();
+    stopShuttle();
+    els.video.pause();
+    seek(els.video.currentTime + (event.key === "." ? 1 : -1) / 30);
+  } else if (event.key === "j" || event.key === "J") {
+    event.preventDefault();
+    shuttleBack();
+  } else if (event.key === "k" || event.key === "K") {
+    event.preventDefault();
+    stopShuttle();
+    els.video.pause();
+    els.playpause.innerHTML = PLAY_ICON;
+  } else if (event.key === "l" || event.key === "L") {
+    event.preventDefault();
+    shuttleForward();
+  } else if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    seek(event.key === "Home" ? 0 : totalSeconds());
+  } else if ((event.key === "=" || event.key === "+" || event.key === "-") && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    setZoom(view().zoom * (event.key === "-" ? 0.5 : 2), els.video.currentTime);
   } else if ((event.key === "[" || event.key === "]") && mode === "cut") {
     const cut = nearestCut(event.key === "]" ? 1 : -1);
     if (cut) seek(Math.max(cut.start - 0.6, 0));
@@ -962,6 +1191,14 @@ function tick() {
     els.progressClock.textContent = fmt((Date.now() - Date.parse(state.progress.startedAt)) / 1000, false);
   }
   if (!state || els.player.hidden || !onStage()) return;
+  const stamp = performance.now();
+  if (shuttle < 0 && els.video.paused && !scrub) {
+    const dt = Math.min((stamp - lastTick) / 1000, 0.25);
+    const back = Math.max(els.video.currentTime + shuttle * dt, 0);
+    els.video.currentTime = back;
+    if (back <= 0) { stopShuttle(); els.playpause.innerHTML = PLAY_ICON; }
+  }
+  lastTick = stamp;
   const now = els.video.currentTime;
   let total;
 
@@ -1007,9 +1244,14 @@ function tick() {
     window.FabulaStage.update(els.overlay, els.head, composeForPaint(), now, null, c.screenUrl ? els.screen : null);
   }
 
-  const lane = (mode === "cut" ? els.laneCuts : els.laneScenes).getBoundingClientRect();
+  if ((!els.video.paused || shuttle < 0) && !scrub && !panning) followTime(now);
+  const lane = laneBox();
   const box = els.timeline.getBoundingClientRect();
-  if (lane.width > 0) els.playhead.style.left = `${lane.left - box.left + (now / total) * lane.width}px`;
+  const visible = total / view().zoom;
+  const x = (now - view().start) / visible;
+  els.playhead.hidden = x < 0 || x > 1;
+  if (lane.width > 0) els.playhead.style.left = `${lane.left - box.left + x * lane.width}px`;
+  els.mapHead.style.left = `${(now / total) * 100}%`;
 
   let current = null;
   for (const entry of wordSpans) {

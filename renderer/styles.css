@@ -709,12 +709,14 @@ input[type="color"] {
   text-align: right;
 }
 
-.tl-track-ruler { height: 0.9rem; }
+.tl-track-ruler { height: 1rem; }
+.tl-track-map { height: 10px; margin-bottom: 2px; }
 
 .tl-ruler {
   position: relative;
   flex: 1;
-  height: 0.9rem;
+  height: 1rem;
+  cursor: ew-resize;
   font-size: 0.6rem;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
@@ -740,22 +742,30 @@ input[type="color"] {
 .tl-lane {
   position: relative;
   flex: 1;
-  height: 1.5rem;
+  height: 2rem;
   border-radius: 7px;
   background: #eceadf;
   cursor: pointer;
+  overflow: hidden;
 }
 
-.tl-lane.is-quiet { height: 0.7rem; border-radius: 4px; }
+.tl-lane.is-quiet { height: 0.85rem; border-radius: 4px; }
+
+/* The inner strip is the whole film; zoom widens it, pan slides it. Blocks
+   are placed on it in percent of the film, so a zoom never re-renders them. */
+.tl-inner { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; }
+
+body.is-scrubbing { cursor: ew-resize; user-select: none; }
+body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 
 .tl-block {
   position: absolute;
   top: 0;
   bottom: 0;
   border-radius: 7px;
-  font-size: 0.66rem;
-  line-height: 1.5rem;
-  padding: 0 0.45rem;
+  font-size: 0.68rem;
+  line-height: 2rem;
+  padding: 0 0.5rem;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -800,9 +810,88 @@ input[type="color"] {
   cursor: default;
 }
 
+/* Minimap: the whole film in one thin strip, the window the lanes show
+   drawn over it. */
+.tl-minimap {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: #e2dfd3;
+  cursor: pointer;
+}
+
+.tl-map-inner { position: absolute; inset: 0; overflow: hidden; border-radius: 3px; }
+
+.tl-map-block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 1px;
+  background: color-mix(in srgb, var(--accent) 55%, #ffffff);
+  border-radius: 1px;
+}
+
+.tl-map-block.is-cut { background: var(--cut); top: 1px; bottom: 1px; }
+.tl-map-block.is-dim { background: #c9c5b6; }
+.tl-map-block.is-screen { background: color-mix(in srgb, #59d9f2 70%, #ffffff); }
+
+.tl-map-view {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  cursor: grab;
+  box-sizing: border-box;
+  min-width: 6px;
+}
+
+.tl-map-view.is-all { cursor: default; border-color: transparent; background: transparent; }
+body.is-panning .tl-map-view { cursor: grabbing; }
+
+.tl-map-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent-deep);
+  pointer-events: none;
+}
+
+.zoomctl { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+.zoombtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--dim);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zoombtn:hover { border-color: var(--accent); color: var(--accent-deep); }
+.zoombtn:disabled { opacity: 0.4; cursor: default; }
+
+.zoom-level {
+  min-width: 2.4rem;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .tl-playhead {
   position: absolute;
-  top: 0.9rem;
+  top: 1rem;
   bottom: 0;
   width: 2px;
   background: var(--accent);
