@@ -33,6 +33,35 @@ local hardware.
   Max subscription. That holds for a personal first-party tool; distributing Fabula to other users
   would require API keys and is out of scope.
 
+## Where it stands (2026-09-05)
+
+Slices 1 and 3 of the build order are built and used on a real 18-minute OBS recording; slice 2
+is done differently from the plan: Claude drives the pipeline from a Claude Code session through
+the `fabula` MCP server rather than an embedded Agent SDK, and the two-way dialogue (insert
+points, the Ask box) travels through `media/<project>/inbox.json`. What exists:
+
+- **Two renders, two kinds of gate.** `render_clean` finalises the cut once per cut list and
+  framing, compared by content identity (`out/clean-map.json`), and the compose stage only moves
+  that file around. `render_final` is layered and cached in two-minute chunks keyed on everything
+  that feeds them, the painter's own files included. Both are detached jobs with progress in the
+  window; both encode with NVENC from WSL.
+- **The window is four steps.** Cut (transcript rail, skip-preview, framing guides), Look (theme
+  presets, saved brands, colours and type, captions mode), Scenes (the 1080p stage with the
+  overlays painted by the export's own runtime, the script in a drawer), Export (render buttons,
+  progress, what is stale and why, every file written). The timeline under Cut and Scenes is a
+  zoomable window over the film with a minimap, drag-scrub and J/K/L. The frame keeps its aspect
+  at every window size.
+- **The look** is a theme (`core/themes.mjs`) applied as CSS variables by the same painter in the
+  window and in the export; a brand saved under `media/themes/` carries it to the next video.
+  Consistent branding means the animations and the backdrop, not a logo.
+- **Renders start from either side.** The MCP tools and the Export page use the same job specs
+  (`scripts/project-state.mjs`). On Windows the window hands a job to WSL through `wsl.exe`;
+  that path is written but has not yet been exercised on the Windows machine.
+
+Still open: cancelling a running job from the window, captions through libass instead of
+captured frames, an emoji graphic once a colour emoji font is vendored, and the embedded chat
+panel the original plan called for.
+
 ## The product is the review loop
 
 The pipeline below can run end to end, but Fabula is not a batch script — it is an editor with two
@@ -140,10 +169,14 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
 - **Slice 1 — the cut half, entirely local, no Design dependency.** Ingest → WhisperX transcribe →
   deterministic cut proposal → transcript editor with skip preview → approve → clean render with
   fades and punch-ins → re-transcribe. `core/cut-engine.mjs` (pure, tested) is the start.
+  *Built (2026-09-05).*
 - **Slice 2 — Claude in the loop.** Agent SDK embedding, in-process tools, the semantic cut pass.
+  *Built as an MCP server driven from Claude Code instead of an embedded agent; see "Where it
+  stands".*
 - **Slice 3 — the compose half.** Scene kit, shot-plan schema and lanes, live preview, the
   offscreen frame-capture exporter, stitch and normalize. The render spike (offscreen Electron
   capture on this WSL machine) is the first task here because it is the only unproven mechanism.
+  *Built (2026-09-05): the layered, chunk-cached export.*
 
 ## Open questions
 
