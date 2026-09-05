@@ -11,8 +11,17 @@ const TRANSITION_SECONDS = 0.6;
 
 const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
+// The head must not dart about. A return to focus shorter than this
+// between two placed segments is bridged (the head stays where it was), and
+// a placed segment shorter than this between two other layouts is absorbed
+// into the one before it rather than flown to and back.
+export const MIN_DWELL_SECONDS = 3;
+
+const sameLayout = (a, b) => a.layout === b.layout && (a.corner ?? null) === (b.corner ?? null);
+
 // Stage scenes -> a gapless timeline over [0, duration]; anywhere no layout
-// is declared, the head holds focus.
+// is declared, the head holds focus. Then the dwell rule, so the timeline
+// never asks for two flights within a breath of each other.
 export function resolveLayoutTimeline(resolvedScenes, durationSeconds) {
   const stageScenes = resolvedScenes
     .filter((scene) => scene.type === "stage")
@@ -30,7 +39,47 @@ export function resolveLayoutTimeline(resolvedScenes, durationSeconds) {
     cursor = Math.max(cursor, scene.end);
   }
   if (cursor < durationSeconds) segments.push({ start: cursor, end: durationSeconds, layout: "focus" });
-  return segments.filter((segment) => segment.end > segment.start);
+  return settleTimeline(segments.filter((segment) => segment.end > segment.start), durationSeconds);
+}
+
+// Bridges short returns to focus between placed segments, absorbs placed
+// segments too short to dwell in, and merges neighbours that ended up the
+// same. The first and last segments are never absorbed: a film may open or
+// close on a short shot.
+export function settleTimeline(segments, durationSeconds) {
+  let out = segments.map((s) => ({ ...s }));
+  for (let pass = 0; pass < 4; pass += 1) {
+    let changed = false;
+    // Short focus gaps between two placed layouts: extend the earlier one.
+    for (let i = 1; i + 1 < out.length; i += 1) {
+      const gap = out[i];
+      if (gap.layout !== "focus" || gap.end - gap.start >= MIN_DWELL_SECONDS) continue;
+      if (out[i - 1].layout === "focus" || out[i + 1].layout === "focus") continue;
+      out[i - 1] = { ...out[i - 1], end: gap.end };
+      out.splice(i, 1);
+      changed = true;
+      i -= 1;
+    }
+    // Short placed segments between two other layouts: the earlier one holds.
+    for (let i = 1; i + 1 < out.length; i += 1) {
+      const seg = out[i];
+      if (seg.layout === "focus" || seg.end - seg.start >= MIN_DWELL_SECONDS) continue;
+      out[i - 1] = { ...out[i - 1], end: seg.end };
+      out.splice(i, 1);
+      changed = true;
+      i -= 1;
+    }
+    // Same layout twice in a row is one segment.
+    for (let i = 0; i + 1 < out.length; i += 1) {
+      if (!sameLayout(out[i], out[i + 1])) continue;
+      out[i] = { ...out[i], end: out[i + 1].end };
+      out.splice(i + 1, 1);
+      changed = true;
+      i -= 1;
+    }
+    if (!changed) break;
+  }
+  return out.filter((segment) => segment.end > segment.start && segment.start < durationSeconds);
 }
 
 // The rectangles a layout gives to the head and to the visuals, in stage

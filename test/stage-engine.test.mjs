@@ -53,3 +53,23 @@ test("time before or past the timeline clamps to its ends", () => {
   assert.deepEqual(layoutAt(timeline, -1, 1).video, layoutRects("focus", null, 1).video);
   assert.deepEqual(layoutAt(timeline, 99, 1).video, layoutRects("focus", null, 1).video);
 });
+
+test("the dwell rule bridges short returns to focus and absorbs short flights", () => {
+  const side = (start, end) => ({ type: "stage", start, end, layout: "side" });
+  const pip = (start, end, corner = "br") => ({ type: "stage", start, end, layout: "pip", corner });
+  // side, a 1.5 s focus gap, side again: one side segment.
+  let tl = resolveLayoutTimeline([side(10, 20), side(21.5, 30)], 60);
+  assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 10, "focus"], [10, 30, "side"], [30, 60, "focus"]]);
+  // side, a 1 s pip, side: the pip is absorbed, the sides merge.
+  tl = resolveLayoutTimeline([side(10, 20), pip(20, 21), side(21, 30)], 60);
+  assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 10, "focus"], [10, 30, "side"], [30, 60, "focus"]]);
+  // A 1 s pip alone in a long focus run: absorbed into the focus before it.
+  tl = resolveLayoutTimeline([pip(10, 11)], 60);
+  assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 60, "focus"]]);
+  // Long gaps and long segments are untouched.
+  tl = resolveLayoutTimeline([side(10, 20), side(25, 30)], 60);
+  assert.deepEqual(tl.map((s) => s.layout), ["focus", "side", "focus", "side", "focus"]);
+  // A short shot at the very end of the film stays.
+  tl = resolveLayoutTimeline([side(58, 60)], 60);
+  assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 58, "focus"], [58, 60, "side"]]);
+});
