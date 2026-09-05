@@ -9,7 +9,8 @@
 
 let compose = null;
 const frame = document.getElementById("frame");
-const head = document.getElementById("head");
+const headCard = document.getElementById("head");
+const head = document.getElementById("head-video");
 const screen = document.getElementById("screen");
 const stage = document.getElementById("stage");
 
@@ -31,6 +32,7 @@ function seekTo(video, t) {
 
 window.__setCompose = async (data, { media = true } = {}) => {
   compose = data;
+  if (compose.theme) window.FabulaStage.applyTheme(frame, compose.theme);
   if (!media) return true;
   head.src = data.videoUrl;
   const waits = [loaded(head)];
@@ -53,12 +55,12 @@ window.__renderAt = async (t, layout) => {
   if (!compose) throw new Error("compose data not set");
   frame.classList.remove("is-layer");
   frame.classList.add("stage-field");
-  head.hidden = false;
+  headCard.hidden = false;
   const seeks = [seekTo(head, t)];
   const useScreen = Boolean(compose.screenUrl) && screenActiveAt(t);
   if (useScreen) seeks.push(seekTo(screen, t));
   await Promise.all(seeks);
-  window.FabulaStage.update(stage, head, compose, t, layout, compose.screenUrl ? screen : null);
+  window.FabulaStage.update(stage, headCard, compose, t, layout, compose.screenUrl ? screen : null);
   await painted();
   return true;
 };
@@ -67,7 +69,7 @@ window.__renderAt = async (t, layout) => {
 window.__fieldOnly = async () => {
   frame.classList.remove("is-layer");
   frame.classList.add("stage-field");
-  head.hidden = true;
+  headCard.hidden = true;
   screen.hidden = true;
   stage.replaceChildren();
   delete stage.dataset.state;
@@ -86,7 +88,7 @@ window.__keysRange = (ts, layouts) => ts.map((t, i) => {
 window.__renderLayer = async (t, layout, layer) => {
   frame.classList.add("is-layer");
   frame.classList.remove("stage-field");
-  head.hidden = true;
+  headCard.hidden = true;
   screen.hidden = true;
   const plan = window.FabulaStage.plan(compose, t, layout);
   window.FabulaStage.paint(stage, plan, layer);

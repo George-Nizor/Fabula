@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="overlays.css" />
   <style>
     /* The full 1080p composition: the charcoal stage, the head and screen as
@@ -9,6 +10,7 @@
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
     #frame { position: fixed; inset: 0; }
     #head { position: absolute; }
+    #head video { width: 100%; height: 100%; }
     /* Layer capture: a transparent frame with only one layer's pieces. */
     #frame.is-layer { background: transparent; }
     #frame.is-layer .stage-glow { display: none; }
@@ -16,7 +18,7 @@
 </head>
 <body>
   <div id="frame" class="stage-field stage-frame">
-    <video id="head" class="stage-video" muted preload="auto"></video>
+    <div id="head" class="stage-head"><video id="head-video" muted preload="auto"></video></div>
     <video id="screen" class="stage-screen" muted preload="auto" hidden></video>
     <div id="stage" class="ov-layer is-static"></div>
   </div>

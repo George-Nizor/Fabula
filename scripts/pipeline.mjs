@@ -1,11 +1,13 @@
-// I/O around the core engines, shared by the CLI driver and the MCP server:
-// probing, transcription, cut computation, source framing, and the clean
-// render. Everything here takes and returns plain data; process exit codes
-// and protocol framing belong to the callers.
+// I/O around the core engines, shared by the CLI driver, the MCP server and
+// the background jobs: probing, transcription, cut computation, source
+// framing, the clean render, encoder selection, and the progress file the
+// window watches. Everything here takes and returns plain data; process exit
+// codes and protocol framing belong to the callers.
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   flattenWords,
@@ -22,22 +24,24 @@ import {
   screenOutputSize,
   screenSpans,
 } from "../core/framing-engine.mjs";
+import { cutIdentity, cleanIdentity, CLEAN_VERSION } from "../core/clean-identity.mjs";
+import { frameSpans, cleanGraph } from "../core/clean-graph.mjs";
 
 export const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const FFMPEG = path.join(REPO_ROOT, "tools", "ffmpeg", "ffmpeg");
-const FFPROBE = path.join(REPO_ROOT, "tools", "ffmpeg", "ffprobe");
+export const FFMPEG = path.join(REPO_ROOT, "tools", "ffmpeg", "ffmpeg");
+export const FFPROBE = path.join(REPO_ROOT, "tools", "ffmpeg", "ffprobe");
 const WHISPERX = path.join(REPO_ROOT, ".venv-whisperx", "bin", "whisperx");
 
 // The clean cut is delivered at stage resolution and a review-friendly frame
 // rate: a 3440x1440 60fps master would otherwise cost four times the encode
-// for pixels the 1080p stage never shows. Keyframes land every 12 frames:
-// the export seeks this file once per frame, and a seek decodes from the
-// previous keyframe, so an eight-second GOP made every capture decode most
-// of a GOP (2.4 fps at 1080p); a 0.4 s GOP roughly doubles that for about
-// a third more bytes on an intermediate nobody ships.
+// for pixels the 1080p stage never shows. A one-second GOP keeps the window's
+// scrubbing and the final render's per-chunk seeks quick; nothing seeks it
+// per frame any more.
 export const CLEAN_FPS = 30;
 export const CLEAN_CEILING = { width: 1920, height: 1080 };
-export const CLEAN_GOP = 12;
+export const CLEAN_GOP = 30;
+
+export const sha = (text) => crypto.createHash("sha1").update(text).digest("hex").slice(0, 16);
 
 export function probeDuration(file) {
   const result = spawnSync(FFPROBE, [
@@ -64,6 +68,64 @@ export function probeDimensions(file) {
   return { width, height };
 }
 
+// ---- Encoders ----
+//
+// The 4080's NVENC is reachable from WSL (libnvidia-encode is exposed under
+// /usr/lib/wsl/lib) once the ffmpeg build knows how to ask; the John Van
+// Sickle static build does not, the BtbN GPL build does. Probed with a real
+// encode of a few frames (NVENC refuses tiny ones), never inferred from the
+// encoder list, and cached
+// beside the binary so every job does not pay for the probe. NVDEC is
+// deliberately not used: it decodes this footage no faster than sixteen
+// cores do and would tie the clean render to h264/hevc sources.
+
+let capabilities = null;
+
+export function encoderCapabilities() {
+  if (capabilities) return capabilities;
+  let binary = null;
+  try {
+    const stat = fs.statSync(FFMPEG);
+    binary = `${stat.size}:${Math.round(stat.mtimeMs)}`;
+  } catch {
+    return (capabilities = { binary: null, nvenc: false, version: null });
+  }
+  const cacheFile = path.join(path.dirname(FFMPEG), ".capabilities.json");
+  try {
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (cached.binary === binary) return (capabilities = cached);
+  } catch { /* first run with this binary */ }
+  const probe = spawnSync(FFMPEG, [
+    "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=256x144:r=30:d=0.2",
+    "-c:v", "h264_nvenc", "-f", "null", "-",
+  ], { encoding: "utf8" });
+  const version = (spawnSync(FFMPEG, ["-version"], { encoding: "utf8" }).stdout ?? "").split("\n")[0] ?? null;
+  capabilities = { binary, nvenc: probe.status === 0, version };
+  try { fs.writeFileSync(cacheFile, JSON.stringify(capabilities, null, 2)); } catch { /* read-only tools dir is fine */ }
+  return capabilities;
+}
+
+// The video encoder for a role: `head` and `screen` are the clean cut's two
+// tracks (an intermediate that is decoded again and again, so smallish and
+// quick), `film` is the delivered picture. One GOP length for all of them.
+export function videoEncoderArgs(role, gop = CLEAN_GOP) {
+  const common = ["-pix_fmt", "yuv420p", "-g", String(gop)];
+  if (encoderCapabilities().nvenc) {
+    const quality = {
+      head: ["-preset", "p5", "-tune", "hq", "-cq", "21"],
+      screen: ["-preset", "p4", "-tune", "hq", "-cq", "23"],
+      film: ["-preset", "p6", "-tune", "hq", "-cq", "19", "-temporal-aq", "1"],
+    }[role];
+    return ["-c:v", "h264_nvenc", ...quality, "-rc", "vbr", "-b:v", "0", "-bf", "2", "-spatial-aq", "1", "-profile:v", "high", ...common];
+  }
+  const quality = {
+    head: ["-preset", "medium", "-crf", "18"],
+    screen: ["-preset", "veryfast", "-crf", "20"],
+    film: ["-preset", "medium", "-crf", "18"],
+  }[role];
+  return ["-c:v", "libx264", ...quality, "-keyint_min", String(gop), ...common];
+}
+
 // faster-whisper's ctranslate2 loads CUDA from the wheels inside the venv,
 // not from a system install this machine does not have; whisperx also expects
 // an ffmpeg on PATH. Both are supplied here so callers need no environment.
@@ -81,7 +143,9 @@ function whisperEnv() {
 // WhisperX large-v3 on CUDA, word timestamps, JSON out — the brief's
 // transcribe step. Writes <video basename>.json next to outPath's directory
 // and renames it to outPath. Minutes-long on first run (model download).
-export function transcribe(videoPath, outPath) {
+// `stamp` is recorded under a `fabula` key so the transcript can say which
+// cut it describes (see cleanTranscriptCurrent).
+export function transcribe(videoPath, outPath, options = {}) {
   const outDir = path.dirname(outPath);
   fs.mkdirSync(outDir, { recursive: true });
   const result = spawnSync(WHISPERX, [
@@ -96,8 +160,11 @@ export function transcribe(videoPath, outPath) {
     throw new Error(`whisperx failed (${result.status}): ${(result.stderr || "").slice(-800)}`);
   }
   const produced = path.join(outDir, path.basename(videoPath, path.extname(videoPath)) + ".json");
-  if (produced !== outPath) fs.renameSync(produced, outPath);
-  return JSON.parse(fs.readFileSync(outPath, "utf8"));
+  const transcript = JSON.parse(fs.readFileSync(produced, "utf8"));
+  if (options.stamp) transcript.fabula = options.stamp;
+  fs.writeFileSync(outPath, JSON.stringify(transcript));
+  if (produced !== outPath) fs.rmSync(produced, { force: true });
+  return transcript;
 }
 
 // Transcript + duration -> the full review state the UI renders: every word,
@@ -139,21 +206,38 @@ export function reviewStats(review) {
 //
 // progress.json is rewritten at every step boundary; the window reads the
 // stage and the clock and keeps the person company. Cleared on completion
-// so a finished project shows nothing.
+// so a finished project shows nothing. A background job records its pid
+// here, which is how a later session can tell "still running" from "died".
 
-export function reportProgress(dir, stage, label, detail = "") {
-  const file = path.join(dir, "progress.json");
-  let startedAt = new Date().toISOString();
+const PROGRESS = "progress.json";
+
+export function readProgress(dir) {
   try {
-    const previous = JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.parse(fs.readFileSync(path.join(dir, PROGRESS), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function reportProgress(dir, stage, label, detail = "", extra = {}) {
+  const file = path.join(dir, PROGRESS);
+  let startedAt = new Date().toISOString();
+  let pid = extra.pid;
+  const previous = readProgress(dir);
+  if (previous) {
     const failed = typeof previous.detail === "string" && previous.detail.startsWith("failed:");
-    if (previous.stage === stage && previous.startedAt && !failed) startedAt = previous.startedAt;
-  } catch { /* fresh */ }
-  fs.writeFileSync(file, JSON.stringify({ stage, label, detail, startedAt, updatedAt: new Date().toISOString() }, null, 2));
+    if (previous.stage === stage && previous.startedAt && !failed) {
+      startedAt = previous.startedAt;
+      pid ??= previous.pid;
+    }
+  }
+  const record = { stage, label, detail, startedAt, updatedAt: new Date().toISOString() };
+  if (pid) record.pid = pid;
+  fs.writeFileSync(file, JSON.stringify(record, null, 2));
 }
 
 export function clearProgress(dir) {
-  fs.rmSync(path.join(dir, "progress.json"), { force: true });
+  fs.rmSync(path.join(dir, PROGRESS), { force: true });
 }
 
 // Runs a step with progress bookkeeping around it, clearing on success and
@@ -167,6 +251,87 @@ export async function withProgress(dir, stage, label, step) {
   } catch (error) {
     reportProgress(dir, stage, label, `failed: ${String(error.message ?? error).slice(0, 200)}`);
     throw error;
+  }
+}
+
+// ---- Background jobs ----
+//
+// Renders and transcriptions run as detached processes: the MCP tool that
+// starts one returns as soon as it likes, the window keeps showing progress,
+// and the job finishes whether or not the session that asked for it is
+// still alive. A job is "running" while progress.json names a live pid.
+
+export function pidAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+const STALE_PROGRESS_MS = 3 * 60 * 1000;
+
+// The job in flight, or null. A record whose process is gone is rewritten
+// as a failure so nothing waits on it; a pid-less record (an in-process step
+// from this or an older server) counts as running only while it is fresh.
+export function runningJob(dir) {
+  const progress = readProgress(dir);
+  if (!progress) return null;
+  if (typeof progress.detail === "string" && progress.detail.startsWith("failed:")) return null;
+  if (progress.pid) {
+    if (pidAlive(progress.pid)) return progress;
+    reportProgress(dir, progress.stage, progress.label, `failed: the ${progress.stage} process (pid ${progress.pid}) died before finishing; see out/${progress.stage}.log`);
+    return null;
+  }
+  const age = Date.now() - Date.parse(progress.updatedAt ?? progress.startedAt ?? 0);
+  return age < STALE_PROGRESS_MS ? progress : null;
+}
+
+// Starts a detached job: stdout and stderr to out/<stage>.log, progress.json
+// claimed with the pid before returning so the window and the next status
+// call both see it at once. Refuses while another job runs — two renders in
+// one project folder would race for the same files.
+export function startJob(dir, stage, label, command, args, options = {}) {
+  const running = runningJob(dir);
+  if (running) {
+    throw new Error(`${running.stage} is already running (pid ${running.pid ?? "?"}, since ${running.startedAt}); wait_render first`);
+  }
+  fs.mkdirSync(path.join(dir, "out"), { recursive: true });
+  const logFile = path.join(dir, "out", `${stage}.log`);
+  const log = fs.openSync(logFile, "w");
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: ["ignore", log, log],
+    cwd: REPO_ROOT,
+    env: { ...process.env, ...(options.env ?? {}) },
+  });
+  fs.closeSync(log);
+  child.unref();
+  clearProgress(dir);
+  reportProgress(dir, stage, label, "starting", { pid: child.pid });
+  return { pid: child.pid, log: logFile };
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Waits up to `seconds` for the running job, polling the progress file.
+// Resolves with what it found: done (the file cleared), failed (with the
+// note), or still running (with the latest detail).
+export async function waitForJob(dir, seconds) {
+  const deadline = Date.now() + Math.max(seconds, 0) * 1000;
+  for (;;) {
+    const progress = readProgress(dir);
+    if (!progress) return { state: "done" };
+    if (typeof progress.detail === "string" && progress.detail.startsWith("failed:")) {
+      return { state: "failed", stage: progress.stage, error: progress.detail.slice(8), log: path.join(dir, "out", `${progress.stage}.log`) };
+    }
+    if (!runningJob(dir)) continue; // just marked as died; the next read reports it
+    if (Date.now() >= deadline) {
+      return { state: "running", stage: progress.stage, label: progress.label, detail: progress.detail, startedAt: progress.startedAt, pid: progress.pid };
+    }
+    await sleep(1000);
   }
 }
 
@@ -358,119 +523,183 @@ export function scanFraming(videoPath, framesDir) {
 
 // ---- The clean render ----
 
-// One decode, one pass: each keep segment (split at framing boundaries) is
-// trimmed, cropped to its head rect — tighter still where the shot plan
-// punches in — and scaled to one output size; the pieces concat with their
-// audio cut at the same boundaries, so sync survives because video is never
-// re-timed. A second, silent track carries the screen region wherever the
-// framing has one, on exactly the same timeline, so the stage can show the
-// screen beside the head without ever seeking two different edits.
-export function renderClean(videoPath, cuts, duration, outPath, options = {}) {
+// What the clean cut would be made of right now: the keeps, the framing
+// (the whole frame until told better), and the two identities that say
+// whether the files on disk already are that. `source` is source.json's
+// record of the footage.
+export function cleanPlan({ review, framing, dims, source, fps = CLEAN_FPS, ceiling = CLEAN_CEILING }) {
+  const keeps = keepSegments(review.cuts, review.duration);
+  const effective = framing ?? fullFrameFraming(dims, review.duration);
+  return {
+    keeps,
+    framing: effective,
+    version: CLEAN_VERSION,
+    cutIdentity: sha(cutIdentity({ source, keeps })),
+    cleanIdentity: sha(cleanIdentity({ source, keeps, framing: effective, fps, ceiling })),
+  };
+}
+
+// Whether out/clean.mp4, per the map written beside it, is the cut the
+// review and framing describe. No map, no file, or another identity: no.
+export function cleanCurrent(map, plan, cleanPath) {
+  return Boolean(map?.identity && map.identity === plan.cleanIdentity && fs.existsSync(cleanPath));
+}
+
+// Whether clean.json describes the clean cut on disk: by the cut identity
+// it was stamped with when both sides carry one, by file time for
+// transcripts from before stamping.
+export function cleanTranscriptCurrent(transcriptPath, cleanPath, map) {
+  if (!fs.existsSync(transcriptPath) || !fs.existsSync(cleanPath)) return false;
+  let stamp = null;
+  try {
+    stamp = JSON.parse(fs.readFileSync(transcriptPath, "utf8")).fabula?.cutIdentity ?? null;
+  } catch {
+    return false;
+  }
+  if (stamp && map?.cutIdentity) return stamp === map.cutIdentity;
+  return fs.statSync(transcriptPath).mtimeMs >= fs.statSync(cleanPath).mtimeMs;
+}
+
+// ffmpeg with its machine-readable progress on stdout: frame count and
+// speed reach `onProgress` about once a second; stderr is kept for the
+// failure message.
+function runFfmpeg(args, onProgress) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(FFMPEG, ["-y", "-v", "error", "-nostats", "-progress", "pipe:1", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let err = "";
+    let buffer = "";
+    const current = {};
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        const eq = line.indexOf("=");
+        if (eq < 0) continue;
+        const key = line.slice(0, eq).trim();
+        const value = line.slice(eq + 1).trim();
+        current[key] = value;
+        if (key === "progress" && onProgress) onProgress(Number(current.frame ?? 0), current.speed ?? "");
+      }
+    });
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.once("error", reject);
+    child.once("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg render failed (${code}): ${err.slice(-800)}`))));
+  });
+}
+
+const fmtClock = (seconds) => {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds - m * 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
+
+// One decode, one pass: the graph from core/clean-graph.mjs crops the head
+// rect (one branch per distinct rect, switched where the framing changes),
+// scales to one output size, and keeps exactly the frames of the keep
+// segments; the audio is cut at the same frame instants, so the two tracks
+// are the same length to the sample. A second, silent track carries the
+// screen region wherever the framing has one, on exactly the same timeline,
+// so the stage can show the screen beside the head without ever seeking two
+// different edits. Punch-ins are not here: the compose stage places them,
+// so the cut is rendered once per cut list and framing.
+//
+// Outputs land as .partial files and are renamed together at the end, with
+// out/clean-map.json written last, so a clean.mp4 beside a map is always a
+// finished one and the map's identity can be trusted.
+export async function renderClean(videoPath, cuts, duration, outPath, options = {}) {
   const keeps = keepSegments(cuts, duration);
   if (keeps.length === 0) throw new Error("every moment is cut; nothing to render");
-  const shots = options.shots ?? null;
-  if (shots && shots.length !== keeps.length) {
-    throw new Error(`shot plan has ${shots.length} shots for ${keeps.length} segments; replan after cut changes`);
-  }
   const dims = probeDimensions(videoPath);
-  const framing = options.framing ?? fullFrameFraming(dims, duration);
-  const headSize = headOutputSize(framing, CLEAN_CEILING);
-  const screenSize = screenOutputSize(framing, CLEAN_CEILING);
   const fps = options.fps ?? CLEAN_FPS;
+  const ceiling = options.ceiling ?? CLEAN_CEILING;
+  const source = options.source ?? { path: path.resolve(videoPath), bytes: fs.statSync(videoPath).size };
+  const plan = cleanPlan({ review: { cuts, duration }, framing: options.framing ?? null, dims, source, fps, ceiling });
+  const { framing } = plan;
+  const headSize = headOutputSize(framing, ceiling);
+  const screenSize = screenOutputSize(framing, ceiling);
+  const onProgress = options.onProgress ?? (() => {});
 
-  // Keep index per piece so the shot plan's alternating scale follows the cut
-  // boundaries, not the framing ones.
+  // Keep index per piece: the compose stage alternates its punch-ins by
+  // keep, and a keep split at a framing boundary must stay one shot.
   const pieces = [];
   keeps.forEach((keep, keepIndex) => {
     for (const piece of splitKeepsByFraming([keep], framing)) pieces.push({ ...piece, keepIndex });
   });
-  let cursor = 0;
-  for (const piece of pieces) { piece.cleanStart = cursor; cursor += piece.end - piece.start; piece.cleanEnd = cursor; }
+  const spans = frameSpans(pieces, fps);
+  if (spans.length === 0) throw new Error("every kept moment is shorter than a frame; nothing to render");
+  const totalFrames = spans.reduce((n, span) => n + span.frames, 0);
+  const { graph, heads, screens } = cleanGraph({ spans, fps, headSize, screenSize, rawDuration: duration });
 
-  const filters = [];
-  const videoPads = [];
-  const audioPads = [];
-  const screenPads = [];
-  const crop = (rect, scale) => {
-    const w = rect.w / scale;
-    const h = rect.h / scale;
-    const x = rect.x + (rect.w - w) / 2;
-    const y = rect.y + (rect.h - h) / 2;
-    return `crop=${w.toFixed(2)}:${h.toFixed(2)}:${x.toFixed(2)}:${y.toFixed(2)}`;
-  };
-  pieces.forEach((piece, i) => {
-    const scale = shots?.[piece.keepIndex]?.scale ?? 1;
-    const span = piece.end - piece.start;
-    filters.push(
-      `[0:v]trim=start=${piece.start}:end=${piece.end},setpts=PTS-STARTPTS,fps=${fps},` +
-      `${crop(piece.head, scale)},scale=${headSize.width}:${headSize.height}:flags=lanczos,setsar=1[v${i}]`,
-    );
-    filters.push(`[0:a]atrim=start=${piece.start}:end=${piece.end},asetpts=PTS-STARTPTS[a${i}]`);
-    videoPads.push(`[v${i}]`);
-    audioPads.push(`[a${i}]`);
-    if (screenSize) {
-      if (piece.screen) {
-        filters.push(
-          `[0:v]trim=start=${piece.start}:end=${piece.end},setpts=PTS-STARTPTS,fps=${fps},` +
-          `${crop(piece.screen, 1)},scale=${screenSize.width}:${screenSize.height}:force_original_aspect_ratio=decrease:flags=bicubic,` +
-          `pad=${screenSize.width}:${screenSize.height}:-1:-1:color=0x0b0e12,setsar=1[s${i}]`,
-        );
-      } else {
-        filters.push(`color=c=0x0b0e12:s=${screenSize.width}x${screenSize.height}:r=${fps}:d=${span.toFixed(3)},setsar=1[s${i}]`);
-      }
-      screenPads.push(`[s${i}]`);
-    }
-  });
-  filters.push(`${videoPads.join("")}concat=n=${pieces.length}:v=1:a=0[v]`);
-  filters.push(`${audioPads.join("")}concat=n=${pieces.length}:v=0:a=1[a]`);
-  if (screenSize) filters.push(`${screenPads.join("")}concat=n=${pieces.length}:v=1:a=0[s]`);
-
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  const screenPath = screenSize ? path.join(path.dirname(outPath), "screen.mp4") : null;
-  if (!screenSize) fs.rmSync(path.join(path.dirname(outPath), "screen.mp4"), { force: true });
+  const outDir = path.dirname(outPath);
+  fs.mkdirSync(outDir, { recursive: true });
+  const screenPath = path.join(outDir, "screen.mp4");
+  const mapPath = path.join(outDir, "clean-map.json");
+  const partial = (file) => file.replace(/\.mp4$/, ".partial.mp4");
   // Hundreds of pieces make a graph far past any argument limit; it travels
   // as a file, which also leaves a readable record of the render beside it.
-  const graphPath = path.join(path.dirname(outPath), "clean-graph.txt");
-  fs.writeFileSync(graphPath, filters.join(";\n") + "\n");
+  const graphPath = path.join(outDir, "clean-graph.txt");
+  fs.writeFileSync(graphPath, graph);
   const args = [
-    "-y", "-v", "error",
     "-i", videoPath,
     "-/filter_complex", graphPath,
     "-map", "[v]", "-map", "[a]",
-    "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
-    "-g", String(CLEAN_GOP), "-keyint_min", String(CLEAN_GOP),
+    ...videoEncoderArgs("head", CLEAN_GOP),
     "-c:a", "aac", "-b:a", "192k",
-    outPath,
+    partial(outPath),
   ];
-  if (screenSize) {
-    args.push(
-      "-map", "[s]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-      "-g", String(CLEAN_GOP), "-keyint_min", String(CLEAN_GOP), "-an", screenPath,
-    );
-  }
+  if (screenSize) args.push("-map", "[s]", ...videoEncoderArgs("screen", CLEAN_GOP), "-an", partial(screenPath));
+
   const started = Date.now();
-  const render = spawnSync(FFMPEG, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (render.status !== 0) {
-    throw new Error(`ffmpeg render failed (${render.status}): ${(render.stderr || "").slice(-800)}`);
+  let lastReport = 0;
+  try {
+    await runFfmpeg(args, (frame, speed) => {
+      const now = Date.now();
+      if (now - lastReport < 1500 && frame < totalFrames) return;
+      lastReport = now;
+      const rate = frame / Math.max((now - started) / 1000, 0.001);
+      const left = rate > 0 ? fmtClock((totalFrames - frame) / rate) : "…";
+      const pct = Math.min(Math.round((frame / Math.max(totalFrames, 1)) * 100), 100);
+      onProgress(`${pct}% · ${frame.toLocaleString()} of ${totalFrames.toLocaleString()} frames · ${speed || "…"} · about ${left} left`);
+    });
+  } catch (error) {
+    fs.rmSync(partial(outPath), { force: true });
+    fs.rmSync(partial(screenPath), { force: true });
+    throw error;
   }
+  fs.renameSync(partial(outPath), outPath);
+  if (screenSize) fs.renameSync(partial(screenPath), screenPath);
+  else fs.rmSync(screenPath, { force: true });
+
   const map = {
-    source: path.resolve(videoPath),
+    version: plan.version,
+    identity: plan.cleanIdentity,
+    cutIdentity: plan.cutIdentity,
+    renderedAt: new Date().toISOString(),
+    encoder: encoderCapabilities().nvenc ? "h264_nvenc" : "libx264",
+    source: source.path,
     sourceDims: dims,
     fps,
     head: headSize,
     screen: screenSize,
-    pieces: pieces.map((p) => ({
-      start: Number(p.start.toFixed(3)), end: Number(p.end.toFixed(3)),
-      cleanStart: Number(p.cleanStart.toFixed(3)), cleanEnd: Number(p.cleanEnd.toFixed(3)),
-      head: p.head, screen: p.screen, scale: shots?.[p.keepIndex]?.scale ?? 1,
+    frames: totalFrames,
+    branches: { heads, screens },
+    pieces: spans.map((p) => ({
+      keepIndex: p.keepIndex,
+      start: Number(p.audioStart.toFixed(4)), end: Number(p.audioEnd.toFixed(4)),
+      firstFrame: p.firstFrame, lastFrame: p.lastFrame,
+      cleanStart: Number(p.cleanStart.toFixed(4)), cleanEnd: Number(p.cleanEnd.toFixed(4)),
+      head: p.head, screen: p.screen,
     })),
-    screenSpans: screenSpans(pieces).map((s) => ({ start: Number(s.start.toFixed(2)), end: Number(s.end.toFixed(2)) })),
+    screenSpans: screenSpans(spans).map((s) => ({ start: Number(s.start.toFixed(2)), end: Number(s.end.toFixed(2)) })),
   };
+  fs.writeFileSync(mapPath, JSON.stringify(map, null, 2));
   return {
     path: outPath,
-    screen: screenPath,
+    screen: screenSize ? screenPath : null,
     keeps: keeps.length,
-    pieces: pieces.length,
+    pieces: spans.length,
+    frames: totalFrames,
     bytes: fs.statSync(outPath).size,
     seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
     map,

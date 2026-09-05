@@ -22,19 +22,37 @@ Fabula is a two-hander: the window is where you watch and tweak, Claude is who d
    transcribes on the GPU, finds where the head sits in the frame (a camera inset over a screen
    recording, scene switches, pillarboxing), proposes cuts, renders the clean cut, re-transcribes
    it, plans layouts and scenes, and renders the composition. The window shows each step as it
-   runs and every result as it lands.
+   runs and every result as it lands. The long steps are background jobs: they keep going if the
+   session that started them ends, and the window keeps showing where they are.
 3. **Review in the window.** Play with skip-preview, click struck words to keep them, watch the
    framing guides show what the render will pull, click timeline blocks and tweak text, accents,
-   layouts in the inspector, change the project accent. Every change is saved to the project and
-   previews immediately.
+   layouts in the inspector. The project panel holds the look: a theme preset (Studio, Broadcast,
+   Paper, Neon, Mono), the brand colours, title, callout and caption styles, a logo watermark
+   and a handle. Every change is saved to the project and previews immediately.
 4. **Iterate by prompting.** *"Make the intro title punchier", "drop the chart, show the snail
-   still longer", "warmer accent", "tighten the pauses"* — Claude reads the current plan first
-   (your tweaks included), changes only what you asked, and re-renders behind the gate. Your
-   manual edits and Claude's edits live in the same files, so neither side tramples the other.
+   still longer", "this is for my YouTube channel: red accent, my logo top right, banded
+   captions", "put the Godot and Photopea logos next to where I mention them"* — Claude reads
+   the current plan and theme first (your tweaks included), changes only what you asked, fetches
+   pictures from the web into the project when a logo or a still is wanted, and re-renders
+   behind the gate. Your manual edits and Claude's edits live in the same files, so neither side
+   tramples the other.
 
 The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `screen.mp4` the recording's
 screen track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4`
-a span rendered to check a scene in a minute instead of the film in an hour.
+a span rendered on its own.
+
+There are two renders and they answer to different things. The clean cut is rendered once per cut
+list and framing, and the compose stage only moves it around: layouts, punch-ins, scenes,
+captions and accents never send it back to render. Changing the cuts afterwards is possible and
+is meant to be rare: the cut renders again, its transcript is redone, and the scenes are moved to
+the new word ids automatically by matching the words at their ends. It is compared by content, not by file time,
+so toggling a cut and toggling it back costs nothing; only a cut list or framing that actually
+differs from what `out/clean-map.json` records renders again. The final render is layered and
+cached: the footage is placed by ffmpeg, only the overlays that change are captured, and each
+two-minute chunk under `out/chunks/` is reused until something inside it changes — so a whole film
+takes minutes and a tweaked title takes about one. Both encode on the GPU when the machine has an
+NVIDIA card (NVENC works from WSL with the ffmpeg build `npm run setup:tools` installs), and both
+run as background jobs with their progress in the window's masthead.
 
 ## In the Instrumenta launcher
 

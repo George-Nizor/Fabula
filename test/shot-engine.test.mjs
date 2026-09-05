@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
+import { punchPlan, punchSpans, punchScaleAt, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.5 },
@@ -52,4 +52,33 @@ test("a custom zoom flows through; a non-zoom is refused", () => {
   const plan = punchPlan(words, cuts, 7, { zoom: 1.3 });
   assert.equal(plan[1].scale, 1.3);
   assert.throws(() => punchPlan(words, cuts, 7, { zoom: 1 }));
+});
+
+// The clean-timeline plan: pieces are what the clean render wrote, one keep
+// split at a framing boundary staying one shot.
+const pieces = [
+  { keepIndex: 0, cleanStart: 0, cleanEnd: 1.2 },
+  { keepIndex: 1, cleanStart: 1.2, cleanEnd: 1.5 },
+  { keepIndex: 1, cleanStart: 1.5, cleanEnd: 2.0 },
+  { keepIndex: 2, cleanStart: 2.0, cleanEnd: 3.2 },
+];
+
+test("punch spans merge a keep's pieces and alternate by keep index", () => {
+  const spans = punchSpans(pieces, 1.2);
+  assert.deepEqual(spans.map((s) => [s.start, s.end, s.scale]), [[0, 1.2, 1], [1.2, 2.0, 1.2], [2.0, 3.2, 1]]);
+});
+
+test("the scale at t is the span's, wide outside every span, half-open at the boundary", () => {
+  const spans = punchSpans(pieces, 1.2);
+  assert.equal(punchScaleAt(spans, 0.5), 1);
+  assert.equal(punchScaleAt(spans, 1.2), 1.2);
+  assert.equal(punchScaleAt(spans, 1.99), 1.2);
+  assert.equal(punchScaleAt(spans, 2.0), 1);
+  assert.equal(punchScaleAt(spans, 99), 1);
+  assert.equal(punchScaleAt([], 1), 1);
+});
+
+test("pieces from a render without keep indices yield no punches", () => {
+  assert.deepEqual(punchSpans([{ cleanStart: 0, cleanEnd: 5, scale: 1.15 }]), []);
+  assert.throws(() => punchSpans(pieces, 1));
 });

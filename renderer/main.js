@@ -16,7 +16,7 @@ const els = {
   empty: $("empty"), emptyLine: $("empty-line"), emptyHint: $("empty-hint"), openFile: $("open-file"),
   player: $("player"), dock: $("dock"), dropzone: $("dropzone"),
   toggleRail: $("toggle-rail"), toggleInsp: $("toggle-insp"),
-  video: $("video"), screen: $("screen"), overlay: $("overlay"), guides: $("guides"),
+  video: $("video"), head: $("head"), screen: $("screen"), overlay: $("overlay"), guides: $("guides"),
   playpause: $("playpause"), skipwrap: $("skipwrap"), skipcuts: $("skipcuts"),
   timeNow: $("time-now"), timeSep: $("time-sep"), timeTotal: $("time-total"), transportNote: $("transport-note"),
   hint: $("controls-hint"), transcript: $("transcript"),
@@ -28,7 +28,11 @@ const els = {
   playhead: $("tl-playhead"),
   inspector: $("inspector"), inspTitle: $("insp-title"), inspProject: $("insp-project"), inspBody: $("insp-body"),
   inspCutSummary: $("insp-cut-summary"), sumCuts: $("sum-cuts"), sumRemoved: $("sum-removed"), sumShots: $("sum-shots"), sumFraming: $("sum-framing"),
-  inspComposeSummary: $("insp-compose-summary"), themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeCaptions: $("theme-captions"),
+  inspComposeSummary: $("insp-compose-summary"), themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeCaptions: $("theme-captions"), themePunch: $("theme-punch"),
+  themePreset: $("theme-preset"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
+  themeTitleStyle: $("theme-title-style"), themeCalloutStyle: $("theme-callout-style"), themeCaptionStyle: $("theme-caption-style"),
+  themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
+  themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"), themeReset: $("theme-reset"),
   inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"),
   inspClose: $("insp-close"), inspStatus: $("insp-status"),
   inspText: $("insp-text"), inspTextWrap: $("insp-text-wrap"),
@@ -330,10 +334,30 @@ function renderProjectPanel() {
     els.inspCutSummary.hidden = true;
     els.inspComposeSummary.hidden = false;
     els.inspKeysCut.hidden = true;
-    const accent = c?.theme?.accent ?? "#d97757";
-    els.themeAccent.value = accent;
-    els.themeAccentValue.textContent = accent;
+    const theme = c?.theme ?? {};
+    els.themePreset.value = theme.preset ?? "studio";
+    els.themeAccent.value = theme.accent ?? "#d97757";
+    els.themeAccentValue.textContent = els.themeAccent.value;
+    els.themeAccent2.value = theme.accent2 ?? "#f28a32";
+    els.themeAccent2Value.textContent = els.themeAccent2.value;
+    els.themeTitleStyle.value = theme.titleStyle ?? "rise";
+    els.themeCalloutStyle.value = theme.calloutStyle ?? "pill";
+    els.themeCaptionStyle.value = theme.captionStyle ?? "pill";
+    els.themeLogoName.textContent = theme.logo ? theme.logo.src.replace(/^assets\//, "") : "none";
+    els.themeLogoClear.hidden = !theme.logo;
+    els.themeLogoCornerWrap.hidden = !theme.logo;
+    els.themeLogoCorner.value = theme.logo?.corner ?? "tr";
+    if (document.activeElement !== els.themeWatermark) els.themeWatermark.value = theme.watermark ?? "";
     els.themeCaptions.checked = Boolean(c?.captionsOn);
+    const zoom = c?.punch?.zoom;
+    const option = zoom ? [...els.themePunch.options].find((o) => Number(o.value) === zoom) : null;
+    if (zoom && !option) {
+      const custom = document.createElement("option");
+      custom.value = String(zoom);
+      custom.textContent = `alternating ${Math.round(zoom * 100)}%`;
+      els.themePunch.append(custom);
+    }
+    els.themePunch.value = zoom ? String(zoom) : "";
     els.inspEmpty.textContent = "Select a block in the timeline to edit it. Ask Claude for anything larger: a new scene, a different layout, a punchier title.";
   }
 }
@@ -456,7 +480,7 @@ function render() {
   els.tabCut.classList.toggle("is-active", mode === "cut");
   els.tabCompose.classList.toggle("is-active", mode === "compose");
 
-  const frame = els.video.parentElement;
+  const frame = els.video.closest(".videoframe"); // the head card wraps the video now
   if (mode === "cut") {
     setSource(review().videoUrl);
     els.skipwrap.hidden = false;
@@ -464,10 +488,13 @@ function render() {
     els.overlay.replaceChildren();
     delete els.overlay.dataset.state;
     frame.classList.remove("is-stage", "stage-field");
-    els.video.classList.remove("stage-video");
-    els.video.style.left = els.video.style.top = "";
-    els.video.style.width = els.video.style.height = "";
-    els.video.style.zIndex = "";
+    // The frame is a size container (cq units); the raw footage's own aspect
+    // gives it a size, since its contents cannot.
+    frame.style.aspectRatio = els.video.videoWidth ? `${els.video.videoWidth} / ${els.video.videoHeight}` : "16 / 9";
+    els.head.style.left = els.head.style.top = "";
+    els.head.style.width = els.head.style.height = "";
+    els.head.style.borderRadius = "";
+    els.video.style.transform = "";
     els.screen.hidden = true;
     els.screen.pause();
     els.trackCuts.hidden = false;
@@ -484,7 +511,7 @@ function render() {
     els.video.style.transform = "";
     els.guides.hidden = true;
     frame.classList.add("is-stage", "stage-field");
-    els.video.classList.add("stage-video");
+    frame.style.aspectRatio = "";
     if (compose().screenUrl && els.screen.src !== compose().screenUrl) els.screen.src = compose().screenUrl;
     els.trackCuts.hidden = true;
     els.trackLayout.hidden = els.trackScenes.hidden = false;
@@ -568,8 +595,26 @@ els.inspCorner.addEventListener("change", () => patchScene({ corner: els.inspCor
 els.inspFlair.addEventListener("change", () => patchScene({ flair: els.inspFlair.checked ? true : null }));
 
 els.themeAccent.addEventListener("input", () => { els.themeAccentValue.textContent = els.themeAccent.value; });
-els.themeAccent.addEventListener("change", () => window.fabula.setProject({ accent: els.themeAccent.value }));
+els.themeAccent.addEventListener("change", () => window.fabula.setProject({ theme: { accent: els.themeAccent.value } }));
+els.themeAccent2.addEventListener("input", () => { els.themeAccent2Value.textContent = els.themeAccent2.value; });
+els.themeAccent2.addEventListener("change", () => window.fabula.setProject({ theme: { accent2: els.themeAccent2.value } }));
+els.themePreset.addEventListener("change", () => window.fabula.setProject({ theme: { preset: els.themePreset.value } }));
+els.themeTitleStyle.addEventListener("change", () => window.fabula.setProject({ theme: { titleStyle: els.themeTitleStyle.value } }));
+els.themeCalloutStyle.addEventListener("change", () => window.fabula.setProject({ theme: { calloutStyle: els.themeCalloutStyle.value } }));
+els.themeCaptionStyle.addEventListener("change", () => window.fabula.setProject({ theme: { captionStyle: els.themeCaptionStyle.value } }));
+els.themeLogoCorner.addEventListener("change", () => window.fabula.setProject({ theme: { logoCorner: els.themeLogoCorner.value } }));
+els.themeLogoClear.addEventListener("click", () => window.fabula.setProject({ theme: { logo: null } }));
+els.themeLogoPick.addEventListener("click", async () => {
+  const picked = await window.fabula.pickAsset();
+  if (picked.ok) window.fabula.setProject({ theme: { logo: { src: picked.src, corner: els.themeLogoCorner.value } } });
+  else if (!picked.cancelled) flashStatus(picked.error, true);
+});
+const applyWatermark = () => window.fabula.setProject({ theme: { watermark: els.themeWatermark.value.trim() || null } });
+els.themeWatermark.addEventListener("change", applyWatermark);
+els.themeWatermark.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); els.themeWatermark.blur(); } });
+els.themeReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
 els.themeCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.themeCaptions.checked }));
+els.themePunch.addEventListener("change", () => window.fabula.setProject({ punch: els.themePunch.value ? Number(els.themePunch.value) : null }));
 
 // ---- Transport ----
 
@@ -590,6 +635,7 @@ els.video.addEventListener("pause", () => {
 });
 els.video.addEventListener("loadedmetadata", () => {
   if (mode === "compose" && compose()) { els.timeTotal.textContent = fmt(composeDuration(), false); renderComposeTimeline(); }
+  else if (els.video.videoWidth) els.video.closest(".videoframe").style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
   delete els.guides.dataset.key;
 });
 
@@ -673,7 +719,7 @@ function tick() {
       if (!els.video.paused && els.screen.paused) els.screen.play().catch(() => {});
       if (els.video.paused && !els.screen.paused) els.screen.pause();
     }
-    window.FabulaStage.update(els.overlay, els.video, c, now, null, c.screenUrl ? els.screen : null);
+    window.FabulaStage.update(els.overlay, els.head, c, now, null, c.screenUrl ? els.screen : null);
   }
 
   const lane = (mode === "cut" ? els.laneCuts : els.laneScenes).getBoundingClientRect();

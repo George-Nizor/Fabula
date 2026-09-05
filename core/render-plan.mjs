@@ -5,8 +5,9 @@
 // the chunk it touched and nothing else.
 
 import { layoutRects, layoutAt } from "./stage-engine.mjs";
+import { punchScaleAt } from "./shot-engine.mjs";
 
-export const RENDERER_VERSION = "layered-1";
+export const RENDERER_VERSION = "layered-3"; // 2: punch-ins placed here; 3: themed, time-driven painter
 export const TRANSITION_SECONDS = 0.6;
 export const DEFAULT_CHUNK_SECONDS = 120;
 
@@ -40,6 +41,19 @@ export function headExpressions(timeline, videoAspect, stage, offset = 0) {
     return expr;
   };
   return { x: component("x"), y: component("y"), w: component("w"), h: component("h") };
+}
+
+// The punch-in scale at t: a step function over the clean-timeline spans,
+// wide (1) everywhere no span punches. Half-open like punchScaleAt, so the
+// two agree at every frame. Pass only the spans that touch the chunk.
+export function punchExpression(spans, offset = 0) {
+  const T = `(t+${num(offset)})`;
+  let expr = "1";
+  for (const span of spans) {
+    if (!(span.scale > 1)) continue;
+    expr = `if(gte(${T},${num(span.start)})*lt(${T},${num(span.end)}),${num(span.scale)},${expr})`;
+  }
+  return expr;
 }
 
 // The glow's centre drifts with the same sines the window uses; the
@@ -116,11 +130,17 @@ export function chunkPlan(from, to, fps = 30, chunkSeconds = DEFAULT_CHUNK_SECON
 
 const overlaps = (a0, a1, b0, b1) => a0 < b1 && b0 < a1;
 
+// The punch spans a chunk sees: those that tighten and touch it.
+export function punchPlacements(spans, chunk) {
+  return (spans ?? []).filter((span) => span.scale > 1 && overlaps(span.start, span.end, chunk.start, chunk.end));
+}
+
 // Everything that can change a chunk's pixels, as one canonical string. Hash
-// it and you have the cache key. Media identity comes from the caller (size
-// and mtime of the tracks), since core does no I/O.
+// it and you have the cache key. Media identity and the encoder come from
+// the caller (size and mtime of the tracks, the encoder's arguments), since
+// core does no I/O.
 export function chunkIdentity(chunk, context) {
-  const { scenes, timeline, captions, wordSpans, theme, stage, videoAspect, media, fps } = context;
+  const { scenes, timeline, captions, wordSpans, theme, stage, videoAspect, media, fps, punch, encoder, painter } = context;
   const lead = TRANSITION_SECONDS + 0.1;
   const within = (item) => overlaps(item.start, item.end, chunk.start - lead, chunk.end);
   const kineticInside = scenes.some((scene) => scene.type === "kinetic" && within(scene));
@@ -128,12 +148,15 @@ export function chunkIdentity(chunk, context) {
     renderer: RENDERER_VERSION,
     chunk: [chunk.start, chunk.end],
     fps, stage, videoAspect: Number(videoAspect.toFixed(5)),
-    theme: theme?.accent ?? null,
+    theme: theme ?? null, // the whole resolved theme: fonts, styles, logo, glow all change pixels
     timeline: timeline.filter(within).map((s) => [s.start, s.end, s.layout, s.corner ?? null]),
     scenes: scenes.filter(within),
     captions: captions ? captions.filter(within) : null,
     wordSpans: kineticInside ? wordSpans.filter(within) : null,
+    punch: punchPlacements(punch, chunk).map((s) => [s.start, s.end, s.scale]),
     media,
+    encoder: encoder ?? null, // chunks are stitched by copy; one encoder per film
+    painter: painter ?? null, // a hash of the painter's own files: a CSS tweak is a new picture
   });
 }
 
@@ -151,11 +174,24 @@ export function screenPlacements(screenScenes, chunk) {
 
 // One chunk's ffmpeg graph. Inputs, in order: 0 field, 1 glow, 2 head track,
 // 3 head mask (at the track's own size), 4 under states, 5 over states, then
-// a screen track and mask pair per screen placement. Returns the graph text and the per-input
-// arguments, so the caller only adds paths.
-export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens }) {
+// a screen track and mask pair per screen placement. The caller only adds
+// paths.
+//
+// The head takes one of two routes. Without a punch-in, mask and picture
+// merge at the track's own size and scale together (two streams scaled by
+// the same expressions can land a frame apart at a transition, and
+// alphamerge refuses mismatched sizes). With a punch-in the picture must
+// zoom inside a card that does not, so the zoomed head is laid on a
+// transparent stage-sized canvas and the card's rounded mask on a black one;
+// both canvases are always stage-sized, so alphamerge never sees a mismatch
+// and a frame of drift shows as a sliver, not a failure. Pixel formats
+// convert BEFORE any per-frame scale: a conversion placed after one is
+// configured at the first size and quietly rescales every later frame back
+// to it.
+export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch = [], fps = 30 }) {
   const head = headExpressions(timeline, videoAspect, stage, chunk.start);
   const glow = glowExpressions(stage, glowSize, chunk.start);
+  const punched = punchPlacements(punch, chunk);
   const lines = [];
   lines.push("[0:v]format=rgba[base0]");
   lines.push("[1:v]format=rgba[glow]");
@@ -180,13 +216,23 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
   });
   lines.push("[4:v]format=rgba[under]");
   lines.push(`[${base}][under]overlay=0:0:format=auto[bu]`);
-  // The mask is merged at the head track's own size, then head and alpha
-  // scale together: two streams scaled by the same expressions on their own
-  // clocks can disagree by a frame at a transition, and alphamerge refuses.
-  lines.push("[2:v]format=rgba[h0]");
-  lines.push("[3:v]format=gray[hm]");
-  lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[head]`);
-  lines.push(`[bu][head]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto[bh]`);
+  if (punched.length === 0) {
+    lines.push("[2:v]format=rgba[h0]");
+    lines.push("[3:v]format=gray[hm]");
+    lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[head]`);
+    lines.push(`[bu][head]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto[bh]`);
+  } else {
+    const S = punchExpression(punched, chunk.start);
+    const canvas = `s=${stage.width}x${stage.height}:r=${fps}:d=${num(chunk.frames / fps)}`;
+    lines.push(`[2:v]format=rgba,scale=w='(${head.w})*(${S})':h='(${head.h})*(${S})':eval=frame:flags=bicubic[hz]`);
+    lines.push(`color=c=black@0:${canvas},format=rgba[hbase]`);
+    lines.push(`[hbase][hz]overlay=x='(${head.x})-((${head.w})*(${S})-(${head.w}))/2':y='(${head.y})-((${head.h})*(${S})-(${head.h}))/2':eval=frame:format=auto[hc]`);
+    lines.push(`[3:v]format=rgba,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[msz]`);
+    lines.push(`color=c=black:${canvas},format=rgba[mbase]`);
+    lines.push(`[mbase][msz]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto,format=gray[cardmask]`);
+    lines.push("[hc][cardmask]alphamerge[head]");
+    lines.push("[bu][head]overlay=0:0:format=auto[bh]");
+  }
   lines.push("[5:v]format=rgba[over]");
   lines.push("[bh][over]overlay=0:0:format=auto,format=yuv420p[out]");
   return lines.join(";\n") + "\n";
@@ -195,4 +241,9 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
 // The rect ffmpeg will use at t, for tests and for the shadow's placement.
 export function headRectAt(timeline, t, videoAspect, stage) {
   return layoutAt(timeline, t, videoAspect, stage).video;
+}
+
+// The punch scale ffmpeg will use at t, for tests.
+export function punchScaleAtTime(spans, t) {
+  return punchScaleAt(spans, t);
 }

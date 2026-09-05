@@ -29,5 +29,7 @@ for (const cut of review.cuts) {
 const stats = reviewStats(review);
 console.log(`${stats.cuts} cuts, ${stats.removedSeconds}s removed -> clean ${stats.cleanSeconds}s`);
 
-const result = renderClean(videoPath, review.cuts, review.duration, path.join(outDir, "clean.mp4"));
+const result = await renderClean(videoPath, review.cuts, review.duration, path.join(outDir, "clean.mp4"), {
+  onProgress: (detail) => console.log(`  ${detail}`),
+});
 console.log(`wrote ${result.path} (${(result.bytes / 1e6).toFixed(1)} MB, ${result.keeps} segments)`);

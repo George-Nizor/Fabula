@@ -1,6 +1,10 @@
 /* Overlay looks shared by the live preview and the export capture. All
    sizes are container-query units so the same rules paint identically over
-   the preview player and the full-resolution export frame. */
+   the preview player and the full-resolution export frame. Every colour and
+   face is a token the theme sets on the frame (see applyTheme in
+   overlays.js); every motion is an inline style the painter computes — no
+   keyframes live here, so a piece never replays an entrance because a
+   neighbour changed, and the export catches nothing mid-flight. */
 
 /* The frame is the container every cq unit measures against — the preview
    player and the full-resolution export frame alike. */
@@ -17,21 +21,32 @@
   overflow: hidden;
 }
 
-/* The 1080p stage: the charcoal field the whole composition lives on, with
-   the product accent breathing at the edges — the banner treatment, moving. */
+/* The 1080p stage: the field the whole composition lives on, with the
+   accent breathing at the edges — the banner treatment, moving. */
 .stage-field {
   background:
-    radial-gradient(120% 140% at 50% 0%, #1a2129 0%, #12171e 52%, #0b0e12 100%),
-    #0b0e12;
+    radial-gradient(120% 140% at 50% 0%, var(--ov-field-a, #1a2129) 0%, var(--ov-field-b, #12171e) 52%, var(--ov-field-c, #0b0e12) 100%),
+    var(--ov-field-c, #0b0e12);
 }
 
-/* The head as a layer: a rounded card that flies between layouts. Its rect
-   is set inline by the stage engine; these are the still parts. */
-.stage-video {
+.stage-field.field-flat { background: var(--ov-field-b, #ffffff); }
+
+/* The head as a layer: a rounded card that flies between layouts, clipping
+   the footage inside it so a punch-in zooms the picture and not the card.
+   Its rect is set inline by the stage engine; these are the still parts. */
+.stage-head {
   position: absolute;
   z-index: 3;
+  overflow: hidden;
+  background: var(--ov-field-c, #0b0e12);
+}
+
+.stage-head video {
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  background: #0b0e12;
+  transform-origin: center center;
 }
 
 /* The head's shadow is its own piece under the head, so the export can
@@ -42,127 +57,300 @@
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }
 
+.theme-paper .stage-shadow, .theme-mono .stage-shadow { box-shadow: 0 14px 40px rgba(31, 30, 29, 0.28); }
+
 .ov { position: absolute; }
 
-.ov-title, .ov-callout, .ov-caption, .ov-kinetic { z-index: 4; }
+.ov-title, .ov-callout, .ov-caption, .ov-kinetic, .ov-brand { z-index: 4; }
 .ov-graphic { z-index: 2; }
 
-/* Lower-third title: accent bar, heavy interface type. */
+/* ---- Titles ---- */
+
 .ov-title {
   left: 5cqw;
   bottom: 12cqh;
   display: flex;
   align-items: stretch;
   gap: 1.6cqw;
-  animation: ov-rise 300ms ease-out;
+  transform-origin: left center;
 }
 
 .ov-title-bar {
   width: 0.9cqw;
-  border-radius: 0.45cqw;
+  border-radius: calc(0.45cqw * var(--ov-radius, 1));
   background: var(--ov-accent, #d97757);
+  transform-origin: left bottom;
+  flex: none;
 }
 
+.ov-title-body { display: flex; flex-direction: column; gap: 0.8cqh; justify-content: center; }
+
 .ov-title-text {
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  font-weight: 700;
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
   font-size: 6cqh;
   line-height: 1.15;
   letter-spacing: 0.02em;
-  color: #f0ede6;
+  color: var(--ov-text, #f0ede6);
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
   max-width: 60cqw;
 }
 
-/* Callout: a quiet panel in the upper right. */
+.ov-title-sub {
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-weight: 500;
+  font-size: 3.2cqh;
+  letter-spacing: 0.04em;
+  color: var(--ov-accent, #d97757);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+.titlecase-upper .ov-title-text { text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Light fields: dark type over the footage needs a halo in the paper's own
+   colour where a dark theme uses a shadow. */
+.theme-paper .ov-title-text, .theme-mono .ov-title-text, .theme-paper .ov-title-sub, .theme-mono .ov-title-sub,
+.theme-paper .ov-kinetic, .theme-mono .ov-kinetic {
+  text-shadow: 0 0 0.35cqh var(--ov-ink, #ffffff), 0 0 0.35cqh var(--ov-ink, #ffffff), 0 0 1cqh var(--ov-ink, #ffffff), 0 0 2cqh var(--ov-ink, #ffffff);
+}
+
+/* slam: the whole title lands from large; the bar grows up under it. */
+.ov-title.style-slam { transform-origin: left center; }
+
+/* typewriter: monospaced caret, no bar. */
+.ov-title.style-typewriter .ov-title-bar { display: none; }
+.ov-title.style-typewriter .ov-title-text { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; font-weight: 700; letter-spacing: 0; }
+
+/* wipe: the text is revealed from the bar outwards. */
+.ov-title.style-wipe .ov-title-text { will-change: clip-path; }
+
+/* block: the lower third — an accent block behind the type, a subtitle on
+   the ink line below it. Built for a broadcast look. */
+.ov-title.style-block { gap: 0; align-items: stretch; }
+.ov-title.style-block .ov-title-bar {
+  position: absolute;
+  inset: -1.2cqh -2cqw;
+  width: auto;
+  border-radius: calc(0.6cqw * var(--ov-radius, 1));
+  transform-origin: left center;
+  z-index: -1;
+}
+.ov-title.style-block .ov-title-body { padding: 0.2cqh 0; }
+.ov-title.style-block .ov-title-text { color: var(--ov-on-accent, #ffffff); text-shadow: none; }
+.ov-title.style-block .ov-title-sub {
+  color: var(--ov-text, #f0ede6);
+  background: var(--ov-ink, #0b0e12);
+  display: inline-block;
+  align-self: flex-start;
+  padding: 0.5cqh 1.2cqw;
+  margin-top: 1cqh;
+  margin-left: -2cqw;
+  border-radius: calc(0.4cqw * var(--ov-radius, 1));
+  text-shadow: none;
+}
+
+/* ---- Callouts ---- */
+
 .ov-callout {
   top: 6cqh;
   right: 4cqw;
   max-width: 36cqw;
   padding: 2.2cqh 2cqw;
-  border-radius: 1.2cqw;
+  border-radius: calc(1.2cqw * var(--ov-radius, 1));
   border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 60%, transparent);
-  background: rgba(18, 23, 30, 0.82);
-  font-family: Georgia, "Times New Roman", serif;
+  background: var(--ov-card, rgba(18, 23, 30, 0.82));
+  font-family: var(--ov-font-serif, Georgia, serif);
   font-size: 3.6cqh;
   line-height: 1.4;
-  color: #f0ede6;
-  animation: ov-rise 300ms ease-out;
+  color: var(--ov-text, #f0ede6);
+  transform-origin: center;
 }
 
-/* Kinetic caption: the spoken word, centered low. */
+.ov-callout.style-tag {
+  background: var(--ov-accent, #d97757);
+  color: var(--ov-on-accent, #ffffff);
+  border: none;
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 700;
+  font-size: 3.4cqh;
+  letter-spacing: 0.02em;
+  padding: 1.6cqh 2cqw 1.6cqh 2.6cqw;
+  border-radius: calc(0.6cqw * var(--ov-radius, 1));
+  transform-origin: right center;
+}
+
+.ov-callout.style-tag::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0.7cqw;
+  background: var(--ov-on-accent, #ffffff);
+  opacity: 0.85;
+  border-radius: calc(0.6cqw * var(--ov-radius, 1)) 0 0 calc(0.6cqw * var(--ov-radius, 1));
+}
+
+.ov-callout.style-stamp {
+  top: 9cqh;
+  right: 7cqw;
+  background: transparent;
+  border: 0.45cqw solid var(--ov-accent, #d97757);
+  color: var(--ov-accent, #d97757);
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 4cqh;
+  line-height: 1.1;
+  padding: 1.4cqh 1.8cqw;
+  border-radius: calc(0.8cqw * var(--ov-radius, 1));
+  text-shadow: none;
+  box-shadow: 0 0 0 0.35cqw color-mix(in srgb, var(--ov-accent, #d97757) 18%, transparent);
+}
+
+.ov-callout.style-note {
+  background: #fff4b8;
+  color: #2b2418;
+  border: none;
+  font-family: var(--ov-font-serif, Georgia, serif);
+  font-size: 3.5cqh;
+  padding: 2.4cqh 2.2cqw 2.8cqh;
+  border-radius: 0.3cqw;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), inset 0 -0.4cqh 0 rgba(0, 0, 0, 0.06);
+  transform-origin: center top;
+}
+
+.ov-callout.style-note::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1.2cqh;
+  width: 8cqw;
+  height: 2.2cqh;
+  margin-left: -4cqw;
+  background: color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
+  transform: rotate(-2deg);
+}
+
+/* ---- Captions ---- */
+
 .ov-caption {
   left: 50cqw;
   bottom: 4cqh;
   transform: translateX(-50%);
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  transform-origin: center bottom;
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
   font-weight: 700;
   font-size: 5cqh;
-  color: #f0ede6;
+  color: var(--ov-text, #f0ede6);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
   padding: 0.6cqh 1.6cqw;
-  border-radius: 0.8cqw;
-  background: rgba(11, 14, 18, 0.55);
-  animation: ov-pop 140ms ease-out;
+  border-radius: calc(0.8cqw * var(--ov-radius, 1));
+  background: color-mix(in srgb, var(--ov-ink, #0b0e12) 58%, transparent);
+  white-space: nowrap;
 }
 
-/* The export captures a finished state per instant; entry animations would
-   be caught mid-flight, so the capture page pins everything to its end.
-   Graphics are unaffected: their motion is computed from progress in JS. */
-.ov-layer.is-static .ov { animation: none !important; }
+.ov-caption.style-band {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  text-align: center;
+  padding: 1.4cqh 4cqw;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--ov-ink, #0b0e12) 84%, transparent);
+  font-size: 4.6cqh;
+  letter-spacing: 0.01em;
+}
 
-/* Animated graphic insert: a card over the dimmed frame. Every moving
-   property is set inline from progress; these rules are the still parts. */
+.ov-caption.style-karaoke .ov-caption-word { opacity: 0.55; transition: none; }
+.ov-caption.style-karaoke .ov-caption-word.is-on { opacity: 1; color: var(--ov-accent, #d97757); }
+
+.theme-paper .ov-caption, .theme-mono .ov-caption { text-shadow: none; }
+
+/* ---- Cards ---- */
+
+/* Animated graphic insert: a card over the field. Every moving property is
+   set inline from progress; these rules are the still parts. */
 .ov-graphic {
   inset: 8cqh 7cqw;
   padding: min(4cqh, 6cqi) min(4cqw, 8cqi);
   /* The card is its own inline container: type scales down with a narrow
      content column instead of overflowing it. */
   container-type: inline-size;
-  border-radius: 2cqw;
-  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 45%, transparent);
-  background: rgba(11, 14, 18, 0.88);
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  color: #f0ede6;
+  border-radius: calc(2cqw * var(--ov-radius, 1));
+  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) var(--ov-card-border, 45%), transparent);
+  background: var(--ov-card, rgba(11, 14, 18, 0.88));
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  color: var(--ov-text, #f0ede6);
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2.4cqh;
 }
 
+.theme-paper .ov-graphic, .theme-mono .ov-graphic { box-shadow: 0 10px 34px rgba(31, 30, 29, 0.14); }
+
 .ov-graphic-title {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 700;
   font-size: min(4.6cqh, 6.5cqi);
   letter-spacing: 0.06em;
   color: var(--ov-accent, #d97757);
 }
 
+/* stat: one big number that lands, a rule that draws under it. */
 .ov-stat-value {
-  font-weight: 700;
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
   font-size: min(18cqh, 28cqi);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  transform-origin: left center;
+}
+
+.ov-stat-rule {
+  height: 0.7cqh;
+  width: 30%;
+  background: var(--ov-accent, #d97757);
+  border-radius: 0.35cqh;
+  transform-origin: left center;
 }
 
 .ov-stat-label {
   font-size: min(4.2cqh, 6cqi);
-  color: #9aa3ad;
+  color: var(--ov-muted, #9aa3ad);
+}
+
+/* chart: bars grow past their mark and settle; values count beside them. */
+.ov-chart { position: relative; display: flex; flex-direction: column; gap: 2cqh; padding-left: 0.6cqw; }
+
+.ov-chart-base {
+  position: absolute;
+  left: 38%;
+  top: 0;
+  bottom: 0;
+  width: 0.25cqw;
+  margin-left: min(2cqw, 3cqi);
+  background: color-mix(in srgb, var(--ov-muted, #9aa3ad) 40%, transparent);
+  transform-origin: center top;
 }
 
 .ov-chart-row {
   display: flex;
   align-items: center;
   gap: min(2cqw, 3cqi);
-  font-size: min(3.8cqh, 5.2cqi);
+  font-size: min(3.4cqh, 4.6cqi);
 }
 
-.ov-chart-label { flex: 0 0 30%; color: #9aa3ad; }
+.ov-chart-label { flex: 0 0 38%; color: var(--ov-muted, #9aa3ad); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .ov-chart-track {
   flex: 1;
   height: 4.6cqh;
-  border-radius: 1cqh;
-  background: rgba(154, 163, 173, 0.15);
+  border-radius: calc(1cqh * var(--ov-radius, 1));
+  background: color-mix(in srgb, var(--ov-muted, #9aa3ad) 15%, transparent);
   overflow: hidden;
   display: block;
 }
@@ -170,8 +358,8 @@
 .ov-chart-bar {
   display: block;
   height: 100%;
-  border-radius: 1cqh;
-  background: var(--ov-accent, #d97757);
+  border-radius: calc(1cqh * var(--ov-radius, 1));
+  background: linear-gradient(90deg, var(--ov-accent, #d97757), color-mix(in srgb, var(--ov-accent, #d97757) 70%, var(--ov-accent2, #f28a32)));
 }
 
 .ov-chart-value {
@@ -180,6 +368,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* list: rows slide in, a check draws in each marker. */
 .ov-list-item {
   display: flex;
   align-items: center;
@@ -189,12 +378,18 @@
 }
 
 .ov-list-marker {
-  width: 1.6cqw;
-  height: 1.6cqw;
+  width: 2.2cqw;
+  height: 2.2cqw;
   border-radius: 50%;
   background: var(--ov-accent, #d97757);
   flex: none;
+  display: grid;
+  place-items: center;
+  transform-origin: center;
 }
+
+.ov-check { width: 70%; height: 70%; }
+.ov-check path { fill: none; stroke: var(--ov-on-accent, #ffffff); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 30; stroke-dashoffset: 30; }
 
 /* The drifting pool of accent light on the field. */
 .stage-glow {
@@ -206,7 +401,7 @@
   height: 90cqw;
   margin: -45cqw 0 0 -45cqw;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--ov-accent, #d97757) 7%, transparent) 0%, transparent 62%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--ov-accent, #d97757) var(--ov-glow, 7%), transparent) 0%, transparent 62%);
   pointer-events: none;
 }
 
@@ -215,14 +410,16 @@
   left: 50cqw;
   top: 46cqh;
   transform: translate(-50%, -50%);
-  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  font-weight: 700;
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
   font-size: 16cqh;
   letter-spacing: 0.01em;
-  color: #f0ede6;
+  color: var(--ov-text, #f0ede6);
   text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9), 0 0 8cqh color-mix(in srgb, var(--ov-accent, #d97757) 30%, transparent);
   white-space: nowrap;
 }
+
+.ov-kinetic.tone-accent { color: var(--ov-accent, #d97757); }
 
 /* The screen track: the recording's own screen, playing in sync inside the
    content rect. The video element is a layer under the overlay; the card
@@ -231,7 +428,7 @@
   position: absolute;
   z-index: 1;
   object-fit: contain;
-  background: #0b0e12;
+  background: var(--ov-field-c, #0b0e12);
 }
 
 .ov-screen-card {
@@ -243,6 +440,7 @@
 }
 
 .ov-screen-label {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 700;
   font-size: min(3.2cqh, 5cqi);
   letter-spacing: 0.1em;
@@ -251,30 +449,36 @@
   padding-top: 1cqh;
 }
 
-/* Snapshot card: a frame pulled from the footage, presented as evidence. */
+/* image: a still presented as evidence — tilted in, popped in, or slowly
+   pushed in Ken Burns style inside its frame. */
 .ov-image-card {
   border: none;
   background: transparent;
   align-items: center;
+  box-shadow: none;
 }
 
 .ov-image-wrap {
-  background: #1a2129;
+  background: var(--ov-card, #1a2129);
   border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
-  border-radius: 1.4cqw;
+  border-radius: calc(1.4cqw * var(--ov-radius, 1));
   padding: 1.4cqh 1.4cqh 0;
   box-shadow: 0 14px 50px rgba(0, 0, 0, 0.65);
   max-height: 100%;
+  transform-origin: center;
 }
+
+.ov-image-clip { overflow: hidden; border-radius: calc(0.8cqw * var(--ov-radius, 1)); }
 
 .ov-image {
   display: block;
   max-height: 52cqh;
   max-width: 100%;
-  border-radius: 0.8cqw;
+  transform-origin: center;
 }
 
 .ov-image-label {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 700;
   font-size: min(3.6cqh, 5.5cqi);
   letter-spacing: 0.1em;
@@ -282,6 +486,150 @@
   text-align: center;
   padding: 1.2cqh 0;
 }
+
+/* quote: a serif pull-quote, the mark lands first, the words follow. */
+.kind-quote { justify-content: center; gap: 1.2cqh; }
+
+.ov-quote-mark {
+  font-family: var(--ov-font-serif, Georgia, serif);
+  font-size: min(20cqh, 30cqi);
+  line-height: 0.6;
+  color: var(--ov-accent, #d97757);
+  transform-origin: left top;
+  height: min(9cqh, 13cqi);
+}
+
+.ov-quote-text {
+  font-family: var(--ov-font-serif, Georgia, serif);
+  font-weight: 500;
+  font-size: min(6cqh, 8.5cqi);
+  line-height: 1.25;
+}
+
+.ov-quote-word { display: inline-block; }
+
+.ov-quote-by {
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-size: min(3.6cqh, 5cqi);
+  color: var(--ov-muted, #9aa3ad);
+  letter-spacing: 0.04em;
+}
+
+/* compare: two columns and the badge between them. */
+.ov-compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: calc(min(9cqh, 13cqi) * 1.6); }
+
+.ov-compare-head {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
+  font-size: min(4.6cqh, 6.5cqi);
+  letter-spacing: 0.04em;
+  padding-bottom: 1.2cqh;
+  margin-bottom: 1.6cqh;
+  border-bottom: 0.3cqh solid var(--ov-accent, #d97757);
+}
+
+.side-right .ov-compare-head { border-bottom-color: var(--ov-accent2, #f28a32); }
+
+.ov-compare-item { font-size: min(3.9cqh, 5.4cqi); line-height: 1.3; padding: 0.6cqh 0; }
+
+.ov-compare-vs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(9cqh, 13cqi);
+  height: min(9cqh, 13cqi);
+  border-radius: 50%;
+  background: var(--ov-accent, #d97757);
+  color: var(--ov-on-accent, #ffffff);
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 900;
+  font-size: min(3.4cqh, 5cqi);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* steps: numbered, joined by a line that draws down. */
+.ov-steps { position: relative; display: flex; flex-direction: column; gap: 2.2cqh; padding-left: 0.4cqw; }
+
+.ov-steps-line {
+  position: absolute;
+  left: calc(0.4cqw + min(2.6cqh, 3.8cqi) / 2);
+  top: min(2.6cqh, 3.8cqi);
+  bottom: min(2.6cqh, 3.8cqi);
+  width: 0.28cqw;
+  margin-left: -0.14cqw;
+  background: color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
+  transform-origin: center top;
+}
+
+.ov-step { display: flex; align-items: center; gap: min(2cqw, 3cqi); font-size: min(4.2cqh, 6cqi); }
+
+.ov-step-num {
+  width: min(5.2cqh, 7.6cqi);
+  height: min(5.2cqh, 7.6cqi);
+  border-radius: 50%;
+  background: var(--ov-accent, #d97757);
+  color: var(--ov-on-accent, #ffffff);
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transform-origin: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* ring: a percentage drawn as an arc, the number inside it. */
+.kind-ring { align-items: center; text-align: center; }
+.ov-ring { position: relative; width: min(46cqh, 60cqi); height: min(46cqh, 60cqi); }
+.ov-ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ov-ring-track { fill: none; stroke: color-mix(in srgb, var(--ov-muted, #9aa3ad) 22%, transparent); stroke-width: 9; }
+.ov-ring-arc { fill: none; stroke: var(--ov-accent, #d97757); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 263.89; stroke-dashoffset: 263.89; }
+
+.ov-ring-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
+  font-size: min(11cqh, 16cqi);
+  font-variant-numeric: tabular-nums;
+}
+
+/* logos: a row of pictures, each landing with a little bounce. */
+.kind-logos { justify-content: center; }
+.ov-logos { display: flex; justify-content: center; align-items: center; gap: min(3cqw, 5cqi); flex-wrap: wrap; }
+.ov-logo-tile { display: flex; flex-direction: column; align-items: center; gap: 1.2cqh; transform-origin: center; }
+.ov-logo-tile-img { height: min(16cqh, 22cqi); max-width: min(24cqw, 36cqi); object-fit: contain; }
+.ov-logo-tile-label { font-size: min(3.2cqh, 4.6cqi); color: var(--ov-muted, #9aa3ad); letter-spacing: 0.04em; }
+
+/* ---- Brand: a logo in a corner, a handle in the other ---- */
+
+.ov-brand { inset: 0; }
+
+.ov-logo { position: absolute; }
+.ov-logo.corner-tr { top: 3.2cqh; right: 2.4cqw; }
+.ov-logo.corner-tl { top: 3.2cqh; left: 2.4cqw; }
+.ov-logo.corner-br { bottom: 3.2cqh; right: 2.4cqw; }
+.ov-logo.corner-bl { bottom: 3.2cqh; left: 2.4cqw; }
+.ov-logo-img { display: block; width: 100%; height: auto; }
+
+.ov-watermark {
+  position: absolute;
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-weight: 600;
+  font-size: 2.6cqh;
+  letter-spacing: 0.06em;
+  color: var(--ov-text, #f0ede6);
+  opacity: 0.55;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+.ov-watermark.corner-br { right: 2.4cqw; bottom: 3.2cqh; }
+.ov-watermark.corner-bl { left: 2.4cqw; bottom: 3.2cqh; }
+.theme-paper .ov-watermark, .theme-mono .ov-watermark { text-shadow: none; }
 
 /* The burst behind a flaired title. */
 .ov-burst {
@@ -298,12 +646,4 @@
   background: var(--ov-accent, #d97757);
 }
 
-@keyframes ov-rise {
-  from { opacity: 0; transform: translateY(1.5cqh); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes ov-pop {
-  from { opacity: 0; transform: translateX(-50%) scale(0.92); }
-  to { opacity: 1; transform: translateX(-50%) scale(1); }
-}
+.ov-spark.is-pale { background: var(--ov-text, #f0ede6); }

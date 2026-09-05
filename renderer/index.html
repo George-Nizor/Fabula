@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fabula</title>
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="overlays.css" />
 </head>
@@ -52,7 +53,7 @@
     </aside>
     <section class="stagewell">
       <div class="videoframe">
-        <video id="video"></video>
+        <div class="stage-head" id="head"><video id="video"></video></div>
         <div class="guides" id="guides" hidden></div>
         <video id="screen" class="stage-screen" muted hidden></video>
         <div class="ov-layer" id="overlay"></div>
@@ -72,15 +73,84 @@
           <div class="insp-kv"><span>Framing</span><b id="sum-framing"></b></div>
         </div>
         <div class="insp-section" id="insp-compose-summary" hidden>
-          <label class="insp-field">Project accent
+          <label class="insp-field">Theme
+            <select id="theme-preset">
+              <option value="studio">Studio — charcoal, terracotta</option>
+              <option value="broadcast">Broadcast — black, blocks, uppercase</option>
+              <option value="paper">Paper — warm paper, serif</option>
+              <option value="neon">Neon — violet, cyan, glass</option>
+              <option value="mono">Mono — white, black, square</option>
+            </select>
+          </label>
+          <label class="insp-field">Accent
             <span class="insp-accent-row">
               <input type="color" id="theme-accent" value="#d97757" />
               <span class="insp-swatch-value" id="theme-accent-value">#d97757</span>
             </span>
           </label>
-          <label class="insp-field insp-check">
-            <input type="checkbox" id="theme-captions" /> word captions
+          <label class="insp-field">Second accent
+            <span class="insp-accent-row">
+              <input type="color" id="theme-accent2" value="#f28a32" />
+              <span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span>
+            </span>
           </label>
+          <label class="insp-field">Titles
+            <select id="theme-title-style">
+              <option value="rise">rise</option>
+              <option value="slam">slam</option>
+              <option value="typewriter">typewriter</option>
+              <option value="wipe">wipe</option>
+              <option value="block">block — lower third</option>
+            </select>
+          </label>
+          <label class="insp-field">Callouts
+            <select id="theme-callout-style">
+              <option value="pill">pill</option>
+              <option value="tag">tag</option>
+              <option value="stamp">stamp</option>
+              <option value="note">note</option>
+            </select>
+          </label>
+          <label class="insp-field">Captions
+            <select id="theme-caption-style">
+              <option value="pill">pill</option>
+              <option value="band">band</option>
+              <option value="karaoke">karaoke</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label class="insp-field insp-check">
+            <input type="checkbox" id="theme-captions" /> captions on
+          </label>
+          <label class="insp-field">Logo
+            <span class="insp-accent-row">
+              <button type="button" class="insp-mini" id="theme-logo-pick">choose…</button>
+              <span class="insp-swatch-value" id="theme-logo-name">none</span>
+              <button type="button" class="insp-mini" id="theme-logo-clear" hidden>remove</button>
+            </span>
+          </label>
+          <label class="insp-field" id="theme-logo-corner-wrap" hidden>Logo corner
+            <select id="theme-logo-corner">
+              <option value="tr">top right</option>
+              <option value="tl">top left</option>
+              <option value="br">bottom right</option>
+              <option value="bl">bottom left</option>
+            </select>
+          </label>
+          <label class="insp-field">Watermark
+            <input type="text" id="theme-watermark" placeholder="@handle or site" maxlength="40" />
+          </label>
+          <label class="insp-field">Punch-ins
+            <select id="theme-punch">
+              <option value="">off</option>
+              <option value="1.1">alternating 110%</option>
+              <option value="1.15">alternating 115%</option>
+              <option value="1.25">alternating 125%</option>
+            </select>
+          </label>
+          <div class="insp-actions">
+            <button type="button" class="insp-mini" id="theme-reset">reset to preset</button>
+          </div>
         </div>
         <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-keys">

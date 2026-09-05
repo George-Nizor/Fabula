@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("fabula", {
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   setProject: (patch) => ipcRenderer.invoke("fabula:set-project", patch),
+  pickAsset: () => ipcRenderer.invoke("fabula:pick-asset"),
   ingestFile: (file) => ipcRenderer.invoke("fabula:ingest", webUtils.getPathForFile(file)),
   pickFile: () => ipcRenderer.invoke("fabula:pick"),
   onState: (callback) => {

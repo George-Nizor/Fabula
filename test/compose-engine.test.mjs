@@ -93,3 +93,23 @@ test("phrase captions break at sentence ends, clause commas, pauses, and length"
   assert.equal(spans[1].end, 1.6); // hangs a beat through the long pause
   assert.equal(spans.at(-1).end, 4.4);
 });
+
+test("the wider kit validates: styles, subtitles, and the new graphic kinds", () => {
+  const ok = (scene) => validateScenes([{ fromWordId: 0, toWordId: 1, ...scene }], words);
+  const bad = (scene, re) => assert.throws(() => ok(scene), re);
+  ok({ type: "title", text: "Hi", style: "slam", subtitle: "a sub" });
+  bad({ type: "title", text: "Hi", style: "explode" }, /title style/);
+  ok({ type: "callout", text: "Hi", style: "stamp" });
+  bad({ type: "callout", text: "Hi", style: "pill-ish" }, /callout style/);
+  ok({ type: "graphic", graphic: { kind: "quote", text: "Ship it.", by: "Someone" } });
+  bad({ type: "graphic", graphic: { kind: "quote", text: "" } }, /quote needs text/);
+  ok({ type: "graphic", graphic: { kind: "ring", value: 64, label: "done" } });
+  bad({ type: "graphic", graphic: { kind: "ring", value: 640, label: "done" } }, /0 to 100/);
+  ok({ type: "graphic", graphic: { kind: "compare", left: { title: "A", items: [{ label: "x" }] }, right: { title: "B", items: [{ label: "y" }] } } });
+  bad({ type: "graphic", graphic: { kind: "compare", left: { title: "A", items: [] } } }, /compare/);
+  ok({ type: "graphic", graphic: { kind: "steps", items: [{ label: "one" }, { label: "two" }] } });
+  ok({ type: "graphic", graphic: { kind: "logos", items: [{ src: "assets/a.png", label: "A" }] } });
+  bad({ type: "graphic", graphic: { kind: "logos", items: [{ src: "../a.png" }] } }, /project-relative/);
+  ok({ type: "graphic", graphic: { kind: "image", src: "assets/a.png", motion: "kenburns" } });
+  bad({ type: "graphic", graphic: { kind: "image", src: "assets/a.png", motion: "spin" } }, /motion/);
+});

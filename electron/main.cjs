@@ -27,11 +27,12 @@ if (checkFlag >= 0) {
 // core/ is ESM and this file is CJS; the engines arrive async and the feed
 // simply lacks their derived fields until they land (a poll tick at worst).
 let core = null;
-Promise.all(
-  ["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs", "stage-engine.mjs"].map((name) =>
+Promise.all([
+  ...["shot-engine.mjs", "cut-engine.mjs", "compose-engine.mjs", "stage-engine.mjs", "themes.mjs"].map((name) =>
     import(pathToFileURL(path.join(__dirname, "..", "core", name)).href)
-  )
-).then(([shot, cut, compose, stage]) => { core = { shot, cut, compose, stage }; })
+  ),
+  import(pathToFileURL(path.join(__dirname, "..", "scripts", "pipeline.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, pipeline]) => { core = { shot, cut, compose, stage, themes, pipeline }; })
   .catch((error) => console.error("core engines failed to load:", error));
 
 function readJson(file) {
@@ -91,10 +92,22 @@ function fileUrl(file) {
   return file && fs.existsSync(file) ? pathToFileURL(file).href : null;
 }
 
+// Punch-ins are the compose stage's: compose.json holds them, and a project
+// from before that carries them as review.shotPlan until plan_shots moves
+// them. Either way the Cut tab previews them over the raw footage.
+function readPunch(dir, review) {
+  const config = readJson(path.join(dir, "compose.json"));
+  if (config && "punch" in config) return config.punch ?? null;
+  const zoom = review?.shotPlan?.zoom;
+  return zoom ? { zoom } : null;
+}
+
 function attachDerived(review, dir) {
   review.videoUrl = fileUrl(stagedVideoPath(dir));
-  review.shots = review.shotPlan && core
-    ? core.shot.punchPlan(review.words, review.cuts, review.duration, review.shotPlan)
+  const punch = readPunch(dir, review);
+  review.shotPlan = punch ? { type: "punch-alternate", zoom: punch.zoom } : null;
+  review.shots = punch && core
+    ? core.shot.punchPlan(review.words, review.cuts, review.duration, { zoom: punch.zoom })
     : null;
   review.framing = readJson(path.join(dir, "framing.json"));
   return review;
@@ -114,17 +127,23 @@ function readCompose(dir) {
     const cleanVideo = path.join(dir, "out", "clean.mp4");
     const cleanTranscript = path.join(dir, "clean.json");
     if (!fs.existsSync(cleanVideo) || !fs.existsSync(cleanTranscript)) return null;
-    // The transcript must belong to THIS render: an older clean.json against
+    const map = readJson(path.join(dir, "out", "clean-map.json"));
+    // The transcript must belong to THIS render: by the cut identity both
+    // carry, or by file time for older projects. An older clean.json against
     // a clean.mp4 still being written is not a compose stage, it is a race.
-    if (fs.statSync(cleanTranscript).mtimeMs < fs.statSync(cleanVideo).mtimeMs) return null;
+    if (!core.pipeline.cleanTranscriptCurrent(cleanTranscript, cleanVideo, map)) return null;
     const words = core.cut.flattenWords(readJson(cleanTranscript));
     const config = readJson(path.join(dir, "compose.json")) ?? { scenes: [] };
+    const punch = readPunch(dir, readJson(path.join(dir, "review.json")));
     const scenes = core.compose.resolveScenes(config.scenes ?? [], words);
+    const assetUrl = (src) => pathToFileURL(path.join(dir, src)).href;
     for (const scene of scenes) {
-      if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(dir, scene.graphic.src)).href;
+      if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
+      for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
     }
+    const theme = core.themes.resolveTheme(config.theme ?? null);
+    if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
     const duration = words.at(-1)?.end ?? 0;
-    const map = readJson(path.join(dir, "out", "clean-map.json"));
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
       screenUrl: fileUrl(path.join(dir, "out", "screen.mp4")),
@@ -136,7 +155,10 @@ function readCompose(dir) {
       captionsOn: Boolean(config.captions),
       stage: core.stage.DEFAULT_STAGE,
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
-      theme: config.theme ?? null,
+      theme,
+      themeConfig: config.theme ?? {},
+      punch,
+      punchSpans: punch && map?.pieces ? core.shot.punchSpans(map.pieces, punch.zoom) : [],
     };
   } catch {
     return null; // compose files absent or mid-write; cut review still works
@@ -195,7 +217,7 @@ function stateStamp() {
   if (!dir) return "none";
   return [
     "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json",
-    path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"),
+    path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
   ]
     .map((name) => {
       try {
@@ -328,7 +350,8 @@ app.whenReady().then(() => {
       mutate(config);
       const words = core.cut.flattenWords(readJson(path.join(dir, "clean.json")));
       core.compose.validateScenes(config.scenes ?? [], words);
-      core.compose.validateTheme(config.theme);
+      core.themes.validateTheme(config.theme);
+      if (config.punch && !(config.punch.zoom >= 1.02 && config.punch.zoom <= 1.5)) throw new Error("punch zoom must be 1.02–1.5");
       fs.writeFileSync(file, JSON.stringify(config, null, 2));
       event.sender.send("fabula:state", readState());
       return { ok: true };
@@ -355,13 +378,42 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("fabula:set-project", (event, patch) =>
     editCompose(event, (config) => {
-      if ("accent" in patch) {
-        if (patch.accent) config.theme = { ...config.theme, accent: patch.accent };
-        else delete config.theme;
+      if ("accent" in patch) patch = { ...patch, theme: { ...(patch.theme ?? {}), accent: patch.accent || null } };
+      if (patch.themeReset) config.theme = config.theme?.preset ? { preset: config.theme.preset } : {};
+      if (patch.theme && typeof patch.theme === "object") {
+        const theme = { ...(config.theme ?? {}) };
+        for (const [key, value] of Object.entries(patch.theme)) {
+          if (key === "logoCorner") { if (theme.logo) theme.logo = { ...theme.logo, corner: value }; continue; }
+          if (value === null || value === "") delete theme[key];
+          else theme[key] = value;
+        }
+        config.theme = theme;
       }
       if ("captions" in patch) config.captions = Boolean(patch.captions);
+      if ("punch" in patch) config.punch = patch.punch ? { zoom: Number(patch.punch) } : null;
     })
   );
+
+  // A picture for the brand: copied into the project's assets so the film
+  // never depends on a file elsewhere on the disk.
+  ipcMain.handle("fabula:pick-asset", async (event) => {
+    const picked = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Choose a logo",
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true };
+    try {
+      const dir = projectDir();
+      const source = picked.filePaths[0];
+      const name = path.basename(source).replace(/[^a-z0-9._-]/gi, "_").toLowerCase();
+      fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
+      fs.copyFileSync(source, path.join(dir, "assets", name));
+      return { ok: true, src: `assets/${name}` };
+    } catch (error) {
+      return { ok: false, error: String(error.message ?? error) };
+    }
+  });
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

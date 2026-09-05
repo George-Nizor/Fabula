@@ -12,15 +12,34 @@ function path_isAbsoluteLike(p) {
 }
 
 import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
+import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen", "quote", "compare", "steps", "ring", "logos"]);
+export const IMAGE_MOTIONS = new Set(["tilt", "kenburns", "pop"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 
 export function validateTheme(theme) {
-  if (theme === undefined || theme === null) return;
-  if (theme.accent !== undefined && !ACCENT_RE.test(theme.accent)) {
-    throw new Error(`theme accent must be #rrggbb, got "${theme.accent}"`);
+  validateThemeConfig(theme);
+}
+
+function assertImageSrc(src, at) {
+  if (typeof src !== "string" || !/\.(png|jpe?g|webp)$/i.test(src)) {
+    throw new Error(`${at}: needs a png/jpg/webp src`);
+  }
+  if (src.includes("..") || path_isAbsoluteLike(src)) {
+    throw new Error(`${at}: src must be a project-relative path`);
+  }
+}
+
+function assertItems(items, at, kind, { min = 1, max = 6, needValue = false, needSrc = false } = {}) {
+  if (!Array.isArray(items) || items.length < min || items.length > max) {
+    throw new Error(`${at}: ${kind} needs ${min}–${max} items`);
+  }
+  for (const item of items) {
+    if (needSrc) assertImageSrc(item.src, at);
+    else if (!item.label) throw new Error(`${at}: every item needs a label`);
+    if (needValue && typeof item.value !== "number") throw new Error(`${at}: ${kind} items need numeric values`);
   }
 }
 
@@ -32,11 +51,9 @@ function validateGraphic(graphic, at) {
   // moment is the render map's business, reported as a warning upstream.
   if (graphic.kind === "screen") return;
   if (graphic.kind === "image") {
-    if (typeof graphic.src !== "string" || !/\.(png|jpe?g|webp)$/i.test(graphic.src)) {
-      throw new Error(`${at}: image needs a png/jpg/webp src`);
-    }
-    if (graphic.src.includes("..") || path_isAbsoluteLike(graphic.src)) {
-      throw new Error(`${at}: image src must be a project-relative path`);
+    assertImageSrc(graphic.src, `${at}: image`);
+    if (graphic.motion !== undefined && !IMAGE_MOTIONS.has(graphic.motion)) {
+      throw new Error(`${at}: image motion must be one of ${[...IMAGE_MOTIONS].join(", ")}`);
     }
     return;
   }
@@ -45,15 +62,31 @@ function validateGraphic(graphic, at) {
     if (!graphic.label) throw new Error(`${at}: stat needs a label`);
     return;
   }
-  if (!Array.isArray(graphic.items) || graphic.items.length === 0 || graphic.items.length > 6) {
-    throw new Error(`${at}: ${graphic.kind} needs 1–6 items`);
+  if (graphic.kind === "ring") {
+    if (typeof graphic.value !== "number" || graphic.value < 0 || graphic.value > 100) throw new Error(`${at}: ring needs a value from 0 to 100`);
+    if (!graphic.label) throw new Error(`${at}: ring needs a label`);
+    return;
   }
-  for (const item of graphic.items) {
-    if (!item.label) throw new Error(`${at}: every item needs a label`);
-    if (graphic.kind === "chart" && typeof item.value !== "number") {
-      throw new Error(`${at}: chart items need numeric values`);
+  if (graphic.kind === "quote") {
+    if (typeof graphic.text !== "string" || graphic.text.length === 0 || graphic.text.length > 220) {
+      throw new Error(`${at}: quote needs text up to 220 characters`);
     }
+    return;
   }
+  if (graphic.kind === "compare") {
+    for (const side of ["left", "right"]) {
+      const column = graphic[side];
+      if (!column || typeof column !== "object" || !column.title) throw new Error(`${at}: compare needs ${side}.title`);
+      assertItems(column.items, `${at}: compare ${side}`, "compare", { min: 1, max: 5 });
+    }
+    return;
+  }
+  if (graphic.kind === "logos") {
+    assertItems(graphic.items, at, "logos", { min: 1, max: 6, needSrc: true });
+    return;
+  }
+  // chart, list, steps: labelled rows.
+  assertItems(graphic.items, at, graphic.kind, { min: 1, max: graphic.kind === "steps" ? 5 : 6, needValue: graphic.kind === "chart" });
 }
 
 export function validateScenes(scenes, words) {
@@ -71,14 +104,21 @@ export function validateScenes(scenes, words) {
       throw new Error(`${at}: accent must be #rrggbb`);
     }
     if (scene.type === "graphic") validateGraphic(scene.graphic, at);
-    else if (scene.type === "stage") {
+    else if (scene.type === "title") {
+      if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
+      if (scene.style !== undefined && !TITLE_STYLES.has(scene.style)) throw new Error(`${at}: title style must be one of ${[...TITLE_STYLES].join(", ")}`);
+      if (scene.subtitle !== undefined && typeof scene.subtitle !== "string") throw new Error(`${at}: subtitle must be text`);
+    } else if (scene.type === "callout") {
+      if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
+      if (scene.style !== undefined && !CALLOUT_STYLES.has(scene.style)) throw new Error(`${at}: callout style must be one of ${[...CALLOUT_STYLES].join(", ")}`);
+    } else if (scene.type === "stage") {
       if (!LAYOUTS.has(scene.layout)) throw new Error(`${at}: unknown layout "${scene.layout}"`);
       if (scene.corner !== undefined && !PIP_CORNERS.has(scene.corner)) {
         throw new Error(`${at}: unknown corner "${scene.corner}"`);
       }
     } else if (scene.type === "kinetic") {
       // Kinetic rides the transcript's own words; it carries no text.
-    } else if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
+    }
   });
 }
 

@@ -57,9 +57,14 @@ review gates. Nothing renders until a gate is approved.
      and redundancy — the cuts a word list cannot see. Every cut carries reason, source, and an
      enabled toggle.
    - Cuts keep ~150 ms of breath at each boundary and never cut to zero.
-4. **Cut review gate.** Approve → render `clean.mp4`: frame-accurate ffmpeg re-encode, 20–40 ms
-   audio fades at joins, and **alternating punch-ins** (100% ↔ ~115%, from the 4K master) at cuts
-   to conceal jumps — the single biggest perceived-quality win in the pipeline.
+4. **Cut review gate.** Approve → render `clean.mp4`: a frame-accurate ffmpeg re-encode of the
+   kept footage, cropped to the source framing and delivered at stage resolution. This is the
+   one render that finalises the cut. It happens once per cut list and framing, by content
+   (`out/clean-map.json` records the identity of the cuts and framing it came from, and
+   `render_clean` skips when the current ones match), and everything after it moves the file
+   around without touching it. **Alternating punch-ins** (100% ↔ ~115%) at cuts to conceal jumps
+   — the single biggest perceived-quality win in the pipeline — are placed by the compose stage
+   and the final render, not baked here, so turning them on, off or tighter costs no render.
 5. **Re-transcribe clean.mp4.** Timestamps now match the footage the compositor receives. Never
    re-time the raw transcript.
 6. **Chunk (optional).** With no upload ceiling to respect, chunking is purely render and
@@ -98,18 +103,37 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
 - **Compositor: Fabula's own runtime, and only that.** Three parts:
   1. *Scene kit* — layout primitives (full frame, corner pin, split, the video layer with border
      and radius), animation primitives (springs and easings over the one time value), content
-     components (title, list, chart, diagram), and design tokens configured once so every segment
-     matches. This is the "design system in Design" idea, owned locally.
+     components, and design tokens configured once so every segment matches. This is the "design
+     system in Design" idea, owned locally. As built (2026-09-05): five theme presets in
+     `core/themes.mjs` (Studio, Broadcast, Paper, Neon, Mono), each a complete set of tokens —
+     field, accents, type faces (vendored: Inter, Space Grotesk, Fraunces, Source Serif 4, so
+     the Windows window and the WSL export set the same type), card, radius, glow, title,
+     callout and caption styles — with per-project overrides, a logo watermark and a handle;
+     titles in five styles (rise, slam, typewriter, wipe, block lower third) with subtitles,
+     callouts in four (pill, tag, stamp, note), captions in three (pill, band, karaoke), and a
+     graphic kit of chart, stat, list, image (tilt, pop, Ken Burns), quote, compare, steps, ring,
+     logos and the screen track. Every entrance, count and wipe is a function of time computed
+     in `renderer/overlays.js`; the painter keeps elements by identity between frames, so a
+     callout never replays its entrance because a caption changed beside it (the "flashed twice"
+     bug of 2026-09-04), and the export never catches an animation mid-flight because there are
+     none. Pictures arrive through `scripts/images.mjs`: Wikimedia Commons search (rasterised
+     PNGs even for SVG logos, licences reported), a page's share image, or a site's icon.
   2. *Shot plans are declarative JSON against the kit*, word-anchored, so the second review gate
      can edit them directly without a Claude round trip. A Claude-authored custom component is the
      escape hatch when the kit cannot express a shot (later slice, sandboxed to the runtime's
      time-function contract).
   3. *Preview and export share the runtime.* Preview plays live over the `<video>` element.
-     Export steps the same composition at a fixed timestep in an offscreen window: the video layer
-     is fed frame-exact (WebCodecs decode of clean.mp4, sequential, no per-frame seeking), each
-     composed frame is captured and piped to ffmpeg, and the audio is muxed straight from
-     clean.mp4 — the video is never re-timed, so audio alignment is free. What you previewed is
-     literally what renders.
+     The export is layered (decided and built 2026-09-05, after a whole-stage capture that seeked
+     video for every frame made each title tweak cost the whole film again): the head and screen
+     tracks — rendered once by the clean render — are placed on the stage by ffmpeg from
+     expressions `core/render-plan.mjs` generates out of the stage engine's own numbers, tested
+     against `layoutAt` at every instant; the browser paints only two transparent layers (cards
+     and the head's shadow under the head, titles, captions and kinetic type over it) and is
+     captured only when a layer's signature changes; ffmpeg composes field, glow, screen, layers
+     and head in two-minute chunks, encoded in parallel and cached by a hash of everything that
+     can change their pixels; the stitch copies the chunks with the audio straight from
+     clean.mp4 — the video is never re-timed, so audio alignment is free. A whole film is
+     minutes; a tweak re-renders one chunk. What you previewed is literally what renders.
 
 ## Build order
 
@@ -135,8 +159,16 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
   the spike after a WSL restart to get a clean CDP throughput number.
 - WebCodecs demux: `VideoDecoder` needs the H.264 samples handed to it; use mp4box.js for demux or
   fall back to `<video>` seek-per-frame if it fights back.
-- The John Van Sickle static ffmpeg has no NVENC. libx264 is fine to start; if encode becomes the
-  bottleneck, swap the setup script to a BtbN GPL build for `h264_nvenc` on the 4080.
+- ~~The John Van Sickle static ffmpeg has no NVENC.~~ Resolved 2026-09-05: `setup-tools.sh`
+  installs the BtbN GPL build, and `h264_nvenc` works from WSL (the encoder library is exposed
+  under `/usr/lib/wsl/lib`). What the switch revealed is that the encoder was never the clean
+  render's bottleneck: its graph had one `trim` branch per piece, hundreds of them, and ffmpeg's
+  single filter-graph thread spent the whole render scheduling branches while the decoder idled.
+  The graph is now one crop branch per distinct framing rect switched by `enable`, and one
+  `select` that keeps the pieces' frames — by frame number on the 30 fps grid, with the audio
+  trimmed to exactly those frames' instants, so the two tracks stay the same length to the sample
+  instead of drifting by up to a frame per cut. NVDEC (`h264_cuvid`) also works but decodes this
+  footage no faster than sixteen cores, and would tie the render to h264/hevc sources; not used.
 - WhisperX on this 4080/WSL2 (fallback: faster-whisper with `word_timestamps=True`).
 - Whether `large-v3` hallucination on long silences needs VAD tightening before the gap detector
   runs (WhisperX applies VAD by default; verify on a real recording).
