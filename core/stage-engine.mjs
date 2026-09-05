@@ -5,7 +5,8 @@
 // and the export ask the same questions and get the same rectangles.
 
 export const DEFAULT_STAGE = { width: 1920, height: 1080 };
-export const LAYOUTS = new Set(["focus", "pip", "side"]);
+export const LAYOUTS = new Set(["focus", "pip", "side", "full"]);
+export const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
 export const PIP_CORNERS = new Set(["br", "bl", "tr", "tl"]);
 const TRANSITION_SECONDS = 0.6;
 
@@ -100,6 +101,22 @@ export function layoutRects(layout, corner, videoAspect, stage = DEFAULT_STAGE) 
     return {
       video: { ...at, w, h },
       content: { x: W * 0.06, y: H * 0.08, w: W * 0.62, h: H * 0.8 },
+    };
+  }
+  if (layout === "full") {
+    // The visuals own the stage; the head is a small card in a corner.
+    const h = H * 0.2;
+    const w = h * videoAspect;
+    const m = H * 0.04;
+    const at = {
+      br: { x: W - w - m, y: H - h - m },
+      bl: { x: m, y: H - h - m },
+      tr: { x: W - w - m, y: m },
+      tl: { x: m, y: m },
+    }[corner ?? "br"];
+    return {
+      video: { ...at, w, h },
+      content: { x: W * 0.05, y: H * 0.07, w: W * 0.9, h: H * 0.86 },
     };
   }
   if (layout === "side") {

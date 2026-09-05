@@ -159,21 +159,38 @@ const stagger = (count, from, each, span, cap = 0.6) => {
 
 // ---- Motion: every moving number of a graphic at progress p and time t ----
 
+// A card's choreography runs over a fixed beat from its start, not over a
+// share of its span: a thirty-second card builds in under two seconds, and
+// the export captures those frames, not twelve seconds of them.
+const BUILD_SECONDS = 1.8;
+const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
+
 function graphicSignature(graphic, p, t, scene) {
   const alpha = presenceAt(t, scene.start, scene.end, 0.45, 0.35);
+  const span = scene.end - scene.start;
+  const q = clamp01((t - scene.start) / Math.min(BUILD_SECONDS, span * 0.5));
   switch (graphic.kind) {
     case "stat": {
       const decimals = Number.isInteger(graphic.value) ? 0 : Math.min((String(graphic.value).split(".")[1] ?? "").length, 3);
-      return { alpha, value: (graphic.value * easeOut(p / 0.5)).toFixed(decimals), slam: r3(1 + (1 - easeOut(p / 0.15)) * 0.25), rule: r3(easeOut(window01(p, 0.1, 0.35))) };
+      return { alpha, value: (graphic.value * easeOut(q / 0.7)).toFixed(decimals), slam: r3(1 + (1 - easeOut(q / 0.25)) * 0.25), rule: r3(easeOut(window01(q, 0.15, 0.5))) };
     }
     case "chart": {
-      const at = stagger(graphic.items.length, 0.1, 0.09, 0.32);
-      return { alpha, base: r3(easeOut(window01(p, 0.02, 0.12))), grow: graphic.items.map((_, i) => r3(easeOutBack(at(i, p)))) };
+      const at = stagger(graphic.items.length, 0.1, 0.12, 0.4, 0.75);
+      return { alpha, base: r3(easeOut(window01(q, 0.02, 0.15))), grow: graphic.items.map((_, i) => r3(easeOutBack(at(i, q)))) };
     }
     case "list": {
-      const at = stagger(graphic.items.length, 0.08, 0.14, 0.2);
-      return { alpha, appear: graphic.items.map((_, i) => r3(at(i, p))), check: graphic.items.map((_, i) => r3(easeOut(window01(p, 0.14 + i * Math.min(0.14, 0.5 / graphic.items.length), 0.14)))) };
+      const at = stagger(graphic.items.length, 0.08, 0.16, 0.25, 0.75);
+      return { alpha, appear: graphic.items.map((_, i) => r3(at(i, q))), check: graphic.items.map((_, i) => r3(easeOut(window01(q, 0.2 + i * Math.min(0.16, 0.55 / graphic.items.length), 0.18)))) };
     }
+    case "cover": {
+      const count = words(graphic.title).length;
+      const at = stagger(count, 0.1, 0.08, 0.3, 0.8);
+      return { alpha, zoom: r3(1 + 0.06 * easeOut(p)), shade: r3(easeOut(q / 0.5)), reveal: Array.from({ length: count }, (_, i) => r3(at(i, q))), sub: r3(easeOut(window01(q, 0.6, 0.3))) };
+    }
+    case "section":
+      return { alpha, number: r3(easeOutBack(window01(q, 0, 0.35))), rule: r3(easeOut(window01(q, 0.2, 0.4))), title: r3(easeOut(window01(q, 0.3, 0.45))), sub: r3(easeOut(window01(q, 0.6, 0.35))) };
+    case "custom":
+      return { alpha, p: r2(p), q: r2(q) };
     case "image":
       return graphic.motion === "kenburns"
         ? { alpha, zoom: r3(1 + 0.09 * easeOut(p)), pan: r3(p) }
@@ -182,28 +199,28 @@ function graphicSignature(graphic, p, t, scene) {
           : { alpha, settle: r3(easeOut(p / 0.18)) };
     case "quote": {
       const count = words(graphic.text).length;
-      const at = stagger(count, 0.04, 0.03, 0.12, 0.55);
-      return { alpha, mark: r3(easeOutBack(window01(p, 0, 0.14))), reveal: Array.from({ length: count }, (_, i) => r3(at(i, p))), by: r3(easeOut(window01(p, 0.6, 0.15))) };
+      const at = stagger(count, 0.08, 0.04, 0.2, 0.75);
+      return { alpha, mark: r3(easeOutBack(window01(q, 0, 0.25))), reveal: Array.from({ length: count }, (_, i) => r3(at(i, q))), by: r3(easeOut(window01(q, 0.75, 0.25))) };
     }
     case "compare": {
-      const left = stagger(graphic.left.items.length, 0.14, 0.09, 0.18, 0.5);
-      const right = stagger(graphic.right.items.length, 0.24, 0.09, 0.18, 0.6);
+      const left = stagger(graphic.left.items.length, 0.25, 0.12, 0.25, 0.7);
+      const right = stagger(graphic.right.items.length, 0.4, 0.12, 0.25, 0.85);
       return {
-        alpha, vs: r3(easeOutBack(window01(p, 0.06, 0.16))), heads: r3(easeOut(window01(p, 0.02, 0.14))),
-        left: graphic.left.items.map((_, i) => r3(left(i, p))), right: graphic.right.items.map((_, i) => r3(right(i, p))),
+        alpha, vs: r3(easeOutBack(window01(q, 0.1, 0.3))), heads: r3(easeOut(window01(q, 0.02, 0.25))),
+        left: graphic.left.items.map((_, i) => r3(left(i, q))), right: graphic.right.items.map((_, i) => r3(right(i, q))),
       };
     }
     case "steps": {
-      const at = stagger(graphic.items.length, 0.08, 0.14, 0.16, 0.7);
-      return { alpha, line: r3(easeOut(window01(p, 0.06, 0.55))), pop: graphic.items.map((_, i) => r3(easeOutBack(at(i, p)))) };
+      const at = stagger(graphic.items.length, 0.1, 0.18, 0.25, 0.85);
+      return { alpha, line: r3(easeOut(window01(q, 0.1, 0.7))), pop: graphic.items.map((_, i) => r3(easeOutBack(at(i, q)))) };
     }
     case "ring": {
-      const fill = easeOut(window01(p, 0.05, 0.6));
+      const fill = easeOut(window01(q, 0.05, 0.85));
       return { alpha, fill: r3(fill), value: Math.round(graphic.value * fill) };
     }
     case "logos": {
-      const at = stagger(graphic.items.length, 0.05, 0.1, 0.16, 0.6);
-      return { alpha, pop: graphic.items.map((_, i) => r3(easeOutBack(at(i, p)))) };
+      const at = stagger(graphic.items.length, 0.08, 0.14, 0.25, 0.8);
+      return { alpha, pop: graphic.items.map((_, i) => r3(easeOutBack(at(i, q)))) };
     }
     default:
       return { alpha };
@@ -273,8 +290,21 @@ function buildBrand(part) {
     logo.append(img);
     node.append(logo);
   }
-  if (part.watermark) node.append(el("div", `ov-watermark corner-${part.logo?.corner === "br" ? "bl" : "br"}`, part.watermark));
+  if (part.watermark && part.watermarkCorner) node.append(el("div", `ov-watermark corner-${part.watermarkCorner}`, part.watermark));
   return node;
+}
+
+// The handle takes a bottom corner the logo does not; when the head's small
+// card (full layout) sits there too, the other one; when both bottom
+// corners are taken, no handle for that span.
+function watermarkCorner(theme, layout, stage) {
+  const taken = new Set();
+  if (theme.logo) taken.add(theme.logo.corner);
+  if (layout && stage && layout.video.h < stage.height * 0.3) {
+    const v = layout.video;
+    taken.add(`${v.y + v.h / 2 > stage.height / 2 ? "b" : "t"}${v.x + v.w / 2 > stage.width / 2 ? "r" : "l"}`);
+  }
+  return ["br", "bl"].find((corner) => !taken.has(corner)) ?? null;
 }
 
 function ringSvg() {
@@ -304,7 +334,8 @@ function checkSvg() {
 function buildGraphic(part) {
   const graphic = part.graphic;
   const card = el("div", `ov ov-graphic kind-${graphic.kind}`);
-  if (graphic.title) card.append(el("div", "ov-graphic-title", graphic.title));
+  // Cards carry a heading; the full-stage kinds ARE their title.
+  if (graphic.title && !FULL_STAGE_KINDS.has(graphic.kind)) card.append(el("div", "ov-graphic-title", graphic.title));
 
   if (graphic.kind === "stat") {
     card.append(el("div", "ov-stat-value"), el("div", "ov-stat-rule"), el("div", "ov-stat-label", graphic.label));
@@ -378,6 +409,42 @@ function buildGraphic(part) {
     const wrap = el("div", "ov-ring");
     wrap.append(ringSvg(), el("div", "ov-ring-value"));
     card.append(wrap, el("div", "ov-stat-label", graphic.label));
+  }
+  if (graphic.kind === "cover") {
+    card.classList.add("is-full");
+    const media = el("div", "ov-cover-media");
+    if (graphic.url ?? graphic.src) {
+      const img = el("img", "ov-cover-img");
+      img.src = graphic.url ?? graphic.src;
+      media.append(img);
+    }
+    const shade = el("div", "ov-cover-shade");
+    if (graphic.tint) shade.style.setProperty("--ov-cover-tint", graphic.tint);
+    const text = el("div", "ov-cover-text");
+    const title = el("div", "ov-cover-title");
+    for (const word of words(graphic.title)) title.append(el("span", "ov-cover-word", word), " ");
+    text.append(el("div", "ov-cover-rule"), title);
+    if (graphic.subtitle) text.append(el("div", "ov-cover-sub", graphic.subtitle));
+    card.append(media, shade, text);
+  }
+  if (graphic.kind === "section") {
+    card.classList.add("is-full");
+    const block = el("div", "ov-section");
+    if (graphic.number !== undefined) block.append(el("div", "ov-section-number", String(graphic.number)));
+    block.append(el("div", "ov-section-rule"), el("div", "ov-section-title", graphic.title));
+    if (graphic.subtitle) block.append(el("div", "ov-section-sub", graphic.subtitle));
+    card.append(block);
+  }
+  if (graphic.kind === "custom") {
+    // Claude's own markup for this one moment: scoped CSS, no scripts (the
+    // engine refuses them), motion from the --p / --q / --t variables the
+    // painter sets every frame.
+    if (graphic.full !== false) card.classList.add("is-full");
+    const style = el("style");
+    style.textContent = `@scope (.ov-custom-root) { ${graphic.css ?? ""} }`;
+    const root = el("div", "ov-custom-root");
+    root.innerHTML = graphic.html;
+    card.append(style, root);
   }
   if (graphic.kind === "logos") {
     const row = el("div", "ov-logos");
@@ -572,6 +639,38 @@ function animateGraphic(card, part) {
       card.querySelector(".ov-ring-value").textContent = `${sig.value}${graphic.suffix ?? "%"}`;
       break;
     }
+    case "cover": {
+      const img = card.querySelector(".ov-cover-img");
+      if (img) img.style.transform = `scale(${sig.zoom})`;
+      card.querySelector(".ov-cover-shade").style.opacity = String(sig.shade);
+      card.querySelector(".ov-cover-rule").style.transform = `scaleX(${r3(Math.min(sig.shade * 1.4, 1))})`;
+      [...card.querySelectorAll(".ov-cover-word")].forEach((span, i) => {
+        const v = sig.reveal[i];
+        span.style.opacity = String(v);
+        span.style.transform = `translateY(${r3((1 - v) * 0.5)}em)`;
+      });
+      const sub = card.querySelector(".ov-cover-sub");
+      if (sub) { sub.style.opacity = String(sig.sub); sub.style.transform = `translateY(${r3((1 - sig.sub) * 0.6)}em)`; }
+      break;
+    }
+    case "section": {
+      const number = card.querySelector(".ov-section-number");
+      if (number) { number.style.transform = `scale(${r3(Math.max(sig.number, 0))})`; number.style.opacity = String(clamp01(sig.number)); }
+      card.querySelector(".ov-section-rule").style.transform = `scaleX(${sig.rule})`;
+      const title = card.querySelector(".ov-section-title");
+      title.style.clipPath = `inset(0 ${r3((1 - sig.title) * 100)}% 0 0)`;
+      title.style.opacity = String(Math.min(sig.title * 3, 1));
+      const sub = card.querySelector(".ov-section-sub");
+      if (sub) sub.style.opacity = String(sig.sub);
+      break;
+    }
+    case "custom": {
+      const root = card.querySelector(".ov-custom-root");
+      root.style.setProperty("--p", String(sig.p));
+      root.style.setProperty("--q", String(sig.q));
+      root.style.setProperty("--alpha", String(sig.alpha));
+      break;
+    }
     case "logos":
       [...card.querySelectorAll(".ov-logo-tile")].forEach((tile, i) => {
         const v = sig.pop[i];
@@ -650,7 +749,7 @@ function animate(node, part, stage, theme) {
 
 // What identifies a part across frames (its element is kept while this
 // holds) and what would need a rebuild (its structure changed under it).
-const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => w.text), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, tone: part.tone });
+const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => w.text), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone });
 
 window.FabulaStage = {
   glowAt,
@@ -682,7 +781,8 @@ window.FabulaStage = {
       const key = `${scene.type}:${scene.start}:${scene.fromWordId ?? ""}`;
       if (scene.type === "graphic") {
         const sig = graphicSignature(scene.graphic, p, t, scene);
-        const rect = contentRect ? roundRect(contentRect) : null;
+        const full = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;
+        const rect = full && stage ? { x: 0, y: 0, w: stage.width, h: stage.height } : (contentRect ? roundRect(contentRect) : null);
         parts.push({ key, kind: "graphic", layer: "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
         if (scene.graphic.kind === "screen" && rect && stage) {
           screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end };
@@ -737,7 +837,7 @@ window.FabulaStage = {
       parts.push(part);
     }
     if (theme.logo || theme.watermark) {
-      parts.push({ key: "brand", kind: "brand", layer: "over", logo: theme.logo ? { ...theme.logo, url: theme.logoUrl ?? theme.logo.src } : null, watermark: theme.watermark });
+      parts.push({ key: "brand", kind: "brand", layer: "over", logo: theme.logo ? { ...theme.logo, url: theme.logoUrl ?? theme.logo.src } : null, watermark: theme.watermark, watermarkCorner: watermarkCorner(theme, layout, stage) });
     }
     for (const part of parts) part.sigText = JSON.stringify(part);
     return { t, stage, layout, parts, screen, theme };

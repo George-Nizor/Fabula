@@ -76,6 +76,12 @@ Iteration rules, in order of importance:
    memory silently discards their edits. `set_theme` merges; only `reset` drops overrides.
 2. **Change what was asked, keep the rest.** "Punchier title" is one scene's text, not a new
    plan. Carry every other scene through byte-for-byte.
+2b. **Vary the picture.** The same card kind twice in a row reads as a template; the film
+   should move between the head alone, a side card, the screen track, the full stage and the
+   spoken word. Use the `full` layout at section changes (a `section` heading, a `cover` with a
+   fetched still) and for anything that deserves the whole frame. When the kit has no shape for
+   a moment, write a `custom` graphic: your own html and css for that one beat, animated from
+   `--q`. Keep flights apart: the engine will not fly the head twice within three seconds.
 3. **Cuts moved ⇒ the clean cut is stale, and nothing else makes it so.** After a real cut
    change: `render_clean` → `retranscribe_clean` → `reanchor_scenes` (it matches the words at
    each scene's ends in the new transcript and moves the ids; place by hand only what it lists as

@@ -380,7 +380,7 @@ function openInspector(index) {
   els.inspAccent.value = scene.accent ?? compose()?.theme?.accent ?? "#d97757";
   els.inspAccentClear.hidden = !scene.accent;
   els.inspLayoutWrap.hidden = !isStage;
-  els.inspCornerWrap.hidden = !isStage || scene.layout !== "pip";
+  els.inspCornerWrap.hidden = !isStage || (scene.layout !== "pip" && scene.layout !== "full");
   if (isStage) {
     els.inspLayout.value = scene.layout;
     els.inspCorner.value = scene.corner ?? "br";
@@ -588,8 +588,8 @@ els.inspAccentClear.addEventListener("click", () => {
 });
 els.inspLayout.addEventListener("change", () => {
   const layout = els.inspLayout.value;
-  els.inspCornerWrap.hidden = layout !== "pip";
-  patchScene({ layout, corner: layout === "pip" ? els.inspCorner.value : null });
+  els.inspCornerWrap.hidden = layout !== "pip" && layout !== "full";
+  patchScene({ layout, corner: layout === "pip" || layout === "full" ? els.inspCorner.value : null });
 });
 els.inspCorner.addEventListener("change", () => patchScene({ corner: els.inspCorner.value }));
 els.inspFlair.addEventListener("change", () => patchScene({ flair: els.inspFlair.checked ? true : null }));

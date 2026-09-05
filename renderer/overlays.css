@@ -599,6 +599,77 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Full-stage cards: cover, section, custom. No card chrome; they ARE the
+   picture, under the head's small card and over the field. */
+.ov-graphic.is-full {
+  inset: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+/* cover: a still edge to edge, pushed in slowly, a shade rising from the
+   bottom, the title landing word by word. */
+.ov-cover-media { position: absolute; inset: 0; background: var(--ov-field-c, #0b0e12); }
+.ov-cover-img { width: 100%; height: 100%; object-fit: cover; transform-origin: center; display: block; }
+.ov-cover-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--ov-cover-tint, var(--ov-field-c, #0b0e12)) 88%, transparent) 100%);
+}
+.ov-cover-text { position: absolute; left: 6cqw; right: 6cqw; bottom: 9cqh; display: flex; flex-direction: column; gap: 1.6cqh; }
+.ov-cover-rule { width: 12cqw; height: 0.8cqh; background: var(--ov-accent, #d97757); transform-origin: left center; }
+.ov-cover-title {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 900;
+  font-size: 10cqh;
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.7);
+  max-width: 80cqw;
+}
+.titlecase-upper .ov-cover-title { text-transform: uppercase; }
+.ov-cover-word { display: inline-block; }
+.ov-cover-sub {
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-weight: 500;
+  font-size: 3.6cqh;
+  letter-spacing: 0.06em;
+  color: var(--ov-accent2, #f28a32);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+/* section: a chapter heading on the field, the number first. */
+.kind-section { display: grid; place-items: center; }
+.ov-section { display: flex; flex-direction: column; align-items: center; gap: 2.4cqh; text-align: center; max-width: 80cqw; }
+.ov-section-number {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 900;
+  font-size: 22cqh;
+  line-height: 0.9;
+  color: var(--ov-accent, #d97757);
+  transform-origin: center;
+}
+.ov-section-rule { width: 14cqw; height: 0.7cqh; background: var(--ov-accent2, #f28a32); transform-origin: center; }
+.ov-section-title {
+  font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
+  font-weight: 800;
+  font-size: 9cqh;
+  line-height: 1.05;
+  color: var(--ov-text, #f0ede6);
+  will-change: clip-path;
+}
+.titlecase-upper .ov-section-title { text-transform: uppercase; letter-spacing: 0.04em; }
+.ov-section-sub { font-family: var(--ov-font-body, "Inter", system-ui, sans-serif); font-size: 3.8cqh; color: var(--ov-muted, #9aa3ad); letter-spacing: 0.04em; }
+
+/* custom: whatever was written for the moment, inside its own container. */
+.kind-custom { display: block; }
+.ov-custom-root { position: absolute; inset: 0; container-type: size; color: var(--ov-text, #f0ede6); font-family: var(--ov-font-body, "Inter", system-ui, sans-serif); opacity: var(--alpha, 1); }
+
 /* logos: a row of pictures, each landing with a little bounce. */
 .kind-logos { justify-content: center; }
 .ov-logos { display: flex; justify-content: center; align-items: center; gap: min(3cqw, 5cqi); flex-wrap: wrap; }

@@ -38,6 +38,7 @@ import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
+import { LAYOUTS } from "../core/stage-engine.mjs";
 import { reanchorScenes } from "../core/reanchor.mjs";
 import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
@@ -571,7 +572,7 @@ server.registerTool("get_scenes", {
 
 server.registerTool("set_scenes", {
   description:
-    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them). All motion is a pure function of scene progress. stage scenes place the talking head on the 1080p canvas for their span — layout focus (large, centered), pip (small corner card; optional corner br/bl/tr/tl), or side (head left, content right) — easing between layouts at each boundary; anywhere undeclared, the head holds focus. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them), and three that take the WHOLE stage: cover (a still edge to edge with a big title and subtitle, optional tint), section (a chapter heading: number, title, subtitle), custom (your own html + css for this one moment: scoped, no scripts or external loads, animate with the CSS variables --q (0→1 over the first 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh units measure the stage; pictures as assets/name.png). All motion is a pure function of scene progress. stage scenes place the talking head on the 1080p canvas for their span — layout focus (large, centered), pip (small corner card; optional corner br/bl/tr/tl), side (head left, content right), or full (the visuals own the stage, the head a small corner card; pair it with cover/section/custom) — easing between layouts at each boundary; anywhere undeclared, the head holds focus. The engine bridges returns to focus shorter than 3 s and absorbs placed segments shorter than that, so do not plan flights closer together than a breath. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
@@ -582,8 +583,8 @@ server.registerTool("set_scenes", {
       style: z.string().optional().describe(`title: ${[...TITLE_STYLES].join("/")}; callout: ${[...CALLOUT_STYLES].join("/")}; omit for the theme's default`),
       accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("per-scene accent override"),
       flair: z.boolean().optional().describe("title only: a particle burst behind the text"),
-      layout: z.enum(["focus", "pip", "side"]).optional().describe("stage scenes only"),
-      corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage+pip only"),
+      layout: z.enum([...LAYOUTS]).optional().describe("stage scenes only"),
+      corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage pip/full only"),
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
         title: z.string().optional(),
@@ -595,6 +596,12 @@ server.registerTool("set_scenes", {
         motion: z.enum([...IMAGE_MOTIONS]).optional().describe("image only: tilt (default), kenburns, pop"),
         text: z.string().max(220).optional().describe("quote only: the quotation"),
         by: z.string().max(60).optional().describe("quote only: who said it"),
+        subtitle: z.string().max(80).optional().describe("cover/section: the second line"),
+        number: z.string().max(6).optional().describe("section: a chapter number or short mark"),
+        tint: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("cover: colour of the shade over the still"),
+        html: z.string().max(20000).optional().describe("custom only: the markup"),
+        css: z.string().max(10000).optional().describe("custom only: styles, scoped to the card"),
+        full: z.boolean().optional().describe("custom only: false keeps it inside the layout's content rect instead of the whole stage"),
         left: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         right: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         items: z.array(z.object({

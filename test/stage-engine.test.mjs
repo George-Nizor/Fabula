@@ -73,3 +73,12 @@ test("the dwell rule bridges short returns to focus and absorbs short flights", 
   tl = resolveLayoutTimeline([side(58, 60)], 60);
   assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 58, "focus"], [58, 60, "side"]]);
 });
+
+test("the full layout gives the visuals the stage and keeps the head as a small corner card", () => {
+  const rects = layoutRects("full", "tl", 16 / 9, DEFAULT_STAGE);
+  assert.ok(rects.video.h < DEFAULT_STAGE.height * 0.25);
+  assert.equal(Math.round(rects.video.x), Math.round(DEFAULT_STAGE.height * 0.04));
+  assert.ok(rects.content.w > DEFAULT_STAGE.width * 0.85);
+  const br = layoutRects("full", undefined, 16 / 9, DEFAULT_STAGE);
+  assert.ok(br.video.x + br.video.w <= DEFAULT_STAGE.width);
+});

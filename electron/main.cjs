@@ -140,6 +140,10 @@ function readCompose(dir) {
     for (const scene of scenes) {
       if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
       for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
+      if (scene.graphic?.kind === "custom") {
+        const base = assetUrl("assets/");
+        scene.graphic = { ...scene.graphic, html: scene.graphic.html.replaceAll("assets/", base), css: (scene.graphic.css ?? "").replaceAll("assets/", base) };
+      }
     }
     const theme = core.themes.resolveTheme(config.theme ?? null);
     if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);

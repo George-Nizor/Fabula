@@ -15,7 +15,10 @@ import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen", "quote", "compare", "steps", "ring", "logos"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen", "quote", "compare", "steps", "ring", "logos", "cover", "section", "custom"]);
+// What a custom graphic may not carry: anything that runs, loads, or
+// navigates. Motion comes from the --p and --t variables the painter sets.
+const CUSTOM_FORBIDDEN = [/<\s*script/i, /<\s*iframe/i, /<\s*object/i, /<\s*embed/i, /<\s*link/i, /@import/i, /javascript:/i, /\bon[a-z]+\s*=/i, /https?:\/\//i, /expression\s*\(/i];
 export const IMAGE_MOTIONS = new Set(["tilt", "kenburns", "pop"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -65,6 +68,25 @@ function validateGraphic(graphic, at) {
   if (graphic.kind === "ring") {
     if (typeof graphic.value !== "number" || graphic.value < 0 || graphic.value > 100) throw new Error(`${at}: ring needs a value from 0 to 100`);
     if (!graphic.label) throw new Error(`${at}: ring needs a label`);
+    return;
+  }
+  if (graphic.kind === "cover") {
+    if (typeof graphic.title !== "string" || graphic.title.length === 0 || graphic.title.length > 80) throw new Error(`${at}: cover needs a title up to 80 characters`);
+    if (graphic.src !== undefined) assertImageSrc(graphic.src, `${at}: cover`);
+    if (graphic.tint !== undefined && !ACCENT_RE.test(graphic.tint)) throw new Error(`${at}: cover tint must be #rrggbb`);
+    return;
+  }
+  if (graphic.kind === "section") {
+    if (typeof graphic.title !== "string" || graphic.title.length === 0 || graphic.title.length > 60) throw new Error(`${at}: section needs a title up to 60 characters`);
+    if (graphic.number !== undefined && String(graphic.number).length > 6) throw new Error(`${at}: section number is at most 6 characters`);
+    return;
+  }
+  if (graphic.kind === "custom") {
+    if (typeof graphic.html !== "string" || graphic.html.length === 0 || graphic.html.length > 20000) throw new Error(`${at}: custom needs html up to 20000 characters`);
+    if (graphic.css !== undefined && (typeof graphic.css !== "string" || graphic.css.length > 10000)) throw new Error(`${at}: custom css is at most 10000 characters`);
+    for (const rule of CUSTOM_FORBIDDEN) {
+      if (rule.test(graphic.html) || rule.test(graphic.css ?? "")) throw new Error(`${at}: custom graphics may not contain ${rule.source.replace(/\\/g, "")}; no scripts, frames, external loads or handlers`);
+    }
     return;
   }
   if (graphic.kind === "quote") {
