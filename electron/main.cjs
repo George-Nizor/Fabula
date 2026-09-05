@@ -33,7 +33,8 @@ Promise.all([
   ),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "pipeline.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "inbox.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, pipeline, inbox]) => { core = { shot, cut, compose, stage, themes, pipeline, inbox }; })
+  import(pathToFileURL(path.join(__dirname, "..", "scripts", "theme-store.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, pipeline, inbox, themeStore]) => { core = { shot, cut, compose, stage, themes, pipeline, inbox, themeStore }; })
   .catch((error) => console.error("core engines failed to load:", error));
 
 function readJson(file) {
@@ -172,6 +173,7 @@ function readCompose(dir) {
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration),
       theme,
       themeConfig: config.theme ?? {},
+      savedThemes: core.themeStore.listSavedThemes(MEDIA_ROOT).map((s) => ({ id: s.id, name: s.name })),
       inserts,
       pendingToAgent: core.inbox.pendingInbox(dir).length,
       punch,
@@ -398,6 +400,11 @@ app.whenReady().then(() => {
     editCompose(event, (config) => {
       if ("accent" in patch) patch = { ...patch, theme: { ...(patch.theme ?? {}), accent: patch.accent || null } };
       if (patch.themeReset) config.theme = config.theme?.preset ? { preset: config.theme.preset } : {};
+      if (patch.themeUse) config.theme = { ...core.themeStore.loadTheme(MEDIA_ROOT, patch.themeUse) };
+      if (patch.themeSave) {
+        const { logo, ...look } = config.theme ?? {};
+        core.themeStore.saveTheme(MEDIA_ROOT, patch.themeSave, look);
+      }
       if (patch.theme && typeof patch.theme === "object") {
         const theme = { ...(config.theme ?? {}) };
         for (const [key, value] of Object.entries(patch.theme)) {

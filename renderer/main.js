@@ -37,6 +37,7 @@ const els = {
   themeTitleStyle: $("theme-title-style"), themeCalloutStyle: $("theme-callout-style"), themeCaptionStyle: $("theme-caption-style"),
   themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
   themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"), themeReset: $("theme-reset"),
+  themeSave: $("theme-save"), themeStatus: $("theme-status"),
   inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"),
   inspClose: $("insp-close"), inspStatus: $("insp-status"),
   inspText: $("insp-text"), inspTextWrap: $("insp-text-wrap"),
@@ -384,6 +385,15 @@ function renderProjectPanel() {
     els.inspComposeSummary.hidden = false;
     els.inspKeysCut.hidden = true;
     const theme = c?.theme ?? {};
+    // Saved themes join the presets in one menu; a saved one applies whole.
+    let saved = els.themePreset.querySelector("optgroup");
+    if (!saved) { saved = document.createElement("optgroup"); saved.label = "Saved"; els.themePreset.append(saved); }
+    const wanted = (c?.savedThemes ?? []).map((s) => `saved:${s.id}|${s.name}`).join(",");
+    if (saved.dataset.list !== wanted) {
+      saved.dataset.list = wanted;
+      saved.replaceChildren(...(c?.savedThemes ?? []).map((s) => { const o = document.createElement("option"); o.value = `saved:${s.id}`; o.textContent = s.name; return o; }));
+      saved.hidden = (c?.savedThemes ?? []).length === 0;
+    }
     els.themePreset.value = theme.preset ?? "studio";
     els.themeAccent.value = theme.accent ?? "#d97757";
     els.themeAccentValue.textContent = els.themeAccent.value;
@@ -713,7 +723,17 @@ els.themeAccent.addEventListener("input", () => { els.themeAccentValue.textConte
 els.themeAccent.addEventListener("change", () => window.fabula.setProject({ theme: { accent: els.themeAccent.value } }));
 els.themeAccent2.addEventListener("input", () => { els.themeAccent2Value.textContent = els.themeAccent2.value; });
 els.themeAccent2.addEventListener("change", () => window.fabula.setProject({ theme: { accent2: els.themeAccent2.value } }));
-els.themePreset.addEventListener("change", () => window.fabula.setProject({ theme: { preset: els.themePreset.value } }));
+els.themePreset.addEventListener("change", () => {
+  const value = els.themePreset.value;
+  if (value.startsWith("saved:")) window.fabula.setProject({ themeUse: value.slice(6) });
+  else window.fabula.setProject({ theme: { preset: value } });
+});
+els.themeSave.addEventListener("click", async () => {
+  const name = window.prompt("Save this look as (for other videos):", "");
+  if (!name) return;
+  const result = await window.fabula.setProject({ themeSave: name });
+  els.themeStatus.textContent = result.ok ? "saved" : result.error;
+});
 els.themeTitleStyle.addEventListener("change", () => window.fabula.setProject({ theme: { titleStyle: els.themeTitleStyle.value } }));
 els.themeCalloutStyle.addEventListener("change", () => window.fabula.setProject({ theme: { calloutStyle: els.themeCalloutStyle.value } }));
 els.themeCaptionStyle.addEventListener("change", () => window.fabula.setProject({ theme: { captionStyle: els.themeCaptionStyle.value } }));

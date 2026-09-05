@@ -43,6 +43,7 @@ import { LAYOUTS } from "../core/stage-engine.mjs";
 import { reanchorScenes } from "../core/reanchor.mjs";
 import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
+import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mjs";
 
 const MEDIA_ROOT = path.join(REPO_ROOT, "media");
 const POINTER = path.join(MEDIA_ROOT, "current-project.json");
@@ -829,9 +830,9 @@ const themeFromArgs = (args) => {
 };
 
 server.registerTool("list_themes", {
-  description: "The theme presets — each a complete look (field, type, title and callout styles, caption style, glow) — and the vendored fonts. Pick one with set_theme and override what the brand needs.",
+  description: "The theme presets — each a complete look (field, type, title and callout styles, caption style, glow) — the themes saved for reuse across videos (set_theme save_as / use), and the vendored fonts. Pick one with set_theme and override what the brand needs.",
   inputSchema: {},
-}, async () => ok({ presets: describePresets(), fonts: VENDORED_FONTS, titleStyles: [...TITLE_STYLES], calloutStyles: [...CALLOUT_STYLES], captionStyles: [...CAPTION_STYLES] }));
+}, async () => ok({ presets: describePresets(), saved: listSavedThemes(MEDIA_ROOT).map((s) => ({ id: s.id, name: s.name, theme: s.theme, savedAt: s.savedAt })), fonts: VENDORED_FONTS, titleStyles: [...TITLE_STYLES], calloutStyles: [...CALLOUT_STYLES], captionStyles: [...CAPTION_STYLES] }));
 
 server.registerTool("get_theme", {
   description: "The project's theme as written (preset plus overrides) and as resolved (every token the stage uses). Read before set_theme: the person may have changed it in the inspector.",
@@ -843,13 +844,18 @@ server.registerTool("get_theme", {
 
 server.registerTool("set_theme", {
   description:
-    "Set the look of the film for consistent branding: a preset, the brand colours, fonts, title/callout/caption styles, a logo watermark and a handle. Fields merge into the current theme (null removes a logo or watermark); reset drops every override and keeps the preset. Previews at once in the window; chunks the look touches re-render on the next render_final (the field and glow are part of every chunk, so a new preset or accent re-renders the film).",
-  inputSchema: { ...themeShape, reset: z.boolean().optional().describe("Drop all overrides first") },
-}, async ({ reset, ...args }) => {
+    "Set the look of the film for consistent branding: a preset, the brand colours, fonts, title/callout/caption styles, a logo watermark and a handle. Fields merge into the current theme (null removes a logo or watermark); reset drops every override and keeps the preset. `use` loads a theme saved earlier (the way a channel keeps every video the same); `save_as` saves the result under a name for the next video. Previews at once in the window; chunks the look touches re-render on the next render_final (the field and glow are part of every chunk, so a new preset or accent re-renders the film).",
+  inputSchema: {
+    ...themeShape,
+    reset: z.boolean().optional().describe("Drop all overrides first"),
+    use: z.string().optional().describe("Start from a saved theme (id from list_themes); other fields then apply on top"),
+    save_as: z.string().max(40).optional().describe("Save the resulting theme under this name for other projects"),
+  },
+}, async ({ reset, use, save_as, ...args }) => {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
   const patch = themeFromArgs(args);
-  let theme = reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
+  let theme = use ? { ...loadTheme(MEDIA_ROOT, use) } : reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete theme[key];
     else if (key === "fonts") theme.fonts = { ...(theme.fonts ?? {}), ...value };
@@ -859,7 +865,10 @@ server.registerTool("set_theme", {
   validateTheme(theme);
   config.theme = theme;
   writeComposeConfig(dir, config);
-  return ok({ theme, resolved: resolveTheme(theme) });
+  // A saved theme is the look without the project's pictures: a logo lives
+  // in one project's assets and would not travel.
+  const saved = save_as ? saveTheme(MEDIA_ROOT, save_as, (({ logo, ...rest }) => rest)(theme)) : null;
+  return ok({ theme, resolved: resolveTheme(theme), saved: saved ? { id: saved.id, name: saved.name } : undefined });
 });
 
 // ---- Pictures ----
