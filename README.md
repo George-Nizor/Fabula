@@ -24,11 +24,19 @@ Fabula is a two-hander: the window is where you watch and tweak, Claude is who d
    it, plans layouts and scenes, and renders the composition. The window shows each step as it
    runs and every result as it lands. The long steps are background jobs: they keep going if the
    session that started them ends, and the window keeps showing where they are.
-3. **Review in the window.** Play with skip-preview, click struck words to keep them, watch the
-   framing guides show what the render will pull, click timeline blocks and tweak text, accents,
-   layouts in the inspector. The project panel holds the look: a theme preset (Studio, Broadcast,
-   Paper, Neon, Mono), the brand colours, title, callout and caption styles, a logo watermark
-   and a handle. Every change is saved to the project and previews immediately.
+3. **Review in the window.** The top bar is four numbered steps. **Cut**: play with
+   skip-preview, click struck words to keep them, watch the framing guides show what the render
+   will pull. **Look**: the brand — a gallery of theme presets (Studio, Broadcast, Paper, Neon,
+   Mono), the brands you have saved for the channel, colours, title, callout and caption styles,
+   and the captions mode. **Scenes**: the film on the 1080p stage with the script tucked away in
+   a drawer; click timeline blocks and tweak text, accents and layouts in the inspector.
+   **Export**: render buttons, progress, what is out of date and why, and every file the renders
+   wrote. Every change is saved to the project and previews immediately.
+
+   The timeline under Cut and Scenes is a window over the film: ctrl + wheel zooms around the
+   pointer, a plain wheel pans, the minimap above the ruler shows the whole film with the window
+   drawn on it (drag it, or click to go there), dragging the ruler scrubs, and J/K/L, comma and
+   period, Home and End do what they do in every editor.
 4. **Iterate by prompting.** *"Make the intro title punchier", "drop the chart, show the snail
    still longer", "this is for my YouTube channel: red accent, my logo top right, banded
    captions", "put the Godot and Photopea logos next to where I mention them"* — Claude reads
@@ -63,7 +71,10 @@ cached: the footage is placed by ffmpeg, only the overlays that change are captu
 two-minute chunk under `out/chunks/` is reused until something inside it changes — so a whole film
 takes minutes and a tweaked title takes about one. Both encode on the GPU when the machine has an
 NVIDIA card (NVENC works from WSL with the ffmpeg build `npm run setup:tools` installs), and both
-run as background jobs with their progress in the window's masthead.
+run as background jobs with their progress in the window's masthead. The Export step starts them
+too — the film, or *Refresh the clean cut* after the cuts moved, which renders and re-transcribes
+only what no longer matches — with the same arguments the tools use, so it does not matter which
+side pressed the button. On Windows the window hands the job to WSL through `wsl.exe`.
 
 ## In the Instrumenta launcher
 

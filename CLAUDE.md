@@ -16,7 +16,8 @@ Code layout: `core/` is pure logic (no I/O, tested with `npm test`), `electron/`
 process and preload, `renderer/` is the review UI, `mcp/` is the stdio MCP server that drives the
 pipeline (`scripts/mcp-call.mjs <tool> '<json>'` is the one-shot bridge; `.mcp.json` registers it
 for sessions started here), `scripts/pipeline.mjs` is the I/O shared by the server, the batch
-driver and the jobs. The long steps run as detached background jobs (`scripts/job.mjs` for the
+driver and the jobs; `scripts/project-state.mjs` is the reading of a project folder (paths,
+what is stale, the deliverables, the job specs) shared by the server and the window. The long steps run as detached background jobs (`scripts/job.mjs` for the
 two transcriptions and the clean render, `scripts/export-compose.cjs` for the film): they write
 `media/<project>/progress.json` with their pid, log to `out/<stage>.log`, and outlive the session
 that started them. Project state lives in `media/<project>/review.json` (cuts) and
@@ -77,7 +78,11 @@ Long steps are background jobs. `transcribe`, `render_clean`, `retranscribe_clea
 `running: true`; then call `wait_render` until it reports done. The job keeps going if the session
 ends; `status` shows what is running, and a job that died says so with its log. The window shows
 every step as it runs, with frame counts and time left. It plays the raw file over the framing
-guides in Cut and the 1080p stage in Compose, so the person sees every decision as you make it.
+guides in Cut and the 1080p stage in Scenes, so the person sees every decision as you make it.
+The person can start the same jobs from the window's Export step (the film; "Refresh the clean
+cut", which is render_clean then retranscribe_clean with each skipped when current; re-anchoring
+the scenes), so a job you did not start may be running — `status` says so, `wait_render` waits
+on it like any other.
 
 Tuning that matters on real recordings: `cut_pass` at the default 0.6 s minimum pause reads
 fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Say which you chose.
