@@ -1,23 +1,28 @@
 "use strict";
 
-// Two stages over one player. Cut: the raw video against the raw transcript,
-// struck cuts, pause chips, skip-preview, framing guides. Compose: the clean
-// render against the clean transcript, with the scene overlays painted by
-// the same runtime the export captures. The transcript is the timeline and
-// the scrub bar in both; the dock timeline is the map.
+// Four steps over one project. Cut: the raw video against the raw
+// transcript, struck cuts, pause chips, skip-preview, framing guides. Look:
+// the theme — presets, a brand saved for every film, colours, type, motion,
+// captions. Scenes: the clean render on the 1080p stage with the scene
+// overlays painted by the same runtime the export captures, the script a
+// drawer beside it. Export: the renders and what they wrote. The dock
+// timeline is the map in Cut and Scenes.
 
 const EPSILON = 0.02;
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  stages: $("stages"), tabCut: $("tab-cut"), tabCompose: $("tab-compose"),
+  stages: $("stages"), tabCut: $("tab-cut"), tabLook: $("tab-look"), tabScenes: $("tab-scenes"), tabExport: $("tab-export"),
   progress: $("progress"), progressLabel: $("progress-label"), progressDetail: $("progress-detail"), progressClock: $("progress-clock"),
   session: $("session"), raw: $("stat-raw"), clean: $("stat-clean"),
   empty: $("empty"), emptyLine: $("empty-line"), emptyHint: $("empty-hint"), openFile: $("open-file"),
   player: $("player"), dock: $("dock"), dropzone: $("dropzone"),
+  look: $("look"), lookPresets: $("look-presets"), lookBrands: $("look-brands"), lookSave: $("look-save"), lookReset: $("look-reset"), lookStatus: $("look-status"),
+  exportPage: $("export"), exportMain: $("export-main"),
   toggleRail: $("toggle-rail"), toggleInsp: $("toggle-insp"),
   video: $("video"), head: $("head"), screen: $("screen"), overlay: $("overlay"), guides: $("guides"),
   playpause: $("playpause"), skipwrap: $("skipwrap"), skipcuts: $("skipcuts"),
+  scriptToggle: $("script-toggle"), captionsWrap: $("captions-wrap"), stageCaptions: $("stage-captions"),
   timeNow: $("time-now"), timeSep: $("time-sep"), timeTotal: $("time-total"), transportNote: $("transport-note"),
   hint: $("controls-hint"), transcript: $("transcript"),
   timeline: $("timeline"), laneRuler: $("lane-ruler"),
@@ -32,12 +37,11 @@ const els = {
   playhead: $("tl-playhead"),
   inspector: $("inspector"), inspTitle: $("insp-title"), inspProject: $("insp-project"), inspBody: $("insp-body"),
   inspCutSummary: $("insp-cut-summary"), sumCuts: $("sum-cuts"), sumRemoved: $("sum-removed"), sumShots: $("sum-shots"), sumFraming: $("sum-framing"),
-  inspComposeSummary: $("insp-compose-summary"), themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeCaptions: $("theme-captions"), themePunch: $("theme-punch"),
-  themePreset: $("theme-preset"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
-  themeTitleStyle: $("theme-title-style"), themeCalloutStyle: $("theme-callout-style"), themeCaptionStyle: $("theme-caption-style"),
+  themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
+  themeTitleStyle: $("theme-title-style"), themeCalloutStyle: $("theme-callout-style"), themeCaptionStyle: $("theme-caption-style"), themePunch: $("theme-punch"),
+  themeCaptions: $("theme-captions"), captionsNote: $("captions-note"),
   themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
-  themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"), themeReset: $("theme-reset"),
-  themeSave: $("theme-save"), themeStatus: $("theme-status"),
+  themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"),
   inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"),
   inspClose: $("insp-close"), inspStatus: $("insp-status"),
   inspText: $("insp-text"), inspTextWrap: $("insp-text-wrap"),
@@ -48,8 +52,8 @@ const els = {
   inspFlair: $("insp-flair"), inspFlairWrap: $("insp-flair-wrap"),
 };
 
-let state = null; // { project, review, compose, progress, pending }
-let mode = "cut";
+let state = null; // { project, review, compose, look, progress, pending }
+let mode = "cut"; // cut | look | scenes | export
 let wordSpans = [];
 let highlighted = null;
 let selectedScene = null; // index into compose.scenes
@@ -58,10 +62,25 @@ let previewOption = null; // option id being hovered in the picker
 let paintCache = null; // { key, compose } the merged compose a preview paints
 let userChoseTab = false;
 let statusTimer = null;
+let railWanted = true; // the transcript rail in Cut, as the person left it
+let scriptOpen = false; // the script drawer in Scenes
 
+const CAPTION_NOTES = {
+  none: "No captions anywhere.",
+  open: "Painted into the picture in the caption style below.",
+  closed: "Nothing in the picture. An .srt and a .vtt land beside every render for the player to offer as CC.",
+  both: "Painted in, and the .srt and .vtt written too.",
+};
+
+const review = () => state?.review ?? null;
+const compose = () => state?.compose ?? null;
+const look = () => state?.look ?? null;
 const inserts = () => compose()?.inserts ?? [];
 const insertById = (id) => inserts().find((insert) => insert.id === id) ?? null;
 const insertState = (insert) => (insert.chosen === "other" ? "other" : insert.chosen ? "chosen" : "open");
+const enabledCuts = () => (review()?.cuts ?? []).filter((cut) => cut.enabled);
+const removedSeconds = () => enabledCuts().reduce((sum, cut) => sum + (cut.end - cut.start), 0);
+const onStage = () => mode === "cut" || mode === "scenes";
 
 // What the stage paints: the plan as written, or, while an option is under
 // the pointer in the picker, the plan with that option in the insert's place.
@@ -92,11 +111,6 @@ function fmt(value, tenths = true) {
   return tenths ? `${m}:${s.toFixed(1).padStart(4, "0")}` : `${m}:${String(Math.floor(s)).padStart(2, "0")}`;
 }
 
-const review = () => state?.review ?? null;
-const compose = () => state?.compose ?? null;
-const enabledCuts = () => (review()?.cuts ?? []).filter((cut) => cut.enabled);
-const removedSeconds = () => enabledCuts().reduce((sum, cut) => sum + (cut.end - cut.start), 0);
-
 function cutTitle(cut) {
   const reasons = [...new Set(cut.sources.map((s) => s.reason + (s.detail ? ` "${s.detail}"` : "")))].join(", ");
   return `${reasons} · ${fmt(cut.start)}–${fmt(cut.end)}${cut.enabled ? "" : " · kept"}`;
@@ -109,9 +123,18 @@ function setSource(url) {
   }
 }
 
+function totalSeconds() {
+  return mode === "cut" ? review().duration : composeDuration();
+}
+
 function seek(t) {
-  const total = mode === "cut" ? review().duration : composeDuration();
+  const total = totalSeconds();
   els.video.currentTime = Math.min(Math.max(t, 0), Math.max(total - 0.05, 0));
+}
+
+function composeDuration() {
+  const c = compose();
+  return (Number.isFinite(els.video.duration) && els.video.duration) || c?.words.at(-1)?.end || 1;
 }
 
 // ---- Header ----
@@ -187,7 +210,7 @@ function renderCutTranscript() {
   emitChipsBefore(Infinity);
 }
 
-function renderComposeTranscript() {
+function renderSceneTranscript() {
   const c = compose();
   els.transcript.replaceChildren();
   wordSpans = [];
@@ -213,11 +236,6 @@ function renderComposeTranscript() {
     wordSpans.push({ word, span });
     els.transcript.append(span, " ");
   }
-}
-
-function composeDuration() {
-  const c = compose();
-  return (Number.isFinite(els.video.duration) && els.video.duration) || c?.words.at(-1)?.end || 1;
 }
 
 // ---- Timeline ----
@@ -250,7 +268,7 @@ function place(el, start, end, total, minPercent = 0.8) {
   el.style.width = `${Math.max(((end - start) / total) * 100, minPercent)}%`;
 }
 
-// Cut mode: the raw clip with every proposal on it. A struck span is solid
+// Cut: the raw clip with every proposal on it. A struck span is solid
 // cut-red, a kept one an outline; clicking either jumps there.
 function renderCutTimeline() {
   const r = review();
@@ -268,14 +286,14 @@ function renderCutTimeline() {
   });
 }
 
-// Compose mode: one lane for where the head sits, one for the screen track
-// where it exists, one for the scenes. Blocks are clickable — seek, select,
-// inspect. A click lands just past the head's 0.6 s flight and a card's
-// entrance, so what appears is the settled picture, not the first frame of
-// a transition.
+// Scenes: one lane for where the head sits, one for the screen track where
+// it exists, one for the scenes, one for the insert points. Blocks are
+// clickable — seek, select, inspect. A click lands just past the head's
+// 0.6 s flight and a card's entrance, so what appears is the settled
+// picture, not the first frame of a transition.
 const settledAt = (start, end) => start + Math.min(0.75, Math.max((end - start) / 2, 0.05));
 
-function renderComposeTimeline() {
+function renderSceneTimeline() {
   const c = compose();
   const total = composeDuration();
   renderRuler(total);
@@ -368,11 +386,9 @@ function describeFraming(framing) {
 
 function renderProjectPanel() {
   const r = review();
-  const c = compose();
   els.inspTitle.textContent = state?.project ?? "";
   if (mode === "cut") {
     els.inspCutSummary.hidden = false;
-    els.inspComposeSummary.hidden = true;
     els.inspKeysCut.hidden = false;
     const kept = r.cuts.length - enabledCuts().length;
     els.sumCuts.textContent = `${r.cuts.length}${kept ? ` · ${kept} kept` : ""}`;
@@ -382,43 +398,134 @@ function renderProjectPanel() {
     els.inspEmpty.textContent = "Click a struck word or pause to keep it; click a word to jump there. Ask Claude to tighten, loosen, or cut a passage.";
   } else {
     els.inspCutSummary.hidden = true;
-    els.inspComposeSummary.hidden = false;
     els.inspKeysCut.hidden = true;
-    const theme = c?.theme ?? {};
-    // Saved themes join the presets in one menu; a saved one applies whole.
-    let saved = els.themePreset.querySelector("optgroup");
-    if (!saved) { saved = document.createElement("optgroup"); saved.label = "Saved"; els.themePreset.append(saved); }
-    const wanted = (c?.savedThemes ?? []).map((s) => `saved:${s.id}|${s.name}`).join(",");
-    if (saved.dataset.list !== wanted) {
-      saved.dataset.list = wanted;
-      saved.replaceChildren(...(c?.savedThemes ?? []).map((s) => { const o = document.createElement("option"); o.value = `saved:${s.id}`; o.textContent = s.name; return o; }));
-      saved.hidden = (c?.savedThemes ?? []).length === 0;
-    }
-    els.themePreset.value = theme.preset ?? "studio";
-    els.themeAccent.value = theme.accent ?? "#d97757";
-    els.themeAccentValue.textContent = els.themeAccent.value;
-    els.themeAccent2.value = theme.accent2 ?? "#f28a32";
-    els.themeAccent2Value.textContent = els.themeAccent2.value;
-    els.themeTitleStyle.value = theme.titleStyle ?? "rise";
-    els.themeCalloutStyle.value = theme.calloutStyle ?? "pill";
-    els.themeCaptionStyle.value = theme.captionStyle ?? "pill";
-    els.themeLogoName.textContent = theme.logo ? theme.logo.src.replace(/^assets\//, "") : "none";
-    els.themeLogoClear.hidden = !theme.logo;
-    els.themeLogoCornerWrap.hidden = !theme.logo;
-    els.themeLogoCorner.value = theme.logo?.corner ?? "tr";
-    if (document.activeElement !== els.themeWatermark) els.themeWatermark.value = theme.watermark ?? "";
-    els.themeCaptions.value = c?.captionMode ?? "none";
-    const zoom = c?.punch?.zoom;
-    const option = zoom ? [...els.themePunch.options].find((o) => Number(o.value) === zoom) : null;
-    if (zoom && !option) {
-      const custom = document.createElement("option");
-      custom.value = String(zoom);
-      custom.textContent = `alternating ${Math.round(zoom * 100)}%`;
-      els.themePunch.append(custom);
-    }
-    els.themePunch.value = zoom ? String(zoom) : "";
-    els.inspEmpty.textContent = "Select a block in the timeline to edit it. Ask Claude for anything larger: a new scene, a different layout, a punchier title.";
+    const open = inserts().filter((insert) => !insert.chosen).length;
+    els.inspEmpty.textContent = open > 0
+      ? `${open} insert point${open === 1 ? "" : "s"} still open — click a + in the script or a diamond in the timeline to choose what goes there.`
+      : "Click a block in the timeline to edit it. The look lives on the Look step. Ask Claude for anything larger: a new scene, a different layout, a punchier title.";
   }
+}
+
+// ---- The Look page ----
+
+// A preset or a brand, drawn small with its own tokens: the field, the
+// head's card, a title bar, a caption in its style. Enough to tell them apart.
+function thumbnail(t) {
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  thumb.style.background = t.fieldStyle === "flat"
+    ? t.field[1]
+    : `radial-gradient(120% 140% at 50% 0%, ${t.field[0]} 0%, ${t.field[1]} 52%, ${t.field[2]} 100%)`;
+  const head = document.createElement("div");
+  head.className = "thumb-head";
+  head.style.background = t.card.startsWith("rgba(255") ? "rgba(255,255,255,0.18)" : "rgba(120,120,120,0.28)";
+  const title = document.createElement("div");
+  title.className = "thumb-title";
+  const bar = document.createElement("span");
+  bar.style.background = t.accent;
+  const text = document.createElement("span");
+  text.className = "thumb-title-text";
+  text.textContent = t.titleCase === "upper" ? "TITLE" : "Title";
+  text.style.color = t.titleStyle === "block" ? "#fff" : t.text;
+  text.style.fontFamily = `"${t.fonts.display}", system-ui, sans-serif`;
+  if (t.titleStyle === "block") { text.style.background = t.accent; text.style.padding = "0 4px"; }
+  title.append(bar, text);
+  const caption = document.createElement("div");
+  caption.className = `thumb-caption is-${t.captionStyle}`;
+  caption.textContent = "caption";
+  caption.style.color = t.text;
+  caption.style.background = t.captionStyle === "band" ? `color-mix(in srgb, ${t.field[2]} 85%, transparent)` : `color-mix(in srgb, ${t.field[2]} 60%, transparent)`;
+  if (t.captionStyle === "karaoke") caption.style.color = t.accent;
+  thumb.append(head, title, caption);
+  return thumb;
+}
+
+function lookCard({ id, title, about, tokens, active, onPick, action }) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `look-card${active ? " is-active" : ""}`;
+  card.dataset.id = id;
+  card.append(thumbnail(tokens));
+  const name = document.createElement("div");
+  name.className = "look-card-name";
+  name.textContent = title;
+  card.append(name);
+  if (about) {
+    const line = document.createElement("div");
+    line.className = "look-card-about";
+    line.textContent = about;
+    card.append(line);
+  }
+  if (action) {
+    const tag = document.createElement("div");
+    tag.className = "look-card-action";
+    tag.textContent = action;
+    card.append(tag);
+  }
+  card.addEventListener("click", onPick);
+  return card;
+}
+
+function renderLookPage() {
+  const l = look();
+  if (!l) return;
+  const theme = l.theme;
+  const config = l.themeConfig;
+  els.lookPresets.replaceChildren(...l.presets.map((p) => lookCard({
+    id: p.id, title: p.label, about: p.about, tokens: p, active: theme.preset === p.id,
+    onPick: () => window.fabula.setProject({ theme: { preset: p.id } }),
+  })));
+  const brands = l.savedThemes.map((s) => lookCard({
+    id: s.id, title: s.name, tokens: s.theme, active: false, action: "use this brand",
+    about: `${s.theme.preset} · ${s.theme.accent} · ${s.theme.captionStyle} captions`,
+    onPick: () => window.fabula.setProject({ themeUse: s.id }),
+  }));
+  if (brands.length === 0) {
+    const none = document.createElement("p");
+    none.className = "look-none";
+    none.textContent = "No brand saved yet. Get the look right, then save it, and every next film starts from it.";
+    els.lookBrands.replaceChildren(none);
+  } else {
+    els.lookBrands.replaceChildren(...brands);
+  }
+  els.themeAccent.value = theme.accent;
+  els.themeAccentValue.textContent = theme.accent;
+  els.themeAccent2.value = theme.accent2;
+  els.themeAccent2Value.textContent = theme.accent2;
+  els.themeTitleStyle.value = theme.titleStyle;
+  els.themeCalloutStyle.value = theme.calloutStyle;
+  els.themeCaptionStyle.value = theme.captionStyle === "none" ? "pill" : theme.captionStyle;
+  const zoom = l.punch?.zoom;
+  const option = zoom ? [...els.themePunch.options].find((o) => Number(o.value) === zoom) : null;
+  if (zoom && !option) {
+    const custom = document.createElement("option");
+    custom.value = String(zoom);
+    custom.textContent = `alternating ${Math.round(zoom * 100)}%`;
+    els.themePunch.append(custom);
+  }
+  els.themePunch.value = zoom ? String(zoom) : "";
+  for (const button of els.themeCaptions.querySelectorAll("button")) button.classList.toggle("is-on", button.dataset.value === l.captionMode);
+  els.captionsNote.textContent = CAPTION_NOTES[l.captionMode] ?? "";
+  els.themeLogoName.textContent = theme.logo ? theme.logo.src.replace(/^assets\//, "") : "none";
+  els.themeLogoClear.hidden = !theme.logo;
+  els.themeLogoCornerWrap.hidden = !theme.logo;
+  els.themeLogoCorner.value = theme.logo?.corner ?? "tr";
+  if (document.activeElement !== els.themeWatermark) els.themeWatermark.value = theme.watermark ?? "";
+  els.lookReset.hidden = Object.keys(config).filter((key) => key !== "preset").length === 0;
+}
+
+// ---- The Export page (filled in by the render step) ----
+
+function renderExportPage() {
+  const l = look();
+  els.exportMain.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "page-head";
+  head.innerHTML = "<h2>Export</h2><p class=\"page-lede\">The renders and what they wrote.</p>";
+  const note = document.createElement("p");
+  note.className = "field-note";
+  note.textContent = `Captions: ${l ? CAPTION_NOTES[l.captionMode] : ""} Renders run from the Claude session for now (render_clean, render_final); they land in media/${state?.project ?? ""}/out/.`;
+  els.exportMain.append(head, note);
 }
 
 // ---- Insert points ----
@@ -436,8 +543,8 @@ function openInsert(id) {
   // Land where an option has settled: past the head's flight and a card's
   // build, so a paused frame shows the choice, not its first frame.
   seek(insert.start + Math.min(2.2, (insert.end - insert.start) * 0.5));
-  renderComposeTimeline();
-  renderComposeTranscript();
+  renderSceneTimeline();
+  renderSceneTranscript();
 }
 
 function renderInsertPanel() {
@@ -507,7 +614,7 @@ function openInspector(index) {
   els.inspFlair.checked = Boolean(scene.flair);
   els.inspStatus.textContent = "";
   els.inspStatus.classList.remove("is-error");
-  renderComposeTimeline();
+  renderSceneTimeline();
 }
 
 function closeInspector() {
@@ -518,7 +625,7 @@ function closeInspector() {
   els.inspBody.hidden = true;
   els.inspInsert.hidden = true;
   if (review()) renderProjectPanel();
-  if (mode === "compose" && compose()) renderComposeTimeline();
+  if (mode === "scenes" && compose()) renderSceneTimeline();
 }
 
 async function patchScene(patch) {
@@ -527,7 +634,7 @@ async function patchScene(patch) {
   flashStatus(result.ok ? "saved" : result.error, !result.ok);
 }
 
-// ---- Framing guides (cut mode) ----
+// ---- Framing guides (cut) ----
 
 function renderGuides(now) {
   const r = review();
@@ -569,6 +676,12 @@ function renderGuides(now) {
 
 // ---- Render ----
 
+function setMode(next) {
+  if (next === "scenes" && !compose()) next = "cut";
+  mode = next;
+  render();
+}
+
 function render() {
   renderProgress();
   if (!review()) {
@@ -576,6 +689,8 @@ function render() {
     els.stages.hidden = true;
     els.player.hidden = true;
     els.dock.hidden = true;
+    els.look.hidden = true;
+    els.exportPage.hidden = true;
     els.empty.hidden = false;
     els.empty.classList.remove("is-error");
     if (state?.pending) {
@@ -591,18 +706,28 @@ function render() {
     }
     return;
   }
-  if (mode === "compose" && !compose()) mode = "cut";
+  if (mode === "scenes" && !compose()) mode = "cut";
 
   renderHeader();
   els.session.hidden = false;
   els.empty.hidden = true;
   els.stages.hidden = false;
-  els.tabCompose.disabled = !compose();
-  els.tabCut.classList.toggle("is-active", mode === "cut");
-  els.tabCompose.classList.toggle("is-active", mode === "compose");
+  els.tabScenes.disabled = !compose();
+  els.tabLook.disabled = !look();
+  for (const [name, button] of [["cut", els.tabCut], ["look", els.tabLook], ["scenes", els.tabScenes], ["export", els.tabExport]]) {
+    button.classList.toggle("is-active", mode === name);
+  }
 
-  const frame = els.video.closest(".videoframe"); // the head card wraps the video now
+  els.look.hidden = mode !== "look";
+  els.exportPage.hidden = mode !== "export";
+  if (mode === "look") { renderLookPage(); els.player.hidden = true; els.dock.hidden = true; return; }
+  if (mode === "export") { renderExportPage(); els.player.hidden = true; els.dock.hidden = true; return; }
+
+  const frame = els.video.closest(".videoframe"); // the head card wraps the video
+  els.scriptToggle.hidden = mode !== "scenes";
+  els.captionsWrap.hidden = mode !== "scenes";
   if (mode === "cut") {
+    document.body.classList.toggle("rail-collapsed", !railWanted);
     setSource(review().videoUrl);
     els.skipwrap.hidden = false;
     els.hint.textContent = "Click a word to jump there. Click anything struck to keep it.";
@@ -619,16 +744,18 @@ function render() {
     els.screen.hidden = true;
     els.screen.pause();
     els.trackCuts.hidden = false;
-    els.trackLayout.hidden = els.trackScreen.hidden = els.trackScenes.hidden = true;
+    els.trackLayout.hidden = els.trackScreen.hidden = els.trackScenes.hidden = els.trackInserts.hidden = true;
     els.timeTotal.textContent = `${fmt(review().duration, false)} raw`;
     els.transportNote.textContent = review().shots ? "Punch-ins alternate across cuts; guides show the crop." : "";
-    if (selectedScene !== null) closeInspector();
+    if (selectedScene !== null || selectedInsert !== null) closeInspector();
     renderCutTranscript();
     renderCutTimeline();
   } else {
+    document.body.classList.toggle("rail-collapsed", !scriptOpen);
+    els.scriptToggle.classList.toggle("is-on", scriptOpen);
     setSource(compose().videoUrl);
     els.skipwrap.hidden = true;
-    els.hint.textContent = "The stage previews exactly what the final render bakes.";
+    els.hint.textContent = "Click a word to jump there.";
     els.video.style.transform = "";
     els.guides.hidden = true;
     frame.classList.add("is-stage", "stage-field");
@@ -638,12 +765,13 @@ function render() {
     els.trackLayout.hidden = els.trackScenes.hidden = false;
     els.timeTotal.textContent = fmt(composeDuration(), false);
     els.transportNote.textContent = "";
+    els.stageCaptions.value = compose().captionMode ?? "none";
     if (selectedScene !== null && !compose().scenes[selectedScene]) closeInspector();
-    renderComposeTimeline();
-    renderComposeTranscript();
+    renderSceneTimeline();
+    renderSceneTranscript();
   }
   els.timeSep.textContent = mode === "cut" ? " · " : " / ";
-  if (selectedInsert !== null && mode === "compose") {
+  if (selectedInsert !== null && mode === "scenes") {
     if (insertById(selectedInsert)) renderInsertPanel(); else closeInspector();
   } else if (selectedScene === null) { els.inspProject.hidden = false; els.inspBody.hidden = true; els.inspInsert.hidden = true; renderProjectPanel(); }
   els.player.hidden = !els.video.src;
@@ -654,16 +782,21 @@ function render() {
 // ---- Chrome events ----
 
 els.toggleRail.addEventListener("click", () => {
-  const collapsed = document.body.classList.toggle("rail-collapsed");
-  els.toggleRail.classList.toggle("is-on", !collapsed);
+  if (mode === "scenes") { scriptOpen = !scriptOpen; render(); return; }
+  railWanted = !railWanted;
+  document.body.classList.toggle("rail-collapsed", !railWanted);
+  els.toggleRail.classList.toggle("is-on", railWanted);
 });
 els.toggleInsp.addEventListener("click", () => {
   const collapsed = document.body.classList.toggle("insp-collapsed");
   els.toggleInsp.classList.toggle("is-on", !collapsed);
 });
+els.scriptToggle.addEventListener("click", () => { scriptOpen = !scriptOpen; render(); });
 
-els.tabCut.addEventListener("click", () => { userChoseTab = true; mode = "cut"; render(); });
-els.tabCompose.addEventListener("click", () => { userChoseTab = true; mode = "compose"; render(); });
+els.tabCut.addEventListener("click", () => { userChoseTab = true; setMode("cut"); });
+els.tabLook.addEventListener("click", () => { userChoseTab = true; setMode("look"); });
+els.tabScenes.addEventListener("click", () => { userChoseTab = true; setMode("scenes"); });
+els.tabExport.addEventListener("click", () => { userChoseTab = true; setMode("export"); });
 
 els.transcript.addEventListener("click", (event) => {
   const target = event.target;
@@ -692,8 +825,7 @@ els.timeline.addEventListener("click", (event) => {
   const lane = target.closest(".tl-lane, .tl-ruler");
   if (lane) {
     const box = lane.getBoundingClientRect();
-    const total = mode === "cut" ? review().duration : composeDuration();
-    seek(((event.clientX - box.left) / box.width) * total);
+    seek(((event.clientX - box.left) / box.width) * totalSeconds());
   }
 });
 
@@ -719,35 +851,37 @@ els.inspLayout.addEventListener("change", () => {
 els.inspCorner.addEventListener("change", () => patchScene({ corner: els.inspCorner.value }));
 els.inspFlair.addEventListener("change", () => patchScene({ flair: els.inspFlair.checked ? true : null }));
 
+// The Look page: every control applies as it changes.
+const setTheme = (patch) => window.fabula.setProject({ theme: patch });
 els.themeAccent.addEventListener("input", () => { els.themeAccentValue.textContent = els.themeAccent.value; });
-els.themeAccent.addEventListener("change", () => window.fabula.setProject({ theme: { accent: els.themeAccent.value } }));
+els.themeAccent.addEventListener("change", () => setTheme({ accent: els.themeAccent.value }));
 els.themeAccent2.addEventListener("input", () => { els.themeAccent2Value.textContent = els.themeAccent2.value; });
-els.themeAccent2.addEventListener("change", () => window.fabula.setProject({ theme: { accent2: els.themeAccent2.value } }));
-els.themePreset.addEventListener("change", () => {
-  const value = els.themePreset.value;
-  if (value.startsWith("saved:")) window.fabula.setProject({ themeUse: value.slice(6) });
-  else window.fabula.setProject({ theme: { preset: value } });
+els.themeAccent2.addEventListener("change", () => setTheme({ accent2: els.themeAccent2.value }));
+els.themeTitleStyle.addEventListener("change", () => setTheme({ titleStyle: els.themeTitleStyle.value }));
+els.themeCalloutStyle.addEventListener("change", () => setTheme({ calloutStyle: els.themeCalloutStyle.value }));
+els.themeCaptionStyle.addEventListener("change", () => setTheme({ captionStyle: els.themeCaptionStyle.value }));
+els.themePunch.addEventListener("change", () => window.fabula.setProject({ punch: els.themePunch.value ? Number(els.themePunch.value) : null }));
+els.themeCaptions.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-value]");
+  if (button) window.fabula.setProject({ captions: button.dataset.value });
 });
-els.themeSave.addEventListener("click", async () => {
-  const name = window.prompt("Save this look as (for other videos):", "");
-  if (!name) return;
-  const result = await window.fabula.setProject({ themeSave: name });
-  els.themeStatus.textContent = result.ok ? "saved" : result.error;
-});
-els.themeTitleStyle.addEventListener("change", () => window.fabula.setProject({ theme: { titleStyle: els.themeTitleStyle.value } }));
-els.themeCalloutStyle.addEventListener("change", () => window.fabula.setProject({ theme: { calloutStyle: els.themeCalloutStyle.value } }));
-els.themeCaptionStyle.addEventListener("change", () => window.fabula.setProject({ theme: { captionStyle: els.themeCaptionStyle.value } }));
-els.themeLogoCorner.addEventListener("change", () => window.fabula.setProject({ theme: { logoCorner: els.themeLogoCorner.value } }));
-els.themeLogoClear.addEventListener("click", () => window.fabula.setProject({ theme: { logo: null } }));
+els.stageCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.stageCaptions.value }));
+els.themeLogoCorner.addEventListener("change", () => setTheme({ logoCorner: els.themeLogoCorner.value }));
+els.themeLogoClear.addEventListener("click", () => setTheme({ logo: null }));
 els.themeLogoPick.addEventListener("click", async () => {
   const picked = await window.fabula.pickAsset();
-  if (picked.ok) window.fabula.setProject({ theme: { logo: { src: picked.src, corner: els.themeLogoCorner.value } } });
-  else if (!picked.cancelled) flashStatus(picked.error, true);
+  if (picked.ok) setTheme({ logo: { src: picked.src, corner: els.themeLogoCorner.value } });
+  else if (!picked.cancelled) { els.lookStatus.textContent = picked.error; }
 });
-const applyWatermark = () => window.fabula.setProject({ theme: { watermark: els.themeWatermark.value.trim() || null } });
-els.themeWatermark.addEventListener("change", applyWatermark);
+els.themeWatermark.addEventListener("change", () => setTheme({ watermark: els.themeWatermark.value.trim() || null }));
 els.themeWatermark.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); els.themeWatermark.blur(); } });
-els.themeReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
+els.lookReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
+els.lookSave.addEventListener("click", async () => {
+  const name = window.prompt("Save this look as a brand, for every next film:", look()?.savedThemes[0]?.name ?? "");
+  if (!name) return;
+  const result = await window.fabula.setProject({ themeSave: name });
+  els.lookStatus.textContent = result.ok ? `saved as “${name}”` : result.error;
+});
 
 els.insertNone.addEventListener("click", async () => {
   if (!selectedInsert) return;
@@ -766,8 +900,6 @@ els.askSend.addEventListener("click", async () => {
   els.askStatus.classList.toggle("is-error", !result.ok);
   if (result.ok) els.askText.value = "";
 });
-els.themeCaptions.addEventListener("change", () => window.fabula.setProject({ captions: els.themeCaptions.value }));
-els.themePunch.addEventListener("change", () => window.fabula.setProject({ punch: els.themePunch.value ? Number(els.themePunch.value) : null }));
 
 // ---- Transport ----
 
@@ -787,7 +919,7 @@ els.video.addEventListener("pause", () => {
   els.playpause.setAttribute("aria-label", "Play");
 });
 els.video.addEventListener("loadedmetadata", () => {
-  if (mode === "compose" && compose()) { els.timeTotal.textContent = fmt(composeDuration(), false); renderComposeTimeline(); }
+  if (mode === "scenes" && compose()) { els.timeTotal.textContent = fmt(composeDuration(), false); renderSceneTimeline(); }
   else if (els.video.videoWidth) els.video.closest(".videoframe").style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
   delete els.guides.dataset.key;
 });
@@ -820,16 +952,16 @@ document.addEventListener("keydown", (event) => {
 
 // ---- The frame loop ----
 //
-// Cut mode: skip enabled cuts, keep both clocks honest, draw the framing
-// guides or preview the punch framing. Compose mode: paint the overlays the
-// export will capture and keep the screen track in step. Both: light the
-// word being spoken and move the playhead.
+// Cut: skip enabled cuts, keep both clocks honest, draw the framing guides
+// or preview the punch framing. Scenes: paint the overlays the export will
+// capture and keep the screen track in step. Both: light the word being
+// spoken and move the playhead.
 function tick() {
   requestAnimationFrame(tick);
   if (state?.progress?.startedAt && !els.progress.hidden) {
     els.progressClock.textContent = fmt((Date.now() - Date.parse(state.progress.startedAt)) / 1000, false);
   }
-  if (!state || els.player.hidden) return;
+  if (!state || els.player.hidden || !onStage()) return;
   const now = els.video.currentTime;
   let total;
 
@@ -890,7 +1022,7 @@ function tick() {
     highlighted = current;
     // Long recordings: keep the spoken word in view while playing, without
     // fighting a reader who has scrolled away while paused.
-    if (current && !els.video.paused) {
+    if (current && !els.video.paused && !document.body.classList.contains("rail-collapsed")) {
       const rail = els.transcript.getBoundingClientRect();
       const word = current.getBoundingClientRect();
       if (word.top < rail.top + 24 || word.bottom > rail.bottom - 24) current.scrollIntoView({ block: "center" });
@@ -939,15 +1071,15 @@ els.openFile.addEventListener("click", async () => {
 window.fabula.getState().then((next) => {
   state = next;
   // Open on the furthest stage the project has reached.
-  if (compose()) mode = "compose";
+  if (compose()) mode = "scenes";
   render();
 });
 window.fabula.onState((next) => {
   const projectChanged = state?.project !== next?.project;
   state = next;
-  if (projectChanged) { selectedScene = null; userChoseTab = false; mode = compose() ? "compose" : "cut"; }
+  if (projectChanged) { selectedScene = null; selectedInsert = null; userChoseTab = false; scriptOpen = false; mode = compose() ? "scenes" : "cut"; }
   // The engines load async in the main process; when the compose stage
   // arrives late, follow it — unless the user already picked a tab.
-  if (!userChoseTab && mode === "cut" && compose()) mode = "compose";
+  if (!userChoseTab && mode === "cut" && compose()) mode = "scenes";
   render();
 });

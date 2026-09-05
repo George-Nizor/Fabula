@@ -184,6 +184,31 @@ function readCompose(dir) {
   }
 }
 
+// The look, independent of the compose stage: a theme can be chosen before
+// the clean cut exists, and the Look page needs the presets to draw.
+function readLook(dir) {
+  if (!core) return null;
+  try {
+    const config = readJson(path.join(dir, "compose.json")) ?? {};
+    const theme = core.themes.resolveTheme(config.theme ?? null);
+    if (theme.logo) theme.logoUrl = pathToFileURL(path.join(dir, theme.logo.src)).href;
+    const presets = Object.entries(core.themes.PRESETS).map(([id, p]) => ({
+      id, label: p.label, about: p.about, accent: p.accent, accent2: p.accent2, field: p.field, fieldStyle: p.fieldStyle,
+      text: p.text, muted: p.muted, card: p.card, fonts: p.fonts, titleStyle: p.titleStyle, calloutStyle: p.calloutStyle, captionStyle: p.captionStyle, titleCase: p.titleCase,
+    }));
+    return {
+      theme,
+      themeConfig: config.theme ?? {},
+      presets,
+      savedThemes: core.themeStore.listSavedThemes(MEDIA_ROOT).map((s) => ({ id: s.id, name: s.name, theme: core.themes.resolveTheme(s.theme) })),
+      captionMode: core.compose.captionMode(config.captions),
+      punch: config.punch ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function readState() {
   const dir = projectDir();
   if (!dir) return null;
@@ -191,6 +216,7 @@ function readState() {
     project: path.basename(dir),
     review: readReview(dir),
     compose: readCompose(dir),
+    look: readLook(dir),
     progress: readJson(path.join(dir, "progress.json")),
   };
   // Staged but not yet transcribed: the window shows what to ask for.
@@ -235,7 +261,7 @@ function stateStamp() {
   const dir = projectDir();
   if (!dir) return "none";
   return [
-    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json",
+    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json", path.join("..", "themes"),
     path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
   ]
     .map((name) => {
@@ -367,9 +393,13 @@ app.whenReady().then(() => {
       const file = path.join(dir, "compose.json");
       const config = readJson(file) ?? { scenes: [] };
       mutate(config);
-      const words = core.cut.flattenWords(readJson(path.join(dir, "clean.json")));
-      core.compose.validateScenes(config.scenes ?? [], words);
-      if (config.inserts) core.compose.validateInserts(config.inserts, words);
+      const transcript = readJson(path.join(dir, "clean.json"));
+      const words = transcript ? core.cut.flattenWords(transcript) : [];
+      if ((config.scenes ?? []).length > 0 || (config.inserts ?? []).length > 0) {
+        if (words.length === 0) throw new Error("no clean transcript yet");
+        core.compose.validateScenes(config.scenes ?? [], words);
+        if (config.inserts) core.compose.validateInserts(config.inserts, words);
+      }
       core.themes.validateTheme(config.theme);
       if (config.punch && !(config.punch.zoom >= 1.02 && config.punch.zoom <= 1.5)) throw new Error("punch zoom must be 1.02–1.5");
       fs.writeFileSync(file, JSON.stringify(config, null, 2));

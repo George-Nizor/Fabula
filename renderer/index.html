@@ -15,8 +15,10 @@
       <h1>Fabula</h1>
     </div>
     <nav class="stages" id="stages" hidden>
-      <button type="button" class="stagebtn is-active" id="tab-cut">Cut</button>
-      <button type="button" class="stagebtn" id="tab-compose" disabled>Compose</button>
+      <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum">1</span>Cut</button>
+      <button type="button" class="stagebtn" id="tab-look"><span class="stepnum">2</span>Look</button>
+      <button type="button" class="stagebtn" id="tab-scenes" disabled><span class="stepnum">3</span>Scenes</button>
+      <button type="button" class="stagebtn" id="tab-export"><span class="stepnum">4</span>Export</button>
     </nav>
     <div class="progress" id="progress" hidden>
       <span class="pulse"></span>
@@ -71,93 +73,6 @@
           <div class="insp-kv"><span>Removed</span><b id="sum-removed"></b></div>
           <div class="insp-kv"><span>Punch-ins</span><b id="sum-shots"></b></div>
           <div class="insp-kv"><span>Framing</span><b id="sum-framing"></b></div>
-        </div>
-        <div class="insp-section" id="insp-compose-summary" hidden>
-          <label class="insp-field">Theme
-            <select id="theme-preset">
-              <option value="studio">Studio — charcoal, terracotta</option>
-              <option value="broadcast">Broadcast — black, blocks, uppercase</option>
-              <option value="paper">Paper — warm paper, serif</option>
-              <option value="neon">Neon — violet, cyan, glass</option>
-              <option value="mono">Mono — white, black, square</option>
-            </select>
-          </label>
-          <label class="insp-field">Accent
-            <span class="insp-accent-row">
-              <input type="color" id="theme-accent" value="#d97757" />
-              <span class="insp-swatch-value" id="theme-accent-value">#d97757</span>
-            </span>
-          </label>
-          <label class="insp-field">Second accent
-            <span class="insp-accent-row">
-              <input type="color" id="theme-accent2" value="#f28a32" />
-              <span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span>
-            </span>
-          </label>
-          <label class="insp-field">Titles
-            <select id="theme-title-style">
-              <option value="rise">rise</option>
-              <option value="slam">slam</option>
-              <option value="typewriter">typewriter</option>
-              <option value="wipe">wipe</option>
-              <option value="block">block — lower third</option>
-            </select>
-          </label>
-          <label class="insp-field">Callouts
-            <select id="theme-callout-style">
-              <option value="pill">pill</option>
-              <option value="tag">tag</option>
-              <option value="stamp">stamp</option>
-              <option value="note">note</option>
-            </select>
-          </label>
-          <label class="insp-field">Captions
-            <select id="theme-caption-style">
-              <option value="pill">pill</option>
-              <option value="band">band</option>
-              <option value="karaoke">karaoke</option>
-              <option value="none">none</option>
-            </select>
-          </label>
-          <label class="insp-field">Captions
-            <select id="theme-captions">
-              <option value="none">none</option>
-              <option value="open">burned into the picture</option>
-              <option value="closed">closed captions file (CC)</option>
-              <option value="both">both</option>
-            </select>
-          </label>
-          <label class="insp-field">Logo
-            <span class="insp-accent-row">
-              <button type="button" class="insp-mini" id="theme-logo-pick">choose…</button>
-              <span class="insp-swatch-value" id="theme-logo-name">none</span>
-              <button type="button" class="insp-mini" id="theme-logo-clear" hidden>remove</button>
-            </span>
-          </label>
-          <label class="insp-field" id="theme-logo-corner-wrap" hidden>Logo corner
-            <select id="theme-logo-corner">
-              <option value="tr">top right</option>
-              <option value="tl">top left</option>
-              <option value="br">bottom right</option>
-              <option value="bl">bottom left</option>
-            </select>
-          </label>
-          <label class="insp-field">Watermark
-            <input type="text" id="theme-watermark" placeholder="@handle or site" maxlength="40" />
-          </label>
-          <label class="insp-field">Punch-ins
-            <select id="theme-punch">
-              <option value="">off</option>
-              <option value="1.1">alternating 110%</option>
-              <option value="1.15">alternating 115%</option>
-              <option value="1.25">alternating 125%</option>
-            </select>
-          </label>
-          <div class="insp-actions">
-            <button type="button" class="insp-mini" id="theme-save">save as…</button>
-            <button type="button" class="insp-mini" id="theme-reset">reset to preset</button>
-            <span class="insp-status" id="theme-status"></span>
-          </div>
         </div>
         <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-section" id="insp-ask">
@@ -232,6 +147,82 @@
     </aside>
   </main>
 
+  <section class="page" id="look" hidden>
+    <div class="page-main">
+      <div class="page-head">
+        <h2>The look</h2>
+        <p class="page-lede">One choice for the whole film — and for every film after it, once you save it as a brand.</p>
+      </div>
+      <div class="rail-label">Presets</div>
+      <div class="gallery" id="look-presets"></div>
+      <div class="rail-label">Your brands</div>
+      <div class="gallery is-brands" id="look-brands"></div>
+      <div class="insp-actions">
+        <button type="button" class="button is-small" id="look-save">Save this look as a brand…</button>
+        <button type="button" class="insp-mini" id="look-reset">reset to preset</button>
+        <span class="insp-status" id="look-status"></span>
+      </div>
+    </div>
+    <aside class="page-side">
+      <div class="rail-label">Colours</div>
+      <label class="insp-field">Accent
+        <span class="insp-accent-row"><input type="color" id="theme-accent" value="#d97757" /><span class="insp-swatch-value" id="theme-accent-value">#d97757</span></span>
+      </label>
+      <label class="insp-field">Second accent
+        <span class="insp-accent-row"><input type="color" id="theme-accent2" value="#f28a32" /><span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span></span>
+      </label>
+      <div class="rail-label">Type and motion</div>
+      <label class="insp-field">Titles
+        <select id="theme-title-style">
+          <option value="rise">rise</option><option value="slam">slam</option><option value="typewriter">typewriter</option><option value="wipe">wipe</option><option value="block">block — lower third</option>
+        </select>
+      </label>
+      <label class="insp-field">Callouts
+        <select id="theme-callout-style">
+          <option value="pill">pill</option><option value="tag">tag</option><option value="stamp">stamp</option><option value="note">note</option>
+        </select>
+      </label>
+      <label class="insp-field">Punch-ins
+        <select id="theme-punch">
+          <option value="">off</option><option value="1.1">alternating 110%</option><option value="1.15">alternating 115%</option><option value="1.25">alternating 125%</option>
+        </select>
+      </label>
+      <div class="rail-label">Captions</div>
+      <div class="segmented" id="theme-captions" role="radiogroup">
+        <button type="button" data-value="none">Off</button>
+        <button type="button" data-value="open">Burn in</button>
+        <button type="button" data-value="closed">CC file</button>
+        <button type="button" data-value="both">Both</button>
+      </div>
+      <p class="field-note" id="captions-note"></p>
+      <label class="insp-field">Caption style
+        <select id="theme-caption-style">
+          <option value="pill">pill</option><option value="band">band</option><option value="karaoke">karaoke</option>
+        </select>
+      </label>
+      <details class="insp-details">
+        <summary>Mark and handle (optional)</summary>
+        <label class="insp-field">Mark
+          <span class="insp-accent-row">
+            <button type="button" class="insp-mini" id="theme-logo-pick">choose…</button>
+            <span class="insp-swatch-value" id="theme-logo-name">none</span>
+            <button type="button" class="insp-mini" id="theme-logo-clear" hidden>remove</button>
+          </span>
+        </label>
+        <label class="insp-field" id="theme-logo-corner-wrap" hidden>Corner
+          <select id="theme-logo-corner"><option value="tr">top right</option><option value="tl">top left</option><option value="br">bottom right</option><option value="bl">bottom left</option></select>
+        </label>
+        <label class="insp-field">Handle
+          <input type="text" id="theme-watermark" placeholder="@handle or site" maxlength="40" />
+        </label>
+      </details>
+    </aside>
+  </section>
+
+  <section class="page" id="export" hidden>
+    <div class="page-main" id="export-main"></div>
+  </section>
+
   <footer class="dock" id="dock" hidden>
     <div class="transport">
       <button id="playpause" type="button" class="playbtn" aria-label="Play">
@@ -239,6 +230,10 @@
       </button>
       <span class="time"><b id="time-now">0:00.0</b><span class="time-sep" id="time-sep"> · </span><span id="time-total"></span></span>
       <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
+      <button type="button" class="insp-mini" id="script-toggle" hidden>script</button>
+      <label class="toggle" id="captions-wrap" hidden>captions
+        <select id="stage-captions"><option value="none">off</option><option value="open">burned in</option><option value="closed">CC file</option><option value="both">both</option></select>
+      </label>
       <span class="transport-note" id="transport-note"></span>
     </div>
     <div class="timeline" id="timeline">
