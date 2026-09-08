@@ -186,7 +186,8 @@ the accent and heavier — `auto` (numbers, absolutes, negations, names), a list
 lean on, or `none`. A short is read more than heard and is created with `auto`; a film usually
 wants `none`.
 
-Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
+Pictures the person already has — screenshots, product shots, an exported still — come in
+through `import_image` from a path on the pipeline host. Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
 licences, SVGs rasterised) and `fetch_image` (a direct image, a page's share image, or a site's
 icon), which file them under `media/<project>/assets/` for `image` and `logos` graphics and the
 theme logo. When someone names a product, a tool or a site, a logo beside the words is usually
@@ -215,7 +216,9 @@ fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Sa
 
 ## Read the film before composing it
 
-`read_story` marks the clean transcript up the way an editor marks a script: paragraphs (by
+`read_story` marks the transcript up the way an editor marks a script (`transcript: "raw"` reads
+the recording's own transcript before the clean render, with word ids for `add_cut`, so a
+preamble, a false start or a tangent can be struck as a cut rather than composed around): paragraphs (by
 pause and by signpost), sections with a drafted heading each, the opening (its preamble, and
 where the promise to the viewer actually arrives), the ending (the conclusion and the ask),
 and every moment whose shape the kit already draws — a number, a list, a comparison, a
@@ -272,8 +275,8 @@ the stitch and therefore in seconds, never re-rendering a chunk:
   last, ramping over `ramp` seconds either side, faded in and out over `fade`, looped when the
   file is shorter than the film. `set_audio` reports how many pauses it comes up in. A short
   nearly always wants a bed; a long film wants one under its opening, its section marks and
-  its ending, and often nothing under the argument — there is no per-span bed yet, so choose
-  the level for the whole film.
+  its ending, and often nothing under the argument: `spans` confines the bed to named word
+  spans, faded at each edge, and an empty list lifts the confinement.
 - **Voice loudness** (`voice_loudness`): an integrated LUFS target for the voice, -16 for a
   film, -14 for a short, null to leave it as recorded. Platforms normalise on upload; this
   makes the film sound the same everywhere before they do.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { evaluateExpression } from "../core/render-plan.mjs";
 
 const words = [
@@ -81,4 +81,25 @@ test("describeAudio says what the bed does in a line", () => {
   assert.equal(described.music.swells, 3);
   assert.ok(described.music.about.includes("-20 dB in the pauses, -30 dB under the voice"));
   assert.equal(describeAudio(null, words, 8).music, null);
+});
+
+test("a bed confined to spans plays only there, faded at each edge, with no whole-film fade", () => {
+  const music = { src: "assets/bed.mp3", fade: 0.5, spans: [{ fromWordId: 2, toWordId: 3 }] };
+  validateAudio({ music });
+  assert.throws(() => validateAudio({ music: { ...music, spans: [{ fromWordId: 3, toWordId: 2 }] } }), /fromWordId <= toWordId/);
+  const spans = bedSpans(music, words, 8);
+  assert.deepEqual(spans, [{ start: 3.4, end: 5.6 }]);
+  assert.deepEqual(bedSpans({ src: "assets/bed.mp3" }, words, 8), [{ start: 0, end: 8 }]);
+  assert.throws(() => bedSpans({ spans: [{ fromWordId: 0, toWordId: 99 }] }, words, 8), /does not have/);
+  const presence = spanPresenceExpression(spans, 0.5);
+  const at = (t) => evaluateExpression(presence, { t });
+  assert.equal(at(1.0), 0);
+  assert.equal(at(4.5), 1);
+  assert.equal(at(7.0), 0);
+  assert.ok(at(3.65) > 0 && at(3.65) < 1, "fading in");
+  const graph = audioGraph({ audio: { music }, words, span: 8, musicPath: "m" });
+  assert.equal(graph.confined, true);
+  assert.ok(!graph.filter.includes("afade"), "no whole-film fade when the bed is confined");
+  assert.ok(graph.filter.includes(")*min(1,"), "the presence multiplies the gain");
+  assert.ok(describeAudio({ music }, words, 8).music.about.includes("under 1 span(s) only"));
 });

@@ -41,6 +41,12 @@ export function validateAudio(audio) {
     if (music.ramp !== undefined && !between(music.ramp, 0.1, 3)) throw new Error("audio.music.ramp is seconds from 0.1 to 3");
     if (music.fade !== undefined && !between(music.fade, 0, 10)) throw new Error("audio.music.fade is seconds from 0 to 10");
     if (music.loop !== undefined && typeof music.loop !== "boolean") throw new Error("audio.music.loop is true or false");
+    if (music.spans !== undefined) {
+      if (!Array.isArray(music.spans) || music.spans.length > 40) throw new Error("audio.music.spans is a list of up to 40 { fromWordId, toWordId }");
+      for (const span of music.spans) {
+        if (!span || !Number.isInteger(span.fromWordId) || !Number.isInteger(span.toWordId) || span.toWordId < span.fromWordId) throw new Error("each audio.music.span needs fromWordId <= toWordId");
+      }
+    }
   }
   if (voice !== undefined && voice !== null) {
     if (typeof voice !== "object") throw new Error("audio.voice must be an object");
@@ -98,6 +104,31 @@ export function bedGainExpression(windows, { duck = MUSIC_DEFAULTS.duck, ramp = 
 // clean cut (its audio is the voice), 2 the music when there is one. What
 // comes back is the extra input arguments, the filter graph and the label to
 // map — or nothing, when the voice is used as it is.
+// Where the bed plays at all, as [start, end] seconds on the clean timeline:
+// the whole film when no spans are given, else the word spans named. A span
+// is padded a little either side so the bed leads the first word in and
+// follows the last one out.
+export function bedSpans(music, words, duration, { pad = 0.6 } = {}) {
+  if (!music?.spans?.length) return [{ start: 0, end: duration }];
+  const byId = new Map(words.map((w) => [w.id, w]));
+  return music.spans
+    .map(({ fromWordId, toWordId }) => {
+      const a = byId.get(fromWordId);
+      const b = byId.get(toWordId);
+      if (!a || !b) throw new Error(`audio.music.spans names a word the clean transcript does not have (${fromWordId}–${toWordId})`);
+      return { start: Number(Math.max(a.start - pad, 0).toFixed(3)), end: Number(Math.min(b.end + pad, duration).toFixed(3)) };
+    })
+    .sort((x, y) => x.start - y.start);
+}
+
+// A presence expression for the spans: 1 inside, 0 outside, faded over
+// `fade` seconds at each edge.
+export function spanPresenceExpression(spans, fade, T = "t") {
+  const f = Math.max(fade, 0.05);
+  const tents = spans.map(({ start, end }) => `clip((${T}-${num(start)})/${num(f)},0,1)*clip((${num(end)}-${T})/${num(f)},0,1)`);
+  return `min(1,${tents.join("+")})`;
+}
+
 export function audioGraph({ audio, words, from = 0, span, musicPath }) {
   const { music, voice } = resolveAudio(audio);
   if (!music && voice.loudness === null) return null;
@@ -118,18 +149,29 @@ export function audioGraph({ audio, words, from = 0, span, musicPath }) {
     .map((w) => ({ start: Number(Math.max(w.start, 0).toFixed(3)), end: Number(Math.min(w.end, span).toFixed(3)) }));
   const gain = bedGainExpression(windows, music);
   const fade = Math.min(music.fade, span / 2);
+  // Confined to spans: the presence rides the same expression, faded at
+  // each span's edges, and the whole-film fades are not needed.
+  const confined = Boolean(music.spans?.length);
+  const presence = confined
+    ? spanPresenceExpression(
+      bedSpans(music, words, from + span).map((s) => ({ start: s.start - from, end: s.end - from })).filter((s) => s.end > 0 && s.start < span),
+      music.fade || 1,
+    )
+    : null;
   const bed = [
     "[2:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
+    // Timestamps from the sample count: a looped file restarts its own each
+    // pass, and the gain expression reads t, which has to keep advancing.
+    "asetpts=N/SR/TB",
     `atrim=duration=${num(span)}`,
-    "asetpts=PTS-STARTPTS",
     `volume=${num(dbToLinear(music.level))}`,
-    `volume=volume='${gain}':eval=frame`,
-    ...(fade > 0 ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
+    `volume=volume='${presence ? `(${gain})*${presence}` : gain}':eval=frame`,
+    ...(fade > 0 && !confined ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
   ];
   lines.push(`${bed.join(",")}[bed]`);
   lines.push(`[${voiceLabel}][bed]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`);
   const inputs = [...(music.loop ? ["-stream_loop", "-1"] : []), ...(from > 0 ? ["-ss", num(from)] : []), "-i", musicPath];
-  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain };
+  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined };
 }
 
 // A one-line account of the bed, for the tool that sets it and for status.
@@ -142,7 +184,8 @@ export function describeAudio(audio, words, duration) {
       ...music,
       swells: windows.length,
       swellSeconds: Number(windows.reduce((sum, w) => sum + w.end - w.start, 0).toFixed(1)),
-      about: `${music.level} dB in the pauses, ${music.level + music.duck} dB under the voice, ${music.ramp}s ramps, ${music.fade}s fades${music.loop ? ", looped" : ""}; ${windows.length} pause(s) the bed comes up in`,
+      spans: music.spans?.length ? bedSpans(music, words ?? [], duration ?? 0) : null,
+      about: `${music.level} dB in the pauses, ${music.level + music.duck} dB under the voice, ${music.ramp}s ramps, ${music.fade}s fades${music.loop ? ", looped" : ""}; ${windows.length} pause(s) the bed comes up in${music.spans?.length ? `; under ${music.spans.length} span(s) only` : ""}`,
     };
   }
   return out;

@@ -55,7 +55,7 @@ import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templa
 import { readStory } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
-import { validateAudio, describeAudio, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, describeAudio, bedSpans, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { chapterList } from "../core/chapters.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
@@ -676,6 +676,8 @@ server.registerTool("set_audio", {
       ramp: z.number().min(0.1).max(3).optional(),
       fade: z.number().min(0).max(10).optional(),
       loop: z.boolean().optional(),
+      spans: z.array(z.object({ from_word_id: z.number().int().min(0), to_word_id: z.number().int().min(0) })).max(40).optional()
+        .describe("Confine the bed to these word spans on the clean transcript — the opening, the section marks, the ending — faded at each edge; omit for the whole film; an empty list lifts a confinement"),
     }).nullable().optional().describe("The bed; null removes it; omit to keep the current one"),
     voice_loudness: z.number().min(-30).max(-8).nullable().optional().describe("Integrated LUFS target for the voice; null leaves it as recorded; omit to keep"),
   },
@@ -687,7 +689,12 @@ server.registerTool("set_audio", {
     if (music === null) delete audio.music;
     else {
       if (!fs.existsSync(path.join(dir, music.src))) throw new Error(`no such asset ${music.src}; import_audio first`);
-      audio.music = { ...(audio.music?.src === music.src ? audio.music : {}), ...music };
+      const { spans, ...rest } = music;
+      audio.music = { ...(audio.music?.src === music.src ? audio.music : {}), ...rest };
+      if (spans !== undefined) {
+        if (spans.length === 0) delete audio.music.spans;
+        else audio.music.spans = spans.map((span) => ({ fromWordId: span.from_word_id, toWordId: span.to_word_id }));
+      }
     }
   }
   if (voice_loudness !== undefined) {
@@ -695,10 +702,11 @@ server.registerTool("set_audio", {
     else audio.voice = { loudness: voice_loudness };
   }
   validateAudio(audio);
-  if (Object.keys(audio).length) config.audio = audio; else delete config.audio;
-  writeComposeConfig(dir, config);
   const words = fs.existsSync(projectPaths(dir).cleanTranscript) ? cleanWords(dir) : [];
   const duration = words.at(-1)?.end ?? 0;
+  if (audio.music?.spans) bedSpans(audio.music, words, duration); // refuses a word the transcript does not have
+  if (Object.keys(audio).length) config.audio = audio; else delete config.audio;
+  writeComposeConfig(dir, config);
   return ok({ audio: config.audio ?? null, ...describeAudio(config.audio, words, duration), stale: ["final"], hint: "render_final to hear it; the chunks are cached, so only the stitch runs" });
 });
 
@@ -943,13 +951,22 @@ server.registerTool("read_story", {
     "Read the clean transcript the way an editor marks up a script before cutting: the paragraphs (by pause and by signpost), the sections with a drafted heading each, the opening (its preamble, and where the promise to the viewer actually arrives), the ending (the conclusion and the ask, if either exists), and every moment whose shape the kit already has a graphic for — a number, a list, a comparison, a question, a definition, a process, a quote, a claim, a warning, a date, a named product or tool, something typed, a call to action — each with its sentence, its word ids and the graphic to try first. It is a reading, not a plan: disagree from the words. Call it once before set_scenes, and before suggest_clips when looking for shorts, instead of holding eight thousand words in your head.",
   inputSchema: {
     limit: z.number().int().min(10).max(200).optional().describe("How many moments at most, 80 by default; the most drawable kinds are kept first"),
+    transcript: z.enum(["clean", "raw"]).optional().describe("clean (the default: word ids for scenes) or raw (the recording's own transcript, word ids for add_cut — read it before the clean render to strike the preamble, a false start, a tangent)"),
   },
-}, async ({ limit }) => {
+}, async ({ limit, transcript }) => {
   const dir = currentProjectDir();
-  const words = cleanWords(dir);
+  const raw = transcript === "raw";
+  let words;
+  if (raw) {
+    const review = readReview(dir);
+    if (!review?.words) throw new Error("no cut list yet: the raw transcript is read through review.json, which the first pass or cut_pass writes");
+    words = review.words;
+  } else words = cleanWords(dir);
   const story = readStory(words, { limit: limit ?? 80 });
   return ok({
     ...story,
+    transcript: raw ? "raw" : "clean",
+    wordIdsFor: raw ? "add_cut and list_cuts" : "set_scenes, suggest_clips and set_audio",
     format: projectFormat(dir),
     hint: "Sections are where a section heading or a cover belongs; moments are where a card belongs. A moment's first suggestion is a kit kind or a template id (describe_templates); search_images is a suggestion to fetch a picture. Pick the moments that carry the argument, not all of them.",
   });
@@ -1417,6 +1434,33 @@ server.registerTool("fetch_image", {
   const result = await fetchImage({ url, name, attribution, kind: kind ?? "auto", assetsDir: path.join(dir, "assets"), ffmpeg: FFMPEG });
   const { file, ...rest } = result;
   return ok(rest);
+});
+
+server.registerTool("import_image", {
+  description:
+    "Copy a picture from the pipeline host into the project's assets/ for image, logos, cover and the theme logo: the person's own screenshots, product shots, a still they exported. png, jpg or webp (a gif's first frame). Nothing is fetched; fetch_image is for the web. Returns the project-relative src.",
+  inputSchema: {
+    path: z.string().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    name: z.string().optional().describe("File name under assets/; the source's own name by default"),
+    attribution: z.object({ author: z.string().optional(), license: z.string().optional(), note: z.string().optional() }).optional().describe("Who made it, if not the person; saved beside the asset"),
+  },
+}, async ({ path: source, name, attribution }) => {
+  const dir = currentProjectDir();
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
+  if (!/\.(png|jpe?g|webp|gif)$/i.test(source)) throw new Error("import_image takes png, jpg, webp or gif");
+  const ext = path.extname(source).toLowerCase() === ".gif" ? ".png" : path.extname(source).toLowerCase().replace(".jpeg", ".jpg");
+  const leaf = `${(name ?? path.basename(source, path.extname(source))).replace(/\.(png|jpe?g|webp|gif)$/i, "").replace(/[^a-z0-9._-]/gi, "_")}${ext}`;
+  const assets = path.join(dir, "assets");
+  fs.mkdirSync(assets, { recursive: true });
+  const target = path.join(assets, leaf);
+  if (path.extname(source).toLowerCase() === ".gif") {
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(FFMPEG, ["-y", "-v", "error", "-i", source, "-frames:v", "1", target]);
+  } else fs.copyFileSync(source, target);
+  const metadata = { source: `file:${source}`, requestedUrl: null, ...(attribution ?? {}) };
+  fs.writeFileSync(`${target}.source.json`, JSON.stringify(metadata, null, 2) + "\n");
+  const dims = probeDimensions(target);
+  return ok({ src: `assets/${leaf}`, width: dims.width, height: dims.height, bytes: fs.statSync(target).size, attribution: metadata });
 });
 
 server.registerTool("list_assets", {
