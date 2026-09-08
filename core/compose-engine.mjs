@@ -482,6 +482,21 @@ export function hiddenFullStage(scenes, durationSeconds = 0, options = {}) {
   return hidden;
 }
 
+// Type over a full-stage card. A title or a callout falls to its default
+// place on the stage; while a cover, a section or a full-stage custom
+// graphic owns the stage, that place is on top of the card's own text. The
+// card should carry the words instead. Reported by scene index.
+export function overFullStage(scenes) {
+  const cards = scenes.filter((scene) => scene.type === "graphic" && scene.graphic && FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false);
+  const out = [];
+  scenes.forEach((scene, index) => {
+    if (scene.type !== "title" && scene.type !== "callout") return;
+    const under = cards.find((card) => card.start < scene.end - 0.1 && card.end > scene.start + 0.1);
+    if (under) out.push({ index, type: scene.type, card: under.graphic.template ?? under.graphic.kind, seconds: Number((Math.min(scene.end, under.end) - Math.max(scene.start, under.start)).toFixed(1)) });
+  });
+  return out;
+}
+
 export function describeVariety(scenes, durationSeconds = 0) {
   const notes = [];
   const cards = scenes.filter((scene) => scene.type === "graphic" && scene.graphic?.kind);

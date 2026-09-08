@@ -8,7 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
-import { describeVariety, uncoveredCutaways, hiddenFullStage, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -270,4 +270,16 @@ test("caption emphasis leans on numbers, absolutes and listed words, two per phr
   assert.equal(phrases[0].words[0].emph, true);
   assert.equal(phrases[0].words[1].emph, undefined);
   assert.equal(resolvePhraseCaptions([{ id: 0, text: "sixteen", start: 0, end: 0.4 }])[0].words[0].emph, undefined, "none by default");
+});
+
+test("a title or callout over a full-stage card is reported; over a column card it is not", () => {
+  const cover = { type: "graphic", start: 10, end: 20, fromWordId: 0, toWordId: 1, graphic: { kind: "custom", template: "before-after", html: "x" } };
+  const callout = { type: "callout", start: 14, end: 18, fromWordId: 0, toWordId: 1, text: "x" };
+  const hits = overFullStage([cover, callout]);
+  assert.equal(hits.length, 1);
+  assert.deepEqual(hits[0], { index: 1, type: "callout", card: "before-after", seconds: 4 });
+  const column = { ...cover, graphic: { kind: "stat", value: 1, label: "x" } };
+  assert.deepEqual(overFullStage([column, callout]), []);
+  const apart = { ...callout, start: 21, end: 24 };
+  assert.deepEqual(overFullStage([cover, apart]), []);
 });

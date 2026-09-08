@@ -60,7 +60,7 @@ import { chapterList } from "../core/chapters.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -1147,6 +1147,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   });
   for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
     warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
+  }
+  for (const over of overFullStage(resolved)) {
+    warnings.push(`scene ${over.index}: the ${over.type} sits over the full-stage ${over.card} for ${over.seconds}s and lands on its text. Put the words in the card, or move the ${over.type} to a moment the head holds.`);
   }
   const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
   for (const hole of holes) {
