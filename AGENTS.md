@@ -20,7 +20,7 @@ historical Claude-only plan is superseded by the shared workflow.
 
 `docs/craft/` is the craft: `editor.md` and `shorts.md` are the two personas' judgment,
 `visual-grammar.md` maps what is said to what goes on the stage, `references.md` describes
-widely watched styles as methods. `adopt_persona` hands you the two your persona reads;
+widely watched styles as methods, `examples.md` is two real films worked scene by scene. `adopt_persona` hands you the two your persona reads;
 `read_story`, `describe_templates`, `review_plan` and `preview_sheet` are the tools that go
 with them.
 

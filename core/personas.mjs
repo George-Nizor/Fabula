@@ -47,6 +47,7 @@ export const CRAFT_DOCS = {
   shorts: "docs/craft/shorts.md",
   "visual-grammar": "docs/craft/visual-grammar.md",
   references: "docs/craft/references.md",
+  examples: "docs/craft/examples.md",
 };
 
 export function validatePersona(id) {
