@@ -14,7 +14,7 @@ const EXPECTED = [
   "transcribe", "cut_pass", "detect_framing", "set_framing", "get_framing", "list_cuts", "set_cut_enabled", "add_cut",
   "plan_shots", "render_clean", "retranscribe_clean", "list_clean_words",
   "get_scenes", "set_scenes", "update_scenes", "add_scenes", "remove_scenes", "set_inserts", "get_inserts", "apply_insert", "wait_for_input",
-  "describe_kit", "describe_templates", "adopt_persona", "read_craft", "read_story", "review_plan",
+  "describe_kit", "describe_templates", "adopt_persona", "read_craft", "read_story", "draft_scenes", "review_plan", "review_film",
   "preview_frame", "preview_sheet", "render_thumbnail",
   "set_captions", "list_themes", "get_theme", "set_theme",
   "search_images", "fetch_image", "import_image", "list_assets",

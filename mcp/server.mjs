@@ -57,6 +57,7 @@ import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { validateAudio, describeAudio, bedSpans, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { chapterList } from "../core/chapters.mjs";
+import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -944,6 +945,69 @@ server.registerTool("review_plan", {
     variety: read.variety,
     pacing: read.pacing,
   });
+});
+
+server.registerTool("draft_scenes", {
+  description:
+    "A first draft of the plan from the story reading, so composing starts from a skeleton rather than a blank: the promise as a hook over the opening, a section mark at every turn, a card at the moments that carry their own text (a question, a quote, a warning, a claim, a name, a number said aloud), the conclusion as the spoken word, the ask as a cta in a short — spaced by the persona's density, in the film's shape, with every cutaway covered and nothing hidden behind the head. It quotes the speaker and invents nothing: where a moment wants judgment (a chart's values, a definition's meaning, a picture) it says so in todo. With apply: false (the default) it returns the scenes for you to edit and set_scenes; with apply: true it writes them as the plan and returns the read-back. Either way the draft is yours to rework; the person's existing plan is replaced only when you apply.",
+  inputSchema: {
+    persona: z.enum(["editor", "farmer"]).optional().describe("Density and shape of the draft; editor by default, farmer for a short"),
+    apply: z.boolean().optional().describe("Write the draft as the plan (replacing the current scenes) and read it back"),
+  },
+}, async ({ persona, apply }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const shape = resolveFormat(projectFormat(dir));
+  const who = persona ?? (shape.shortForm ? "farmer" : "editor");
+  const draft = draftScenes(words, { format: shape.id, shortForm: shape.shortForm, persona: who, title: readProjectMeta(dir).title ?? "" });
+  const expanded = expandTemplates(draft.scenes, { format: shape.id });
+  validateScenes(expanded, words);
+  if (!apply) {
+    const read = readBackPlan(dir, expanded, words, readComposeConfig(dir).theme, readComposeConfig(dir).captions);
+    return ok({
+      persona: who, applied: false,
+      scenes: draft.scenes.map((scene) => ({ ...scene, from_word_id: scene.fromWordId, to_word_id: scene.toWordId, fromWordId: undefined, toWordId: undefined })),
+      todo: draft.todo, notes: draft.notes, story: draft.story,
+      warnings: read.warnings, variety: read.variety, pacing: read.pacing,
+      hint: "Edit what you disagree with and set_scenes the result, or call again with apply: true to write it as it is and refine with update_scenes.",
+    });
+  }
+  const config = readComposeConfig(dir);
+  config.scenes = expanded;
+  config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
+  if (!config.cutIdentity) delete config.cutIdentity;
+  writeComposeConfig(dir, config);
+  const read = readBackPlan(dir, expanded, words, config.theme, config.captions);
+  return ok({ persona: who, applied: true, scenes: expanded.length, todo: draft.todo, notes: draft.notes, warnings: read.warnings, variety: read.variety, pacing: read.pacing });
+});
+
+server.registerTool("review_film", {
+  description:
+    "The whole film in one look: the current plan's warnings, variety and pacing reads (review_plan), the chapter list it would export, the sound under it, and a contact sheet across the film (preview_sheet, every N seconds, a dozen tiles by default) — one call before a render, or after the person has been editing in the window. Look at the sheet.",
+  inputSchema: {
+    every_seconds: z.number().min(1).max(120).optional().describe("Sheet interval; the film's length over twelve by default"),
+    sheet: z.boolean().optional().describe("false skips the sheet when only the reads are wanted"),
+  },
+}, async ({ every_seconds, sheet }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const scenes = resolveScenes(config.scenes ?? [], words);
+  const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
+  const duration = words.at(-1)?.end ?? 0;
+  const chapters = chapterList({ scenes, words, title: readProjectMeta(dir).title ?? "Introduction", duration });
+  const out = {
+    format: projectFormat(dir), seconds: Number(duration.toFixed(1)), scenes: (config.scenes ?? []).length,
+    warnings: read.warnings, variety: read.variety, pacing: read.pacing,
+    chapters: chapters.text.trim().split("\n").filter(Boolean), chaptersEnough: chapters.enough,
+    sound: describeAudio(config.audio, words, duration),
+    captions: { mode: captionMode(config.captions), emphasis: config.captionEmphasis ?? "none" },
+  };
+  if (sheet !== false && fs.existsSync(projectPaths(dir).clean) && duration > 0) {
+    const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
+    out.sheet = await runFrame(dir, [`--every=${every}`, `--width=${projectFormat(dir) === "vertical" ? 360 : 480}`]);
+  } else out.sheet = null;
+  return ok(out);
 });
 
 server.registerTool("read_story", {

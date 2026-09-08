@@ -228,6 +228,19 @@ try first. Call it once before `set_scenes`, and before `suggest_clips` when loo
 shorts. It is a reading, not a plan: sections are where a heading or a cover belongs, moments
 are where a card belongs, and the ones that carry the argument are the ones to take.
 
+`draft_scenes` turns that reading into a first draft of the plan — the promise as a hook, a
+section mark at every turn, a card at the moments that carry their own text, the conclusion as
+the spoken word, the ask as a cta in a short — spaced by the persona's density and in the
+film's shape, with a `todo` for every moment it left to judgment (a chart's values, a
+definition's meaning, a picture). It quotes the speaker and invents nothing. Read it, rework
+what you disagree with, and `set_scenes` the result; or `apply: true` and refine with
+`update_scenes`. It is a skeleton, not a composition: the head alone is still a choice it
+cannot make for you.
+
+`review_film` is the whole film in one call: the plan's reads, the chapter list it would
+export, the sound, the captions, and a contact sheet across it. Use it before a render and
+after the person has been editing.
+
 ## Templates: the graphics the kit has no fixed shape for
 
 Twenty-four named graphics — a hook line, the big word, a big number, three numbers, a
