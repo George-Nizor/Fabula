@@ -57,8 +57,18 @@ function cardFor(moment, span, { shortForm }) {
       return { type: "graphic", ...span, graphic: { kind: "custom", template: "alert", params: { text: charsTo(sentence, 90), level: "warning" } }, layout: "side" };
     case "claim":
       return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "stamp" };
-    case "number":
+    case "number": {
+      const figure = moment.evidence;
+      if (figure && figure.shown) {
+        const label = figure.label && figure.label.split(" ").length <= 6 ? figure.label : (figure.unit ?? "");
+        return {
+          type: "graphic", ...span, layout: "side",
+          graphic: { kind: "custom", template: "big-number", params: { value: charsTo(figure.shown, 14), label: charsTo(label || sentence, 40), context: charsTo(sentence, 90) } },
+          todo: `the figure ${figure.shown} was read from “${sentence}”; check the value and the label say what the speaker meant`,
+        };
+      }
       return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "bar", todo: "a number said aloud: replace this callout with a stat or big-number once you have read the value and what it counts" };
+    }
     case "name":
       return { type: "callout", ...span, text: moment.evidence.slice(0, 2).join(" · "), style: "tag", todo: `${moment.evidence.join(", ")}: a picture or a logo beside the words is usually worth two calls (search_images, fetch_image, import_image)` };
     case "definition":

@@ -156,6 +156,7 @@ const DETECTORS = [
     test: (text) => /\d/.test(text) || (NUMBER_WORDS.test(lower(text)) && UNITS.test(lower(text))),
     suggest: ["stat", "big-number", "trio", "chart"],
     why: "a figure said aloud is remembered when it is also seen",
+    evidence: (text) => numberIn(text),
   },
   {
     kind: "list",
@@ -249,6 +250,72 @@ function properNouns(text) {
     else if (/^[A-Z][A-Za-z0-9]*[A-Z0-9][A-Za-z0-9]*$/.test(token) && token.length >= 2 && token.length <= 20) out.push(token); // GPT-4, WhisperX, NVENC, iPhone
   }
   return [...new Set(out)];
+}
+
+// ---- The number in a sentence ----
+//
+// "sixteen minutes", "eighty percent", "$4.2 million", "3x", "two hundred
+// and fifty users": the figure as a value and as it should read on a card,
+// and the unit the speaker gave it. Only the first figure in a sentence;
+// a sentence with two is a comparison, and the draft leaves those alone.
+const SMALL = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const TENS = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const SCALE = { hundred: 100, thousand: 1e3, million: 1e6, billion: 1e9 };
+const UNIT_WORD = /^(percent|per|cent|dollars?|bucks|pounds?|euros?|minutes?|mins?|seconds?|secs?|hours?|hrs?|days?|weeks?|months?|years?|times|x|fold|k|gb|mb|tb|kb|fps|ms|km|miles?|meters?|metres?|kilos?|grams?|users?|people|subscribers?|views?|customers?|watts?|degrees?|calories|steps|frames?|words?|lines?|pages?|episodes?|videos?|shorts?|clips?|renders?)$/;
+const UNIT_SHORT = { percent: "%", "per cent": "%", dollars: "$", dollar: "$", bucks: "$", minutes: "min", minute: "min", mins: "min", seconds: "s", second: "s", secs: "s", hours: "h", hour: "h", hrs: "h", times: "×", x: "×", fold: "×", k: "k", gb: "GB", mb: "MB", tb: "TB", kb: "KB", fps: "fps", ms: "ms", km: "km" };
+
+function numberWordsAt(tokens, i) {
+  let value = 0; let current = 0; let n = 0; let seen = false;
+  for (let j = i; j < tokens.length; j += 1) {
+    const w = tokens[j];
+    if (w === "and" && seen) { n += 1; continue; }
+    if (w in SMALL) { current += SMALL[w]; seen = true; n += 1; continue; }
+    if (w in TENS) { current += TENS[w]; seen = true; n += 1; continue; }
+    if (w === "hundred" && seen) { current = (current || 1) * 100; n += 1; continue; }
+    if (w in SCALE && w !== "hundred" && seen) { value += (current || 1) * SCALE[w]; current = 0; n += 1; continue; }
+    break;
+  }
+  if (!seen) return null;
+  return { value: value + current, length: n };
+}
+
+export function numberIn(text) {
+  const raw = String(text).split(/\s+/);
+  const tokens = raw.map((t) => t.toLowerCase().replace(/[^a-z0-9$%.,]/g, ""));
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i];
+    let value = null; let shown = null; let length = 1; let unit = null;
+    const digits = t.match(/^\$?(\d[\d,]*(?:\.\d+)?)(%|k|m|x)?$/);
+    if (digits) {
+      value = Number(digits[1].replace(/,/g, ""));
+      if (digits[2] === "k") value *= 1e3; else if (digits[2] === "m") value *= 1e6;
+      shown = `${t.startsWith("$") ? "$" : ""}${digits[1]}${digits[2] === "k" || digits[2] === "m" ? digits[2] : ""}`;
+      if (digits[2] === "%") unit = "%"; else if (t.startsWith("$")) unit = "$"; else if (digits[2] === "x") unit = "×";
+    } else if (t in SMALL || t in TENS) {
+      const parsed = numberWordsAt(tokens, i);
+      if (!parsed) continue;
+      value = parsed.value; length = parsed.length; shown = String(value);
+    } else continue;
+    // The unit, when the next word is one, or a scale word after digits.
+    const next = tokens[i + length];
+    if (next && SCALE[next] && next !== "hundred" && digits) { value *= SCALE[next]; shown = `${shown} ${next}`; length += 1; }
+    // A bare four-digit number in the 1900s or 2000s is a year: the time
+    // detector's business, not a figure.
+    if (!unit && digits && /^(19|20)\d\d$/.test(digits[1]) && !(tokens[i + length] && UNIT_WORD.test(tokens[i + length]))) continue;
+    const after = tokens[i + length];
+    const after2 = tokens[i + length + 1];
+    if (!unit && after && UNIT_WORD.test(after)) {
+      unit = after === "per" && after2 === "cent" ? "percent" : after;
+      length += unit === "percent" && after === "per" ? 2 : 1;
+    }
+    const short = unit ? (UNIT_SHORT[unit] ?? unit) : null;
+    const asRead = unit === "%" || short === "%" ? `${shown}%` : short === "$" ? (shown.startsWith("$") ? shown : `$${shown}`) : short ? `${shown} ${short}` : shown;
+    // A bare small number with no unit is a count of something in the
+    // sentence, not a figure worth a card.
+    if (!unit && value < 10) continue;
+    return { value, shown: asRead, unit: unit ?? null, label: unit ? raw.slice(i + length, i + length + 6).join(" ").replace(/[.!?,;:]+$/, "") : "" };
+  }
+  return null;
 }
 
 export function moments(words, { limit = 80 } = {}) {

@@ -63,7 +63,6 @@ test("the editor's draft opens on the promise, marks the turns, places spaced ca
   const cards = resolved.filter((s) => s.type !== "stage").sort((a, b) => a.start - b.start);
   for (let i = 1; i < cards.length; i += 1) assert.ok(cards[i].start >= cards[i - 1].end - 0.01, `cards ${i - 1} and ${i} overlap`);
   assert.ok(draft.todo.some((t) => t.includes("preamble")), "the preamble is flagged for the cut");
-  assert.ok(draft.todo.some((t) => t.includes("stat or big-number")), "a number is left to judgment");
   assert.ok(draft.scenes.every((s) => !("todo" in s) && !("layout" in s && s.type !== "stage")), "scene objects are clean");
 });
 
@@ -73,6 +72,10 @@ test("the farmer's draft is denser, and ends a short on the ask", () => {
   const count = (d) => d.scenes.filter((s) => s.type !== "stage").length;
   assert.ok(count(draft) > count(editor), `${count(draft)} vs ${count(editor)}`);
   assert.ok(draft.scenes.some((s) => s.graphic?.template === "cta"), "a short ends on the ask");
+  const figures = draft.scenes.filter((s) => s.graphic?.template === "big-number").map((s) => s.graphic.params.value);
+  assert.ok(figures.length && figures.every((v) => /min$|%$/.test(v)), JSON.stringify(figures));
+  assert.ok(draft.todo.some((t) => t.includes("the figure ")), "a read figure is flagged for a check");
+  assert.ok(!draft.scenes.some((s) => s.graphic?.params?.value === "2019"), "a year is not a figure");
   const expanded = expandTemplates(draft.scenes, { format: "vertical" });
   validateScenes(expanded, words);
   assert.deepEqual(hiddenFullStage(resolveScenes(expanded, words), words.at(-1).end), []);

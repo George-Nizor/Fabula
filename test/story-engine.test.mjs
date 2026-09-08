@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenWords } from "../core/cut-engine.mjs";
-import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts } from "../core/story-engine.mjs";
+import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts, numberIn } from "../core/story-engine.mjs";
 
 function transcriptOf(spec) {
   const segments = [];
@@ -139,4 +139,17 @@ test("the editorial cuts: the preamble, a false start said again properly, a stu
   assert.equal(all.length, pre.length + starts.length + stut.length);
   for (let i = 1; i < all.length; i += 1) assert.ok(all[i].fromWordId >= all[i - 1].fromWordId);
   assert.deepEqual(editorialCuts(ws, { kinds: ["stutter"] }).map((c) => c.reason), stut.map(() => "stutter"));
+});
+
+test("the number in a sentence: value, how it reads, and its unit", () => {
+  assert.deepEqual(numberIn("The first render took sixteen minutes and the second took six."), { value: 16, shown: "16 min", unit: "minutes", label: "and the second took six" });
+  assert.equal(numberIn("Something like eighty percent of these are watched with the sound off.").shown, "80%");
+  assert.equal(numberIn("It costs $4.2 million a year.").shown, "$4.2 million");
+  assert.equal(numberIn("That is 3x faster than before.").shown, "3×");
+  assert.equal(numberIn("two hundred and fifty thousand users signed up").value, 250000);
+  assert.equal(numberIn("we shipped 12,000 units").value, 12000);
+  assert.equal(numberIn("I have three things to say."), null, "a bare small count is not a figure");
+  assert.equal(numberIn("Back in 2019 I used to render everything."), null, "a year is a date");
+  assert.equal(numberIn("2019 users signed up").shown, "2019 users");
+  assert.equal(numberIn("nothing numeric here"), null);
 });
