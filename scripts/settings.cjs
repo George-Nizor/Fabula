@@ -52,4 +52,26 @@ function writeProjectsRoot(value, file = SETTINGS_FILE) {
   return settings.projectsRoot ?? null;
 }
 
-module.exports = { SETTINGS_FILE, readSettings, validateProjectsRoot, configuredProjectsRoot, writeProjectsRoot };
+// Where the person's music lives, for list_music: a folder as the pipeline
+// sees it, or null when none is set. The same rules as the projects root.
+function configuredMusicRoot(file = SETTINGS_FILE) {
+  const { musicRoot } = readSettings(file);
+  if (musicRoot === undefined || musicRoot === null || musicRoot === "") return null;
+  try {
+    return validateProjectsRoot(musicRoot);
+  } catch {
+    return null;
+  }
+}
+
+function writeMusicRoot(value, file = SETTINGS_FILE) {
+  const settings = readSettings(file);
+  if (value === null) delete settings.musicRoot;
+  else settings.musicRoot = validateProjectsRoot(value);
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(settings, null, 2) + "\n");
+  fs.renameSync(temp, file);
+  return settings.musicRoot ?? null;
+}
+
+module.exports = { SETTINGS_FILE, readSettings, validateProjectsRoot, configuredProjectsRoot, writeProjectsRoot, configuredMusicRoot, writeMusicRoot };

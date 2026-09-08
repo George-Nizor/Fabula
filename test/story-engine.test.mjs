@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenWords } from "../core/cut-engine.mjs";
-import { paragraphs, sections, moments, opening, ending, readStory } from "../core/story-engine.mjs";
+import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts } from "../core/story-engine.mjs";
 
 function transcriptOf(spec) {
   const segments = [];
@@ -113,4 +113,30 @@ test("readStory is the whole reading in one object, and an empty transcript read
   const empty = readStory([]);
   assert.deepEqual(empty.moments, []);
   assert.equal(empty.opening, null);
+});
+
+test("the editorial cuts: the preamble, a false start said again properly, a stuttered word", () => {
+  const spec = [
+    { text: "Hey everyone, welcome to the channel." },
+    { text: "So the first render, so the first render took sixteen minutes and the the second, that that was fine." },
+    { text: "The second took six.", pauseAfter: 1.0 },
+    { text: "No no, I mean it: very very fast." },
+  ];
+  const ws = flattenWords(transcriptOf(spec));
+  const pre = preambleCuts(ws);
+  assert.equal(pre.length, 1);
+  assert.equal(pre[0].reason, "preamble");
+  assert.equal(pre[0].fromWordId, 0);
+  const starts = falseStarts(ws);
+  assert.equal(starts.length, 1, JSON.stringify(starts));
+  assert.equal(starts[0].reason, "false-start");
+  assert.ok(ws[starts[0].fromWordId].text === "So" && /render/.test(ws[starts[0].toWordId].text), JSON.stringify(starts));
+  const stut = stutters(ws);
+  const pairs = stut.map((c) => ws[c.fromWordId].text.toLowerCase());
+  assert.ok(pairs.includes("the") && pairs.includes("that"), JSON.stringify(pairs));
+  assert.ok(!pairs.includes("no") && !pairs.includes("very"), "emphatic doubles are kept");
+  const all = editorialCuts(ws);
+  assert.equal(all.length, pre.length + starts.length + stut.length);
+  for (let i = 1; i < all.length; i += 1) assert.ok(all[i].fromWordId >= all[i - 1].fromWordId);
+  assert.deepEqual(editorialCuts(ws, { kinds: ["stutter"] }).map((c) => c.reason), stut.map(() => "stutter"));
 });

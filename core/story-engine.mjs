@@ -352,3 +352,73 @@ export function readStory(words, { limit = 80 } = {}) {
     counts,
   };
 }
+
+// ---- Cuts an editor makes from the words ----
+//
+// The deterministic pass strikes pauses and fillers. These are the cuts a
+// person makes from reading: the preamble before the film promises anything,
+// a false start (a fragment the speaker abandons and then says properly), and
+// a stutter (a word said twice running). Proposals, on the RAW transcript's
+// word ids, for review.json — the person toggles them like any other.
+
+// A run of two to six words said twice running — "I think the, I think the
+// best way" — is a false start: the speaker abandoned the first and said it
+// again properly. The first run goes. Found on the words themselves, because
+// an abandoned fragment rarely earns a full stop or a pause of its own.
+const FALSE_START_MAX_WORDS = 6;
+
+export function falseStarts(words) {
+  const bare = words.map((w) => clean(w.text));
+  const out = [];
+  let i = 0;
+  while (i < words.length) {
+    let hit = null;
+    for (let k = FALSE_START_MAX_WORDS; k >= 2; k -= 1) {
+      if (i + 2 * k > words.length) continue;
+      let same = true;
+      for (let j = 0; j < k; j += 1) if (!bare[i + j] || bare[i + j] !== bare[i + k + j]) { same = false; break; }
+      if (!same) continue;
+      // Two tiny words twice ("so so", "and and") are a stutter, not a start.
+      if (bare.slice(i, i + k).join("").length < 6) continue;
+      // Across a real pause it is emphasis or a list; a false start is close.
+      if (words[i + k].start - words[i + k - 1].end > 0.6) continue;
+      hit = k;
+      break;
+    }
+    if (hit) {
+      out.push({ fromWordId: words[i].id, toWordId: words[i + hit - 1].id, reason: "false-start", detail: `“${words.slice(i, i + hit).map((w) => w.text).join(" ")}” — said again at once` });
+      i += hit;
+    } else i += 1;
+  }
+  return out;
+}
+
+export function stutters(words) {
+  const out = [];
+  for (let i = 1; i < words.length; i += 1) {
+    const a = clean(words[i - 1].text);
+    const b = clean(words[i].text);
+    if (!a || a !== b || a.length < 2) continue;
+    // Only the first of the pair goes, and only when they are close: "that
+    // that" across a pause is emphasis, not a stutter.
+    if (words[i].start - words[i - 1].end > 0.35) continue;
+    if (/^(very|really|no|yes|so|go|ha|ah)$/.test(a)) continue;
+    out.push({ fromWordId: words[i - 1].id, toWordId: words[i - 1].id, reason: "stutter", detail: `“${words[i - 1].text} ${words[i].text}”` });
+  }
+  return out;
+}
+
+export function preambleCuts(words) {
+  const open = opening(words);
+  if (!open?.preamble?.length) return [];
+  return open.preamble.map((sentence) => ({ fromWordId: sentence.fromWordId, toWordId: sentence.toWordId, reason: "preamble", detail: `“${sentence.text}” — before the film promises anything` }));
+}
+
+export function editorialCuts(words, { kinds = ["preamble", "false-start", "stutter"] } = {}) {
+  const wanted = new Set(kinds);
+  return [
+    ...(wanted.has("preamble") ? preambleCuts(words) : []),
+    ...(wanted.has("false-start") ? falseStarts(words) : []),
+    ...(wanted.has("stutter") ? stutters(words) : []),
+  ].sort((a, b) => a.fromWordId - b.fromWordId);
+}

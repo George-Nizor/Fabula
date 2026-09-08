@@ -213,6 +213,10 @@ on it like any other.
 
 Tuning that matters on real recordings: `cut_pass` at the default 0.6 s minimum pause reads
 fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Say which you chose.
+`story_cuts` adds the cuts an editor makes from reading — the preamble before the film promises
+anything, a false start said again at once, a stuttered word — as proposals the person toggles
+like the rest. Run it after the first pass and before `render_clean`; `add_cut` is for the
+judgment calls it cannot make (a tangent, a repetition ten sentences apart).
 
 ## Read the film before composing it
 
@@ -281,7 +285,9 @@ The clean cut's voice is the film's audio as recorded. Two things can be done to
 the stitch and therefore in seconds, never re-rendering a chunk:
 
 - **A music bed** (`set_audio` with `music`): a file the person owns or has licensed, brought
-  into `assets/` by `import_audio` — Fabula fetches no music. The bed sits at `level` dB while
+  into `assets/` by `import_audio` from a path or from their library — `set_music_root` names
+  the folder once, `list_music` lists it by folder (a mood, a genre) and length — Fabula
+  fetches no music. The bed sits at `level` dB while
   nobody speaks and `duck` dB lower under the voice, and the duck is computed from the
   transcript's own words, not guessed by a compressor listening to the track: it comes up in
   every pause longer than a breath, in the run-in before the first word and the tail after the

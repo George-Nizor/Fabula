@@ -52,7 +52,7 @@ import {
 import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
 import { suggestClips, createShort } from "../scripts/shorts.mjs";
 import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templates.mjs";
-import { readStory } from "../core/story-engine.mjs";
+import { readStory, editorialCuts } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { validateAudio, describeAudio, bedSpans, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
@@ -68,7 +68,7 @@ import { reanchorScenes } from "../core/reanchor.mjs";
 import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describeLook, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
 import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mjs";
-import { configuredProjectsRoot } from "../scripts/settings.cjs";
+import { configuredProjectsRoot, configuredMusicRoot, writeMusicRoot } from "../scripts/settings.cjs";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
 
 // media/ beside the checkout, or the folder fabula.settings.json names; read
@@ -543,6 +543,36 @@ server.registerTool("add_cut", {
   return ok({ added: describeCut(review.cuts[added], added, wordText), stats: reviewStats(review) });
 });
 
+server.registerTool("story_cuts", {
+  description:
+    "The cuts an editor makes from reading rather than from the waveform, added to review.json as proposals the person toggles like any other: the preamble before the film promises anything (“hi everyone, welcome back”), a false start (a run of words abandoned and said again at once), a stutter (a word said twice running, close, not for emphasis). Run it after the first pass and before render_clean. Overlapping proposals merge; re-running adds nothing twice. Say what it struck.",
+  inputSchema: {
+    kinds: z.array(z.enum(["preamble", "false-start", "stutter"])).optional().describe("Which to propose; all three by default"),
+  },
+}, async ({ kinds }) => {
+  const dir = currentProjectDir();
+  const review = readReview(dir);
+  if (!review?.words) throw new Error("no cut list yet: the first pass or cut_pass writes review.json");
+  const found = editorialCuts(review.words, kinds ? { kinds } : {});
+  const byId = new Map(review.words.map((word) => [word.id, word]));
+  const pad = 0.04;
+  const proposals = found.map((cut) => {
+    const first = byId.get(cut.fromWordId);
+    const last = byId.get(cut.toWordId);
+    return {
+      start: Math.max(first.start - pad, 0), end: last.end + pad, reason: cut.reason, detail: cut.detail, enabled: true,
+      wordIds: review.words.filter((word) => word.start >= first.start && word.end <= last.end).map((word) => word.id),
+    };
+  });
+  review.cuts = normalizeCuts([...review.cuts, ...proposals]);
+  writeReview(dir, review);
+  return ok({
+    proposed: found.map((cut) => ({ reason: cut.reason, from_word_id: cut.fromWordId, to_word_id: cut.toWordId, detail: cut.detail })),
+    stats: reviewStats(review),
+    hint: found.length ? "proposals, enabled: the person sees them in the Cut step and can keep any of them; render_clean once the cut is approved" : "nothing to strike from the words",
+  });
+});
+
 server.registerTool("plan_shots", {
   description:
     "Turn the alternating punch-in shot plan on or off: framing alternates wide/tight across the keep segments so every cut boundary reads as a shot change, not a skip. A compose-time decision — it previews in the window at once and the final render places it; the clean cut is NOT re-rendered for it. Chunks the punch-ins touch re-render on the next render_final.",
@@ -650,11 +680,20 @@ server.registerTool("import_audio", {
   description:
     "Copy a music file from the pipeline host into the project's assets/ so set_audio can use it as the bed: mp3, wav, m4a, aac, ogg, flac or opus. Music is the person's own or licensed; Fabula fetches none. Returns the project-relative src.",
   inputSchema: {
-    path: z.string().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    path: z.string().optional().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    library: z.string().optional().describe("Or a name from list_music, relative to the music folder"),
     name: z.string().optional().describe("File name under assets/; the source's own name by default"),
   },
-}, async ({ path: source, name }) => {
+}, async ({ path: given, library, name }) => {
   const dir = currentProjectDir();
+  let source = given;
+  if (library !== undefined) {
+    const root = configuredMusicRoot();
+    if (!root) throw new Error("no music folder is set; set_music_root first, or give a path");
+    source = path.resolve(root, library);
+    if (!source.startsWith(path.resolve(root) + path.sep)) throw new Error("a library name stays inside the music folder");
+  }
+  if (!source) throw new Error("give a path or a library name");
   if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
   if (!AUDIO_EXTENSIONS.test(source)) throw new Error("import_audio takes mp3, wav, m4a, aac, ogg, flac or opus");
   const leaf = (name ?? path.basename(source)).replace(/[^a-z0-9._-]/gi, "_");
@@ -664,6 +703,47 @@ server.registerTool("import_audio", {
   fs.copyFileSync(source, path.join(assets, leaf));
   const seconds = Number(probeDuration(path.join(assets, leaf)).toFixed(1));
   return ok({ src: `assets/${leaf}`, seconds, bytes: fs.statSync(path.join(assets, leaf)).size, next: `set_audio with music: { src: "assets/${leaf}" }` });
+});
+
+server.registerTool("list_music", {
+  description:
+    "The person's music library: every audio file under the folder fabula.settings.json names as musicRoot (set_music_root sets it), with its folder as a mood or a genre and its length. Nothing is fetched and nothing is chosen for them — Fabula lists what they own or have licensed. import_audio with library: <name> brings one into the project.",
+  inputSchema: {
+    query: z.string().max(60).optional().describe("A word to match in the file name or its folder"),
+    limit: z.number().int().min(1).max(200).optional().describe("How many, 60 by default"),
+  },
+}, async ({ query, limit }) => {
+  const root = configuredMusicRoot();
+  if (!root) return ok({ root: null, files: [], hint: "no music folder is set: set_music_root with a folder as the pipeline host sees it (a WSL path on Windows), then list_music again" });
+  if (!fs.existsSync(root)) throw new Error(`the music folder ${root} does not exist on the pipeline host`);
+  const files = [];
+  const walk = (folder, depth) => {
+    if (depth > 4 || files.length >= 2000) return;
+    for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+      const file = path.join(folder, entry.name);
+      if (entry.isDirectory()) walk(file, depth + 1);
+      else if (AUDIO_EXTENSIONS.test(entry.name)) files.push(file);
+    }
+  };
+  walk(root, 0);
+  const needle = (query ?? "").toLowerCase();
+  const matched = files
+    .filter((file) => !needle || path.relative(root, file).toLowerCase().includes(needle))
+    .slice(0, limit ?? 60)
+    .map((file) => {
+      let seconds = null;
+      try { seconds = Number(probeDuration(file).toFixed(1)); } catch { /* unreadable: still listed */ }
+      return { name: path.relative(root, file), mood: path.dirname(path.relative(root, file)) === "." ? null : path.dirname(path.relative(root, file)), seconds, bytes: fs.statSync(file).size };
+    });
+  return ok({ root, total: files.length, files: matched, hint: "import_audio with library: <name> copies one into assets/; then set_audio" });
+});
+
+server.registerTool("set_music_root", {
+  description: "Where the person's music lives, for list_music: a folder as the pipeline host sees it (a WSL path on Windows, e.g. /mnt/c/Users/me/Music/beds). Recorded in fabula.settings.json beside the projects root; null clears it.",
+  inputSchema: { path: z.string().nullable().describe("The folder, or null to clear") },
+}, async ({ path: folder }) => {
+  if (folder !== null && !fs.existsSync(folder)) throw new Error(`no such folder on the pipeline host: ${folder}`);
+  return ok({ musicRoot: writeMusicRoot(folder) });
 });
 
 server.registerTool("set_audio", {

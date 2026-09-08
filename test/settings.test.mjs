@@ -26,3 +26,23 @@ test("a projects root is an absolute POSIX path", () => {
   for (const bad of ["", "media", "C:\\Users\\me\\Videos", "/tmp/\u0000x", 42, null]) assert.throws(() => validateProjectsRoot(bad), bad === null ? /absolute/ : undefined);
   assert.equal(validateProjectsRoot("/workspace//Fabula/media/"), "/workspace/Fabula/media");
 });
+
+test("a music root is kept beside the projects root and read back the same way", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { createRequire } = await import("node:module");
+  const settings = createRequire(import.meta.url)("../scripts/settings.cjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-settings-"));
+  const file = path.join(dir, "fabula.settings.json");
+  try {
+    assert.equal(settings.configuredMusicRoot(file), null);
+    settings.writeProjectsRoot("/mnt/c/Fabula", file);
+    assert.equal(settings.writeMusicRoot("/mnt/c/Music/beds/", file), "/mnt/c/Music/beds");
+    assert.equal(settings.configuredMusicRoot(file), "/mnt/c/Music/beds");
+    assert.equal(settings.configuredProjectsRoot(file), "/mnt/c/Fabula", "the projects root survives");
+    assert.throws(() => settings.writeMusicRoot("C:\\Music", file), /absolute path/);
+    settings.writeMusicRoot(null, file);
+    assert.equal(settings.configuredMusicRoot(file), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
