@@ -791,7 +791,7 @@ server.registerTool("set_audio", {
     if (voice_loudness === null) delete audio.voice;
     else audio.voice = { loudness: voice_loudness };
   }
-  if (audio.music && fs.existsSync(projectPaths(dir).clean)) {
+  if ((audio.music || audio.voice?.loudness != null) && fs.existsSync(projectPaths(dir).clean)) {
     const measured = measureLoudness(projectPaths(dir).clean);
     if (typeof measured === "number") audio.voice = { ...(audio.voice ?? {}), measured };
   }

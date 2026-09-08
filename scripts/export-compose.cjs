@@ -399,19 +399,36 @@ async function main() {
   const musicSrc = composeFile.audio?.music?.src;
   const musicPath = musicSrc ? path.join(projectDir, musicSrc) : null;
   if (musicSrc && !fs.existsSync(musicPath)) throw new Error(`the music bed ${musicSrc} is not in the project; import_audio puts it there`);
-  const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath });
-  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${composeFile.audio?.voice?.loudness != null ? `, voice normalised to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
-  const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
-  if (sound) fs.writeFileSync(soundFile, sound.filter);
-  await run([
-    "-f", "concat", "-safe", "0", "-i", listFile,
-    ...audioSeek, "-i", cleanVideo,
-    ...(sound ? sound.inputs : []),
-    ...(sound ? ["-/filter_complex", soundFile, "-map", "0:v", "-map", sound.map, "-c:a", "aac", "-b:a", "192k"] : ["-map", "0:v", "-map", "1:a", "-c:a", "copy"]),
-    "-c:v", "copy", "-movflags", "+faststart", "-shortest",
-    partial,
-  ], "stitch");
-  if (sound) fs.rmSync(soundFile, { force: true });
+  const stitch = async (voiceTrimDb) => {
+    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceTrimDb });
+    const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
+    if (sound) fs.writeFileSync(soundFile, sound.filter);
+    await run([
+      "-f", "concat", "-safe", "0", "-i", listFile,
+      ...audioSeek, "-i", cleanVideo,
+      ...(sound ? sound.inputs : []),
+      ...(sound ? ["-/filter_complex", soundFile, "-map", "0:v", "-map", sound.map, "-c:a", "aac", "-b:a", "192k"] : ["-map", "0:v", "-map", "1:a", "-c:a", "copy"]),
+      "-c:v", "copy", "-movflags", "+faststart", "-shortest",
+      partial,
+    ], "stitch");
+    if (sound) fs.rmSync(soundFile, { force: true });
+    return sound;
+  };
+  const sound = await stitch(0);
+  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${composeFile.audio?.voice?.loudness != null ? `, voice to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
+  // The ceiling takes a little off a voice that needed a lot of gain. The
+  // stitch is seconds, so measure what came out and go once more with the
+  // difference trimmed in.
+  if (sound?.voiceTarget !== null && sound?.voiceTarget !== undefined && wholeFilm) {
+    let trim = 0;
+    for (let pass = 0; pass < 3; pass += 1) {
+      const got = pipeline.measureLoudness(partial);
+      if (typeof got !== "number" || Math.abs(got - sound.voiceTarget) <= 0.3) { if (pass) say(`voice now ${got} LUFS`); break; }
+      trim += sound.voiceTarget - got;
+      say(`voice measured ${got} LUFS against ${sound.voiceTarget}; stitching again with ${trim.toFixed(1)} dB trimmed in`);
+      await stitch(trim);
+    }
+  }
   fs.renameSync(partial, outPath);
   fs.rmSync(listFile, { force: true });
   // The captions as files beside the film, whatever the mode: a player's CC

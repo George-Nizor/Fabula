@@ -314,7 +314,8 @@ the stitch and therefore in seconds, never re-rendering a chunk:
   `status` reports it under `clean.voiceLoudness`, with a note when it is far under where
   platforms play. A short is created with a -14 target already set.
 - **Voice loudness** (`voice_loudness`): an integrated LUFS target for the voice, -16 for a
-  film, -14 for a short, null to leave it as recorded. Platforms normalise on upload; this
+  film, -14 for a short, null to leave it as recorded. With the voice measured it is an exact
+  gain under a true-peak ceiling, so the voice keeps its own dynamics. Platforms normalise on upload; this
   makes the film sound the same everywhere before they do.
 
 `get_scenes` carries the `audio` block; `music: null` removes the bed. Ask before adding

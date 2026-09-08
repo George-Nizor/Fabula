@@ -73,7 +73,14 @@ test("the stitch graph mixes the bed under the voice and maps the mix, or leaves
   const loud = audioGraph({ audio: { voice: { loudness: -14 } }, words, span: 8, musicPath: null });
   assert.deepEqual(loud.inputs, []);
   assert.equal(loud.map, "[v1]");
-  assert.ok(loud.filter.includes("loudnorm=I=-14"));
+  assert.ok(loud.filter.includes("loudnorm=I=-14"), "unmeasured: loudnorm");
+  const exact = audioGraph({ audio: { voice: { loudness: -14, measured: -45 } }, words, span: 8, musicPath: null });
+  assert.ok(exact.filter.includes("volume=31dB,alimiter=limit=0.8414"), exact.filter);
+  assert.ok(!exact.filter.includes("loudnorm"), "measured: a plain gain and a ceiling");
+  assert.equal(exact.voiceTarget, -14);
+  const trimmed = audioGraph({ audio: { voice: { loudness: -14, measured: -45 } }, words, span: 8, musicPath: null, voiceTrimDb: 1.5 });
+  assert.ok(trimmed.filter.includes("volume=32.5dB"), trimmed.filter);
+  assert.equal(loud.voiceTarget, null, "unmeasured: nothing to check against");
 });
 
 test("describeAudio says what the bed does in a line", () => {

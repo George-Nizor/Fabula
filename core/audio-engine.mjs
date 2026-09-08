@@ -149,18 +149,29 @@ export function spanPresenceExpression(spans, fade, T = "t") {
   return `min(1,${tents.join("+")})`;
 }
 
-export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness }) {
+export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0 }) {
   const { music, voice } = resolveAudio(audio);
   if (!music && voice.loudness === null) return null;
   const lines = [];
   lines.push("[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[v0]");
   let voiceLabel = "v0";
   if (voice.loudness !== null) {
-    lines.push(`[v0]loudnorm=I=${num(voice.loudness)}:TP=-1.5:LRA=11[v1]`);
+    // With the voice measured, the target is a plain gain and a true-peak
+    // ceiling: exact, and the voice keeps its own dynamics. One-pass
+    // loudnorm undershoots a very quiet recording by a couple of units and
+    // reshapes it; it is the fallback when nothing was measured.
+    const measured = voiceLoudness ?? voice.measured;
+    if (typeof measured === "number") {
+      // `voiceTrimDb` is the stitch's second pass: what the ceiling took off
+      // the first time, added back.
+      const gain = voice.loudness - measured + voiceTrimDb;
+      lines.push(`[v0]volume=${num(gain)}dB,alimiter=limit=0.8414:attack=5:release=50:level=false[v1]`);
+    } else lines.push(`[v0]loudnorm=I=${num(voice.loudness)}:TP=-1.5:LRA=11[v1]`);
     voiceLabel = "v1";
   }
+  const voiceTarget = voice.loudness !== null && typeof (voiceLoudness ?? voice.measured) === "number" ? voice.loudness : null;
   if (!music) {
-    return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]` };
+    return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]`, voiceTarget };
   }
   // The film's swell windows, shifted to the span's own clock.
   const windows = swellWindows(words, from + span)
@@ -191,7 +202,7 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
   lines.push(`${bed.join(",")}[bed]`);
   lines.push(`[${voiceLabel}][bed]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`);
   const inputs = [...(music.loop ? ["-stream_loop", "-1"] : []), ...(from > 0 ? ["-ss", num(from)] : []), "-i", musicPath];
-  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined };
+  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined, voiceTarget };
 }
 
 // A one-line account of the bed, for the tool that sets it and for status.
