@@ -13,14 +13,19 @@ const EFFORTS = {
 };
 
 const TASKS = ["compose"];
+const PERSONAS = ["editor", "farmer"];
 
-function choiceArgs({ provider, model, effort, task } = {}) {
+function choiceArgs({ provider, model, effort, task, persona } = {}) {
   if (!Object.hasOwn(EFFORTS, provider)) throw new Error("Choose Claude Code or Codex.");
   model = typeof model === "string" ? model.trim() : "";
   effort = typeof effort === "string" ? effort.trim() : "";
   if (model && !/^[a-z0-9][a-z0-9._:-]*$/i.test(model)) throw new Error("That is not a model ID.");
   if (effort && !EFFORTS[provider].includes(effort)) throw new Error("That reasoning effort is not one the CLI offers.");
   const args = ["--provider", provider, "--model", model || "default", "--effort", effort || "default"];
+  if (persona) {
+    if (!PERSONAS.includes(persona)) throw new Error("That is not a persona the assistant knows.");
+    args.push("--persona", persona);
+  }
   if (task) {
     if (!TASKS.includes(task)) throw new Error("That is not a task the assistant knows.");
     args.push("--task", task);

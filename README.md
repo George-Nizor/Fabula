@@ -40,8 +40,12 @@ Click **Assistant** in Fabula's top bar. A sheet asks which assistant (Claude Co
 Claude subscription, or Codex on your ChatGPT subscription), which model, and which reasoning
 effort. The model list is real: Claude Code's aliases (fable, opus, sonnet), and for Codex the
 models your account can use, read from the CLI's own cache; either accepts a custom model ID.
-Your last choices are remembered per assistant. Press **Start** and the session opens in a
-terminal pane inside the window, its header naming exactly what was started. The CLI runs on
+Your last choices are remembered per assistant. The sheet also asks who the session works
+as: the **Editor**, a film editor cutting for someone who chose to watch, or the **Short-form
+farmer**, cutting for a feed — the first second and a half, a change every four seconds, an
+ending that sends people to the long film. A short-form project suggests the farmer. Press
+**Start** and the session opens in a terminal pane inside the window, its header naming
+exactly what was started. The CLI runs on
 the pipeline host (WSL from a Windows window) inside a real pseudo-terminal
 (`scripts/pty-bridge.py`, standard library only), with the window's choice passed as plain
 arguments to `scripts/assistant-run.sh`; nothing goes through a shell string. Hide the pane and
@@ -54,6 +58,7 @@ npm run assistant                                         # asks provider, model
 npm run assistant -- --saved                              # repeat your last selection
 npm run assistant -- --provider claude --model fable --effort high
 npm run assistant -- --provider codex --dry-run           # inspect without starting or saving
+npm run assistant -- --persona farmer                     # work as the short-form farmer (remembered)
 ```
 
 It connects Fabula's MCP tools for that session only, without editing global configuration;
@@ -110,6 +115,13 @@ architecture, the decisions already made, and what has been proven or disproven.
 ## The working loop
 
 Fabula is a two-hander: the window is where you watch and tweak, the assistant does the work.
+What the assistant works with: `docs/craft/` (the editor's craft, the short-form farmer's, a
+visual grammar of what goes with what is said, and reference styles described as methods), a
+`read_story` tool that marks the transcript up before composing, twenty-four named graphic
+templates (a timeline, a flow, before/after, myth and fact, a code window, a phone, a call to
+action…) filled in from fields, a pacing read on every plan write beside the variety read, and
+`preview_sheet`, which tiles the whole film into one picture so it can be looked at before it
+is rendered.
 
 1. **Open Fabula and start a project** (New project…, or drop a recording on the window) and
    give it a name. The clip is referenced where it lives — nothing is copied, a 19 GB recording

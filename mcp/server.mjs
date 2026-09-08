@@ -53,6 +53,7 @@ import { suggestClips, createShort } from "../scripts/shorts.mjs";
 import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templates.mjs";
 import { readStory } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
+import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -240,7 +241,7 @@ function describeFinished(dir, stage) {
 const server = new McpServer({ name: "fabula", version: "0.2.0" }, {
   instructions: `${INVARIANTS}
 
-The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. Long jobs continue in the background: pass wait_seconds: 25 and call wait_render until done. Only one assistant controls a checkout at a time. Window messages arrive through wait_for_input: listen after setting insert points or when asked, keep listening until told to stop, and do not poll unprompted.`,
+The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. adopt_persona (editor for a film, farmer for shorts) hands you the craft for the job; read_story marks the transcript up before you compose; describe_templates lists the named graphics; every plan write returns variety and pacing reads, and preview_sheet shows the whole film in one picture. Long jobs continue in the background: pass wait_seconds: 25 and call wait_render until done. Only one assistant controls a checkout at a time. Window messages arrive through wait_for_input: listen after setting insert points or when asked, keep listening until told to stop, and do not poll unprompted.`,
 });
 
 server.registerTool("open_project", {
@@ -1086,7 +1087,38 @@ server.registerTool("describe_kit", {
   fonts: VENDORED_FONTS,
   templates: `${TEMPLATE_IDS.length} named graphics the kit has no fixed shape for — ${TEMPLATE_IDS.join(", ")} — each filled in from a few fields and laid out for this shape. describe_templates lists the fields; write one as graphic: { kind: "custom", template: "<id>", params: { … } }. Reach for a template before writing html by hand.`,
   editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
+  reading: "read_story marks the transcript up before you compose (sections, the opening, the ending, every drawable moment); review_plan and every plan write return the variety and pacing reads; preview_sheet tiles the whole film into one picture.",
+  craft: `adopt_persona (${PERSONA_IDS.join(" or ")}) hands you the brief and the craft guides for the job at hand; read_craft has the rest, including a visual grammar of what goes with what is said and a set of reference styles.`,
   });
+});
+
+server.registerTool("adopt_persona", {
+  description:
+    "Who you are working as today, and the craft that goes with it. editor: a film editor and storyteller cutting for someone who chose to watch — structure the viewer can feel, the picture before the card, the head as a choice. farmer: a short-form editor cutting for a feed — stop the thumb in the first second and a half, change something every four seconds, end on somewhere to go, make shorts that are funnels to the long film. Returns the persona's brief and the craft guides it reads (docs/craft/), in full. Call it once at the start of a session, or when the work changes from a film to its shorts; the launcher's --persona names the default. The invariants hold whoever you are.",
+  inputSchema: {
+    persona: z.enum([...PERSONA_IDS]).optional().describe("editor by default; farmer for shorts and anything cut for a feed"),
+  },
+}, async ({ persona }) => {
+  const id = validatePersona(persona);
+  const chosen = PERSONAS[id];
+  const guides = Object.fromEntries(chosen.reads.map((doc) => [doc, fs.readFileSync(path.join(REPO_ROOT, doc), "utf8")]));
+  return ok({
+    persona: id,
+    label: chosen.label,
+    brief: chosen.brief,
+    templates: `describe_templates with persona: "${chosen.templates}" lists the graphics this persona reaches for first`,
+    guides,
+    others: describePersonas().filter((p) => p.id !== id),
+    craft: `read_craft names the other guides: ${Object.keys(CRAFT_DOCS).join(", ")}`,
+  });
+});
+
+server.registerTool("read_craft", {
+  description:
+    "One of the craft guides under docs/craft/, in full: editor (the film editor's craft: structure, picture before card, rhythm, type), shorts (the short-form farmer's: the first second and a half, every four seconds, the ending, choosing clips), visual-grammar (what to put on the stage for what is being said, kit and templates, both frames), references (widely watched styles described as methods — the explainer, the tech reviewer, the educator, the essay, the broadcast package, the feed, the walkthrough — for when the person says “make it feel like…”). adopt_persona already hands you the two a persona reads; this is for the rest.",
+  inputSchema: { guide: z.enum([...Object.keys(CRAFT_DOCS)]) },
+}, async ({ guide }) => {
+  return ok({ guide, path: CRAFT_DOCS[guide], text: fs.readFileSync(path.join(REPO_ROOT, CRAFT_DOCS[guide]), "utf8") });
 });
 
 server.registerTool("describe_templates", {

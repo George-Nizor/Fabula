@@ -28,7 +28,7 @@ const els = {
   newProject: $("new-project"), newProjectForm: $("new-project-form"), newPath: $("new-path"), newChoose: $("new-choose"), newTitle: $("new-title"), newFormat: $("new-format"), newFormatNote: $("new-format-note"), newNote: $("new-note"), newStatus: $("new-status"), newCancel: $("new-cancel"), newCreate: $("new-create"),
   rename: $("rename"), renameForm: $("rename-form"), renameTitle: $("rename-title"), renameStatus: $("rename-status"), renameCancel: $("rename-cancel"),
   assistant: $("assistant"), assistantForm: $("assistant-form"), assistantModel: $("assistant-model"), assistantCustomWrap: $("assistant-custom-wrap"), assistantCustom: $("assistant-custom"),
-  assistantEffort: $("assistant-effort"), assistantStatus: $("assistant-status"), assistantCancel: $("assistant-cancel"), assistantStart: $("assistant-start"),
+  assistantEffort: $("assistant-effort"), assistantPersonas: $("assistant-personas"), assistantStatus: $("assistant-status"), assistantCancel: $("assistant-cancel"), assistantStart: $("assistant-start"),
   assistantPane: $("assistant-pane"), assistantTitle: $("assistant-title"), assistantSub: $("assistant-sub"), assistantStopBtn: $("assistant-stop"),
   assistantAgain: $("assistant-again"), assistantHide: $("assistant-hide"), assistantTerm: $("assistant-term"),
   projects: $("projects"), projectsList: $("projects-list"), projectsNew: $("projects-new"),
@@ -2391,7 +2391,7 @@ function showAssistantPane(show) {
 function renderAssistantHead(choice = null) {
   if (choice) {
     els.assistantTitle.textContent = PROVIDER_NAMES[choice.provider] ?? choice.provider;
-    els.assistantSub.textContent = [choice.model ? `model ${choice.model}` : "the CLI's default model", choice.effort ? `${choice.effort} effort` : "default effort"].join(" · ");
+    els.assistantSub.textContent = [choice.model ? `model ${choice.model}` : "the CLI's default model", choice.effort ? `${choice.effort} effort` : "default effort", choice.persona === "farmer" ? "short-form farmer" : "editor"].join(" · ");
   }
   els.assistantStopBtn.hidden = !assistantRunning;
   els.assistantAgain.hidden = assistantRunning;
@@ -2399,6 +2399,27 @@ function renderAssistantHead(choice = null) {
 
 function assistantProvider() {
   return els.assistantForm.querySelector('input[name="provider"]:checked')?.value ?? "claude";
+}
+
+function assistantPersona() {
+  return els.assistantForm.querySelector('input[name="persona"]:checked')?.value ?? "editor";
+}
+
+// The persona radios: one per persona the core knows, the saved one checked.
+// A short-form project suggests the farmer; the person can still say otherwise.
+function renderAssistantPersonas() {
+  const personas = assistantOptions.personas ?? [];
+  const suggested = state?.format?.shortForm ? "farmer" : assistantOptions.persona;
+  const chosen = personas.some((p) => p.id === suggested) ? suggested : (personas[0]?.id ?? "editor");
+  els.assistantPersonas.replaceChildren(els.assistantPersonas.querySelector("legend"));
+  for (const persona of personas) {
+    const label = document.createElement("label");
+    label.className = "radio";
+    label.innerHTML = `<input type="radio" name="persona" value="${esc(persona.id)}"${persona.id === chosen ? " checked" : ""} />` +
+      `<span><b>${esc(persona.label)}</b><small>${esc(persona.about)}</small></span>`;
+    els.assistantPersonas.append(label);
+  }
+  els.assistantPersonas.hidden = personas.length < 2;
 }
 
 function renderAssistantChoices() {
@@ -2436,6 +2457,7 @@ async function openAssistant(task = "") {
   const radio = els.assistantForm.querySelector(`input[name="provider"][value="${assistantOptions.provider}"]`) ?? els.assistantForm.querySelector('input[name="provider"]');
   radio.checked = true;
   renderAssistantChoices();
+  renderAssistantPersonas();
   if (!els.assistant.open) els.assistant.showModal();
 }
 
@@ -2463,7 +2485,7 @@ els.assistantForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const model = els.assistantModel.value === "__custom__" ? els.assistantCustom.value.trim() : els.assistantModel.value;
   if (els.assistantModel.value === "__custom__" && !model) { els.assistantStatus.textContent = "Enter a model ID, or choose one from the list."; return; }
-  const choice = { provider: assistantProvider(), model, effort: els.assistantEffort.value, task: assistantTask };
+  const choice = { provider: assistantProvider(), model, effort: els.assistantEffort.value, task: assistantTask, persona: assistantPersona() };
   els.assistant.close();
   const result = await startAssistant(choice);
   if (!result.ok) { els.assistantStatus.textContent = result.error; els.assistant.showModal(); }

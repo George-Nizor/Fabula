@@ -28,6 +28,15 @@ test("model IDs remain literal arguments; provider effort mappings and default i
   }
   const composing = buildLaunch({ provider: "claude", model: "", effort: "", task: "compose" });
   assert.match(composing.args.at(-1), /approved the cut/);
+  // The persona leads the first message and names itself; the editor is the default.
+  assert.equal(composing.persona, "editor");
+  assert.match(composing.args.at(-1), /^Today you are working as a film editor/);
+  assert.match(composing.args.at(-1), /adopt_persona with persona "editor"/);
+  const farming = buildLaunch({ provider: "codex", model: "", effort: "", persona: "farmer" });
+  assert.equal(farming.persona, "farmer");
+  assert.match(farming.args.at(-1), /short-form editor cutting for a feed/);
+  assert.ok(farming.args.at(-1).startsWith(INVARIANTS), "the invariants still lead Codex's first message");
+  assert.throws(() => buildLaunch({ provider: "claude", model: "", effort: "", persona: "influencer" }), /persona must be one of/);
   assert.throws(() => buildLaunch({ provider: "claude", model: "", effort: "", task: "nope" }), /Unknown task/);
   assert.throws(() => selection("unknown"), /Provider/);
   assert.throws(() => selection("claude", "model", "ultra"), /Effort/);
@@ -46,6 +55,11 @@ test("switching providers retains each model and reasoning preference independen
     assert.equal(prefs.provider, "claude");
     assert.deepEqual(prefs.profiles.codex, { model: "chosen-codex-model", effort: "high" });
     assert.deepEqual(prefs.profiles.claude, { model: "chosen-claude-model", effort: "max" });
+    assert.equal(prefs.persona, "editor", "the persona defaults to the editor");
+    savePreferences(prefs, { ...selection("claude", "chosen-claude-model", "max"), persona: "farmer" }, file);
+    assert.equal(readPreferences(file).persona, "farmer");
+    savePreferences(readPreferences(file), selection("codex", "default", "default"), file);
+    assert.equal(readPreferences(file).persona, "farmer", "a launch that does not name a persona keeps the saved one");
     savePreferences(prefs, selection("codex", "default", "default"), file);
     assert.deepEqual(readPreferences(file).profiles.claude, prefs.profiles.claude);
     fs.writeFileSync(file, "broken");

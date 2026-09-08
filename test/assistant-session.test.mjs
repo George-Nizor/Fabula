@@ -10,6 +10,8 @@ test("the window's choice becomes plain argv, never a shell string", () => {
   assert.deepEqual(choiceArgs({ provider: "codex", model: "", effort: "" }), ["--provider", "codex", "--model", "default", "--effort", "default"]);
   assert.deepEqual(choiceArgs({ provider: "claude", model: "fable", effort: "high", task: "compose" }).slice(-2), ["--task", "compose"]);
   assert.throws(() => choiceArgs({ provider: "claude", task: "delete-everything" }), /task/);
+  assert.deepEqual(choiceArgs({ provider: "claude", model: "", effort: "", persona: "farmer" }).slice(-2), ["--persona", "farmer"]);
+  assert.throws(() => choiceArgs({ provider: "claude", persona: "influencer" }), /persona/);
   assert.throws(() => choiceArgs({ provider: "gemini" }), /Claude Code or Codex/);
   assert.throws(() => choiceArgs({ provider: "claude", model: "x; rm -rf ~" }), /model ID/);
   assert.throws(() => choiceArgs({ provider: "claude", effort: "ultra" }), /reasoning effort/);

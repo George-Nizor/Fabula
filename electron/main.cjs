@@ -45,8 +45,9 @@ Promise.all([
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "theme-store.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "project-state.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "shorts.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts]) => {
-  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts };
+  import(pathToFileURL(path.join(__dirname, "..", "core", "personas.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas]) => {
+  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas };
 })
   .catch((error) => console.error("core engines failed to load:", error));
 
@@ -578,6 +579,9 @@ function assistantOptions() {
   return {
     provider: prefs?.provider === "claude" ? "claude" : prefs?.provider === "codex" ? "codex" : "claude",
     profiles: prefs?.profiles && typeof prefs.profiles === "object" ? prefs.profiles : {},
+    // Who the session works as: a film editor, or the short-form farmer.
+    personas: core?.personas ? core.personas.describePersonas() : [],
+    persona: core?.personas && core.personas.PERSONA_IDS.includes(prefs?.persona) ? prefs.persona : "editor",
     efforts: ASSISTANT_EFFORTS,
     models: { claude: CLAUDE_MODELS, codex: codexModels() },
   };

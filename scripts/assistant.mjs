@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
+import { PERSONAS, PERSONA_IDS, DEFAULT_PERSONA, validatePersona } from "../core/personas.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PREFS = path.join(ROOT, ".assistant-preferences.json");
@@ -51,10 +52,19 @@ export function selection(provider, model = "", effort = "") {
   return { provider, model, effort };
 }
 
+// Who the session works as. The persona's brief leads the first message
+// (both CLIs read it; it is judgment, not a system rule) and tells the session
+// to adopt_persona so the craft guides arrive in full.
+export function personaPrompt(persona) {
+  const id = validatePersona(persona);
+  return `${PERSONAS[id].brief}\n\nCall adopt_persona with persona "${id}" first, before status, and read what it returns.`;
+}
+
 export function buildLaunch(options, root = ROOT, node = process.execPath) {
   const { provider, model, effort } = selection(options.provider, options.model, options.effort);
   if (options.task !== undefined && options.task !== "" && !Object.hasOwn(TASKS, options.task)) throw new Error(`Unknown task ${options.task}.`);
-  const prompt = options.task && TASKS[options.task] ? `${PROMPT} ${TASKS[options.task]}` : PROMPT;
+  const persona = validatePersona(options.persona);
+  const prompt = `${personaPrompt(persona)}\n\n${options.task && TASKS[options.task] ? `${PROMPT} ${TASKS[options.task]}` : PROMPT}`;
   const server = path.join(root, "mcp", "server.mjs");
   const args = [];
   if (provider === "codex") {
@@ -78,14 +88,14 @@ export function buildLaunch(options, root = ROOT, node = process.execPath) {
   // Codex has no system-prompt flag; the invariants lead its first message
   // instead, and AGENTS.md carries them for the rest of the session.
   args.push(provider === "codex" ? `${INVARIANTS}\n\n${prompt}` : prompt);
-  return { command: provider, args, cwd: root };
+  return { command: provider, args, cwd: root, persona };
 }
 
 export function readPreferences(file = PREFS) {
   let data;
   try { data = JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (error) {
-    if (error.code === "ENOENT") return { provider: "codex", profiles: {} };
+    if (error.code === "ENOENT") return { provider: "codex", persona: DEFAULT_PERSONA, profiles: {} };
     throw new Error(`Cannot read assistant preferences at ${file}: ${error.message}`);
   }
   if (!data || !Object.hasOwn(EFFORTS, data.provider) || !data.profiles || typeof data.profiles !== "object") {
@@ -94,12 +104,14 @@ export function readPreferences(file = PREFS) {
   for (const [provider, profile] of Object.entries(data.profiles)) {
     selection(provider, profile?.model, profile?.effort);
   }
+  data.persona = PERSONA_IDS.includes(data.persona) ? data.persona : DEFAULT_PERSONA;
   return data;
 }
 
 export function savePreferences(previous, chosen, file = PREFS) {
   const { provider, model, effort } = selection(chosen.provider, chosen.model, chosen.effort);
-  const next = { provider, profiles: { ...previous.profiles, [provider]: { model, effort } } };
+  const persona = validatePersona(chosen.persona ?? previous.persona);
+  const next = { provider, persona, profiles: { ...previous.profiles, [provider]: { model, effort } } };
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
   fs.renameSync(temp, file);
@@ -107,7 +119,7 @@ export function savePreferences(previous, chosen, file = PREFS) {
 
 async function main() {
   const { values } = parseArgs({ options: {
-    provider: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, task: { type: "string" },
+    provider: { type: "string" }, model: { type: "string" }, effort: { type: "string" }, task: { type: "string" }, persona: { type: "string" },
     saved: { type: "boolean" }, "dry-run": { type: "boolean" }, help: { type: "boolean" },
   } });
   if (values.help) {
@@ -118,6 +130,7 @@ npm run assistant -- --provider codex         Use that provider's saved choices
 npm run assistant -- --provider claude --model MODEL_ID --effort high
 npm run assistant -- --provider codex --dry-run
 npm run assistant -- --provider claude --task compose   Begin composing at once (what the window's Approve button does)
+npm run assistant -- --persona farmer         Work as the short-form farmer (editor by default; remembered)
 
 Use --model default / --effort default to inherit the CLI setting.
 Exact model IDs are passed unchanged; the provider checks account availability.
@@ -147,7 +160,7 @@ Preferences are local to this checkout; no account/global configuration is chang
     model = values.model ?? prior.model ?? "";
     effort = values.effort ?? prior.effort ?? "";
   }
-  const chosen = selection(provider, model, effort);
+  const chosen = { ...selection(provider, model, effort), persona: validatePersona(values.persona ?? prefs.persona) };
   const launch = buildLaunch({ ...chosen, task: values.task ?? "" });
   if (values["dry-run"]) { console.log(JSON.stringify({ ...chosen, ...launch }, null, 2)); return; }
   if (process.platform !== "linux") throw new Error("Run npm run assistant in WSL/Linux, alongside Fabula's local media tools.");
@@ -157,7 +170,7 @@ Preferences are local to this checkout; no account/global configuration is chang
     if (check.error || check.status !== 0) throw new Error(`Cannot run ${executable}. Install it in WSL/Linux and check it is on PATH.`);
   }
   savePreferences(prefs, chosen);
-  console.log(`Starting ${provider} | model: ${chosen.model || "CLI default"} | effort: ${chosen.effort || "CLI default"}`);
+  console.log(`Starting ${provider} | model: ${chosen.model || "CLI default"} | effort: ${chosen.effort || "CLI default"} | persona: ${chosen.persona}`);
   console.log("Use your subscription login. Review the CLI's active model before editing. Exit this session before switching providers.");
   // flock is held by the child for the session lifetime and automatically released on exit/crash.
   // It protects cooperating launchers, not sessions launched manually outside this command.

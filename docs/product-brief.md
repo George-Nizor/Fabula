@@ -1,5 +1,35 @@
 # Fabula — product brief
 
+## The assistant's toolbelt (2026-09-08)
+
+The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
+belt in four directions, all pure and tested, none needing a key or a service:
+
+**Templates** (`core/templates.mjs`). Twenty-four named graphics written once and rendered
+from fields, laid out per delivery shape, animated only from the painter's `--q`/`--p`. They
+land in `compose.json` as ordinary `custom` graphics with the template id and params beside
+them, so the painter, the export and the window needed nothing. The decision worth keeping: a
+template is expanded server-side at write time, not at paint time — what is on disk is always
+a complete graphic, and a project outlives a template's redesign unchanged.
+
+**Reading** (`core/story-engine.mjs`, `core/pacing.mjs`). `read_story` marks the transcript up
+before composing (sections, the opening and its promise, the ending and its ask, every moment
+with a drawable shape). The pacing read rides every plan write beside the variety read and
+judges a plan on its shape's clock; `review_plan` reads without writing. Both are
+deliberately explainable — every note names a sentence, a scene index or a time — because the
+assistant has to be able to disagree from the evidence.
+
+**Looking** (`scripts/frame.cjs`). `preview_sheet` tiles many instants into one picture. The
+first sheet of a real project showed one card holding for three tiles in a row, which no
+number in the plan had said.
+
+**Craft** (`docs/craft/`, `core/personas.mjs`). Two personas — the film editor and the
+short-form farmer — each a short brief the launcher leads the first message with and two
+guides `adopt_persona` hands over in full; a visual grammar mapping what is said to what goes
+on the stage; and reference styles described as methods rather than looks. The invariants are
+not part of a persona; they hold whoever is working. The persona is chosen in the launcher and
+the window, remembered, and switched mid-session by calling `adopt_persona` again.
+
 ## Delivery shape and short-form (2026-09-07)
 
 A project is created landscape (16:9) or vertical (9:16) and records it in `project.json` beside
