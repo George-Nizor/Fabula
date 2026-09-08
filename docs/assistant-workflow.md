@@ -242,6 +242,14 @@ hand-written `custom` graphic is for a moment none of them fit. Full-stage templ
 with a `cutaway` or `full` layout; column templates sit beside the head. `docs/craft/visual-grammar.md`
 is the lookup from what the speaker is doing to which one.
 
+## What goes with the film
+
+`export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
+description, one `m:ss Title` per line from the plan's `section`, `cover` and `headline`
+marks (or from `read_story`'s sections where the plan has none). `list_assets` carries the
+credits for every fetched picture; `out/credits.md` is written with the film. Hand both over
+with the render.
+
 ## Sound
 
 The clean cut's voice is the film's audio as recorded. Two things can be done to it, both in

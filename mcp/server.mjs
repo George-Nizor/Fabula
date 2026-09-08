@@ -55,6 +55,7 @@ import { readStory } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { validateAudio, describeAudio, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { chapterList } from "../core/chapters.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -1184,6 +1185,22 @@ server.registerTool("read_craft", {
   inputSchema: { guide: z.enum([...Object.keys(CRAFT_DOCS)]) },
 }, async ({ guide }) => {
   return ok({ guide, path: CRAFT_DOCS[guide], text: fs.readFileSync(path.join(REPO_ROOT, CRAFT_DOCS[guide]), "utf8") });
+});
+
+server.registerTool("export_chapters", {
+  description:
+    "The chapter list for the upload's description, as a platform reads it: one line per chapter, m:ss then the title, the first at 0:00, none shorter than ten seconds. Chapters come from the plan's section, cover and headline marks; where the plan has none, from read_story's sections. Written to out/chapters.txt and returned. Hand it to the person with the film; a film with two or fewer chapters usually wants section marks added rather than a list.",
+  inputSchema: { title: z.string().max(80).optional().describe("The 0:00 line when nothing marks the opening; the project's title by default") },
+}, async ({ title }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const scenes = resolveScenes(config.scenes ?? [], words);
+  const list = chapterList({ scenes, words, title: title ?? readProjectMeta(dir).title ?? "Introduction", duration: words.at(-1)?.end });
+  const file = path.join(dir, "out", "chapters.txt");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, list.text);
+  return ok({ file, ...list, hint: list.enough ? "paste the text into the upload's description" : "fewer than three chapters: add section or cover marks where the subject changes (read_story's sections say where), then export again" });
 });
 
 server.registerTool("describe_templates", {
