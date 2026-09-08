@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   FFMPEG,
   probeDuration,
+  measureLoudness,
   probeDimensions,
   computeReview,
   reviewStats,
@@ -751,7 +752,7 @@ server.registerTool("set_music_root", {
 
 server.registerTool("set_audio", {
   description:
-    `The sound under the voice. music: a bed from assets/ (import_audio) at level dB while nobody speaks (${MUSIC_DEFAULTS.level} by default), duck dB lower under the voice (${MUSIC_DEFAULTS.duck}), ramping over ramp seconds (${MUSIC_DEFAULTS.ramp}) either side of every pause the transcript shows — the duck is computed from the words, not guessed from a compressor — faded in and out over fade seconds (${MUSIC_DEFAULTS.fade}), looped to the film's length unless loop is false. voice_loudness normalises the voice to an integrated LUFS target (-16 for a film, -14 for a short; null leaves it as recorded). Sound lives only in the stitch, so changing it re-renders no chunk: render_final after it is seconds, not minutes. music: null removes the bed. Returns what the bed will do and how many pauses it comes up in.`,
+    `The sound under the voice. music: a bed from assets/ (import_audio) at level LU under the voice while nobody speaks (${MUSIC_DEFAULTS.level} by default; the file's loudness and the clean cut's are measured so the number means the same for any file), duck LU lower still under the voice (${MUSIC_DEFAULTS.duck}), ramping over ramp seconds (${MUSIC_DEFAULTS.ramp}) either side of every pause the transcript shows — the duck is computed from the words, not guessed from a compressor — faded in and out over fade seconds (${MUSIC_DEFAULTS.fade}), looped to the film's length unless loop is false. voice_loudness normalises the voice to an integrated LUFS target (-16 for a film, -14 for a short; null leaves it as recorded). Sound lives only in the stitch, so changing it re-renders no chunk: render_final after it is seconds, not minutes. music: null removes the bed. Returns what the bed will do and how many pauses it comes up in.`,
   inputSchema: {
     music: z.object({
       src: z.string().describe("assets/…, from import_audio"),
@@ -775,6 +776,11 @@ server.registerTool("set_audio", {
       if (!fs.existsSync(path.join(dir, music.src))) throw new Error(`no such asset ${music.src}; import_audio first`);
       const { spans, ...rest } = music;
       audio.music = { ...(audio.music?.src === music.src ? audio.music : {}), ...rest };
+      // Both loudnesses, measured, so `level` means LU under the voice for
+      // any file: the music's once per file, the clean cut's every time
+      // the bed is set (the cut may have changed since).
+      if (typeof audio.music.loudness !== "number") audio.music.loudness = measureLoudness(path.join(dir, music.src)) ?? undefined;
+      if (audio.music.loudness === undefined) delete audio.music.loudness;
       if (spans !== undefined) {
         if (spans.length === 0) delete audio.music.spans;
         else audio.music.spans = spans.map((span) => ({ fromWordId: span.from_word_id, toWordId: span.to_word_id }));
@@ -784,6 +790,10 @@ server.registerTool("set_audio", {
   if (voice_loudness !== undefined) {
     if (voice_loudness === null) delete audio.voice;
     else audio.voice = { loudness: voice_loudness };
+  }
+  if (audio.music && fs.existsSync(projectPaths(dir).clean)) {
+    const measured = measureLoudness(projectPaths(dir).clean);
+    if (typeof measured === "number") audio.voice = { ...(audio.voice ?? {}), measured };
   }
   validateAudio(audio);
   const words = fs.existsSync(projectPaths(dir).cleanTranscript) ? cleanWords(dir) : [];

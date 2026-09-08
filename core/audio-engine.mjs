@@ -41,6 +41,7 @@ export function validateAudio(audio) {
     if (music.ramp !== undefined && !between(music.ramp, 0.1, 3)) throw new Error("audio.music.ramp is seconds from 0.1 to 3");
     if (music.fade !== undefined && !between(music.fade, 0, 10)) throw new Error("audio.music.fade is seconds from 0 to 10");
     if (music.loop !== undefined && typeof music.loop !== "boolean") throw new Error("audio.music.loop is true or false");
+    if (music.loudness !== undefined && music.loudness !== null && !between(music.loudness, -70, 0)) throw new Error("audio.music.loudness is the file's integrated LUFS");
     if (music.spans !== undefined) {
       if (!Array.isArray(music.spans) || music.spans.length > 40) throw new Error("audio.music.spans is a list of up to 40 { fromWordId, toWordId }");
       for (const span of music.spans) {
@@ -51,13 +52,32 @@ export function validateAudio(audio) {
   if (voice !== undefined && voice !== null) {
     if (typeof voice !== "object") throw new Error("audio.voice must be an object");
     if (voice.loudness !== undefined && voice.loudness !== null && !between(voice.loudness, -30, -8)) throw new Error("audio.voice.loudness is integrated LUFS from -30 to -8 (-16 for a film, -14 for a short)");
+    if (voice.measured !== undefined && voice.measured !== null && !between(voice.measured, -70, 0)) throw new Error("audio.voice.measured is the clean cut's integrated LUFS");
   }
+}
+
+// The bed's gain in dB. When both loudnesses are known — the music file's
+// and the voice's, measured — `level` is LU below the voice, so -18 means
+// the same thing for any file. When either is unknown, `level` is a plain
+// gain on the file, which is what it was before anything was measured.
+export function bedGainDb(music, voiceLoudness) {
+  const level = music.level ?? MUSIC_DEFAULTS.level;
+  if (typeof music.loudness === "number" && typeof voiceLoudness === "number") {
+    return Math.min(0, voiceLoudness + level - music.loudness);
+  }
+  return level;
+}
+
+// The "I:  -16.2 LUFS" line of ffmpeg's ebur128 summary, as a number.
+export function parseLoudness(text) {
+  const match = String(text ?? "").match(/\bI:\s+(-?\d+(?:\.\d+)?)\s+LUFS/);
+  return match ? Number(match[1]) : null;
 }
 
 export function resolveAudio(audio) {
   validateAudio(audio);
   const music = audio?.music ? { ...MUSIC_DEFAULTS, ...audio.music } : null;
-  const voice = { loudness: audio?.voice?.loudness ?? null };
+  const voice = { loudness: audio?.voice?.loudness ?? null, measured: audio?.voice?.measured ?? null };
   return { music, voice };
 }
 
@@ -129,7 +149,7 @@ export function spanPresenceExpression(spans, fade, T = "t") {
   return `min(1,${tents.join("+")})`;
 }
 
-export function audioGraph({ audio, words, from = 0, span, musicPath }) {
+export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness }) {
   const { music, voice } = resolveAudio(audio);
   if (!music && voice.loudness === null) return null;
   const lines = [];
@@ -164,7 +184,7 @@ export function audioGraph({ audio, words, from = 0, span, musicPath }) {
     // pass, and the gain expression reads t, which has to keep advancing.
     "asetpts=N/SR/TB",
     `atrim=duration=${num(span)}`,
-    `volume=${num(dbToLinear(music.level))}`,
+    `volume=${num(dbToLinear(bedGainDb(music, voiceLoudness ?? audio?.voice?.measured ?? (voice.loudness ?? undefined))))}`,
     `volume=volume='${presence ? `(${gain})*${presence}` : gain}':eval=frame`,
     ...(fade > 0 && !confined ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
   ];
@@ -177,7 +197,12 @@ export function audioGraph({ audio, words, from = 0, span, musicPath }) {
 // A one-line account of the bed, for the tool that sets it and for status.
 export function describeAudio(audio, words, duration) {
   const { music, voice } = resolveAudio(audio);
-  const out = { music: null, voice };
+  const out = { music: null, voice: { ...voice } };
+  // A voice far below where platforms sit is worth saying once, here, where
+  // the level of everything else is being decided.
+  if (typeof voice.measured === "number" && voice.loudness === null && voice.measured < -24) {
+    out.voice.note = `the voice measures ${voice.measured} LUFS; platforms sit near -14 to -16, so viewers will turn it up and hear the room. voice_loudness -16 (a film) or -14 (a short) normalises it.`;
+  }
   if (music) {
     const windows = swellWindows(words ?? [], duration ?? 0);
     out.music = {
@@ -185,7 +210,11 @@ export function describeAudio(audio, words, duration) {
       swells: windows.length,
       swellSeconds: Number(windows.reduce((sum, w) => sum + w.end - w.start, 0).toFixed(1)),
       spans: music.spans?.length ? bedSpans(music, words ?? [], duration ?? 0) : null,
-      about: `${music.level} dB in the pauses, ${music.level + music.duck} dB under the voice, ${music.ramp}s ramps, ${music.fade}s fades${music.loop ? ", looped" : ""}; ${windows.length} pause(s) the bed comes up in${music.spans?.length ? `; under ${music.spans.length} span(s) only` : ""}`,
+      relative: typeof music.loudness === "number" && typeof (voice.loudness ?? voice.measured) === "number",
+      gainDb: Number(bedGainDb(music, voice.loudness ?? voice.measured ?? undefined).toFixed(1)),
+      about: `${typeof music.loudness === "number" && typeof (voice.loudness ?? voice.measured) === "number"
+        ? `${music.level} LU under the voice in the pauses, ${music.level + music.duck} LU under it while they speak (the file measures ${music.loudness} LUFS, the voice ${voice.loudness ?? voice.measured} LUFS, so the bed is gained ${bedGainDb(music, voice.loudness ?? voice.measured).toFixed(1)} dB)`
+        : `${music.level} dB in the pauses, ${music.level + music.duck} dB under the voice — as a gain on the file, because its loudness has not been measured`}, ${music.ramp}s ramps, ${music.fade}s fades${music.loop ? ", looped" : ""}; ${windows.length} pause(s) the bed comes up in${music.spans?.length ? `; under ${music.spans.length} span(s) only` : ""}`,
     };
   }
   return out;

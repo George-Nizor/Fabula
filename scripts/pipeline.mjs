@@ -43,6 +43,14 @@ export const CLEAN_GOP = 30;
 
 export const sha = (text) => crypto.createHash("sha1").update(text).digest("hex").slice(0, 16);
 
+// Integrated loudness of a file's first audio stream, in LUFS (EBU R128),
+// or null when it has no audio. A whole film takes a few seconds.
+export function measureLoudness(file) {
+  const result = spawnSync(FFMPEG, ["-hide_banner", "-nostats", "-i", file, "-map", "0:a:0", "-af", "ebur128=framelog=quiet", "-f", "null", "-"], { encoding: "utf8" });
+  const match = String(result.stderr ?? "").match(/\bI:\s+(-?\d+(?:\.\d+)?)\s+LUFS/);
+  return match ? Number(match[1]) : null;
+}
+
 export function probeDuration(file) {
   const result = spawnSync(FFPROBE, [
     "-v", "error",

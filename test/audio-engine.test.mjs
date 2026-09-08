@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, bedGainDb, parseLoudness, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { evaluateExpression } from "../core/render-plan.mjs";
 
 const words = [
@@ -102,4 +102,28 @@ test("a bed confined to spans plays only there, faded at each edge, with no whol
   assert.ok(!graph.filter.includes("afade"), "no whole-film fade when the bed is confined");
   assert.ok(graph.filter.includes(")*min(1,"), "the presence multiplies the gain");
   assert.ok(describeAudio({ music }, words, 8).music.about.includes("under 1 span(s) only"));
+});
+
+test("with both loudnesses known, level is LU below the voice; without, it is a gain on the file", () => {
+  // A loud file (-8 LUFS) under a -16 LUFS voice at -18: gained -26 dB.
+  assert.equal(bedGainDb({ level: -18, loudness: -8 }, -16), -26);
+  // A quiet file (-24 LUFS) under the same voice: gained -10 dB.
+  assert.equal(bedGainDb({ level: -18, loudness: -24 }, -16), -10);
+  // Never a boost past unity.
+  assert.equal(bedGainDb({ level: -2, loudness: -30 }, -14), 0);
+  assert.equal(bedGainDb({ level: -18 }, -16), -18, "unmeasured: the level as a gain");
+  assert.equal(bedGainDb({ level: -18, loudness: -8 }, undefined), -18);
+  assert.equal(parseLoudness("  Integrated loudness:\n    I:         -16.2 LUFS\n    Threshold: -26.7 LUFS"), -16.2);
+  assert.equal(parseLoudness("nothing"), null);
+  const graph = audioGraph({ audio: { music: { src: "assets/bed.mp3", level: -18, loudness: -8, fade: 0 }, voice: { measured: -16 } }, words, span: 8, musicPath: "m" });
+  assert.ok(graph.filter.includes("volume=0.0501"), graph.filter.split("\n")[1]);
+  assert.ok(describeAudio({ music: { src: "assets/bed.mp3", loudness: -8 }, voice: { measured: -16 } }, words, 8).music.about.includes("LU under the voice"));
+});
+
+test("a quiet voice is pointed out when the bed is set, and not once a target is chosen", () => {
+  const quiet = describeAudio({ music: { src: "assets/bed.mp3" }, voice: { measured: -45 } }, words, 8);
+  assert.ok(quiet.voice.note && quiet.voice.note.includes("-45 LUFS"));
+  const targeted = describeAudio({ music: { src: "assets/bed.mp3" }, voice: { measured: -45, loudness: -16 } }, words, 8);
+  assert.equal(targeted.voice.note, undefined);
+  assert.equal(describeAudio({ music: { src: "assets/bed.mp3" }, voice: { measured: -18 } }, words, 8).voice.note, undefined);
 });
