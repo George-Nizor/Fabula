@@ -445,7 +445,11 @@ function renderSceneTranscript() {
 // ---- Timeline ----
 
 function sceneBlockLabel(scene) {
-  if (scene.type === "graphic") return `${scene.graphic.kind}${scene.graphic.title || scene.graphic.label ? ` · ${scene.graphic.title ?? scene.graphic.label}` : ""}`;
+  if (scene.type === "graphic") {
+    const name = scene.graphic.template ?? scene.graphic.kind;
+    const said = scene.graphic.title ?? scene.graphic.label ?? scene.graphic.params?.title ?? scene.graphic.params?.line ?? scene.graphic.params?.words ?? scene.graphic.params?.term ?? scene.graphic.params?.value;
+    return `${name}${said ? ` · ${said}` : ""}`;
+  }
   if (scene.type === "kinetic") return "kinetic type";
   return `${scene.type} · ${scene.text ?? ""}`;
 }
@@ -1294,6 +1298,82 @@ const fillSelect = (select, values, current, blank) => {
   select.value = current ?? "";
 };
 
+// A template's fields, as inputs. Text and numbers are inputs, a choice is a
+// select, items are lines — "label" or "label | value" — and every change
+// re-renders the template through the same function the server uses, so
+// what the inspector writes is exactly what set_scenes would have written.
+const templateEls = () => ({ wrap: $("insp-template-wrap"), head: $("insp-template-head"), fields: $("insp-template-fields"), note: $("insp-template-note") });
+const itemsToLines = (items = []) => items.map((i) => (i.value !== undefined && i.value !== "" ? `${i.label} | ${i.value}` : i.label)).join("\n");
+const linesToItems = (text, valueKind) => text.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+  const at = line.lastIndexOf("|");
+  if (at === -1) return { label: line };
+  const label = line.slice(0, at).trim();
+  const raw = line.slice(at + 1).trim();
+  return { label, value: valueKind === "a number" ? Number(raw) : raw };
+});
+
+function renderTemplateEditor(scene) {
+  const t = templateEls();
+  const id = scene.graphic?.template;
+  const spec = id && window.FabulaTemplates ? window.FabulaTemplates.describe(id) : null;
+  t.wrap.hidden = !spec;
+  if (!spec) return;
+  t.head.textContent = `${spec.label} · ${spec.about}`;
+  t.note.textContent = "";
+  const params = scene.graphic.params ?? {};
+  t.fields.replaceChildren();
+  for (const [name, field] of Object.entries(spec.fields)) {
+    const label = document.createElement("label");
+    label.className = "insp-field";
+    label.append(`${name}${field.required ? "" : " (optional)"}`);
+    let input;
+    if (field.type === "choice") {
+      input = document.createElement("select");
+      fillSelect(input, field.options, params[name] ?? field.default, null);
+    } else if (field.type === "items") {
+      input = document.createElement("textarea");
+      input.rows = 4;
+      input.spellcheck = false;
+      input.placeholder = field.value ? `one per line: label | ${field.value === "a number" ? "42" : "value"}` : "one per line";
+      input.value = itemsToLines(params[name]);
+    } else if (field.type === "number") {
+      input = document.createElement("input");
+      input.type = "number";
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      input.value = params[name] ?? "";
+    } else {
+      input = document.createElement(field.max > 60 ? "textarea" : "input");
+      if (field.max > 60) { input.rows = 2; input.spellcheck = true; }
+      input.maxLength = field.max;
+      input.value = params[name] ?? "";
+    }
+    input.dataset.field = name;
+    input.title = field.about;
+    input.addEventListener("change", () => commitTemplate(scene.graphic.template, spec));
+    label.append(input);
+    t.fields.append(label);
+  }
+}
+
+async function commitTemplate(id, spec) {
+  const t = templateEls();
+  const params = {};
+  for (const input of t.fields.querySelectorAll("[data-field]")) {
+    const field = spec.fields[input.dataset.field];
+    const value = input.value;
+    if (field.type === "items") params[input.dataset.field] = linesToItems(value, field.value);
+    else if (field.type === "number") { if (value !== "") params[input.dataset.field] = Number(value); }
+    else if (value !== "") params[input.dataset.field] = value;
+  }
+  const format = state?.format?.id ?? "landscape";
+  const result = window.FabulaTemplates.render(id, params, { format });
+  if (!result.ok) { t.note.textContent = result.error; return; }
+  t.note.textContent = "";
+  const { html, css, params: checked, full } = result.graphic;
+  await patchScene({ graphic: { params: checked, html, css, full } });
+}
+
 function openInspector(index) {
   const scene = compose()?.scenes[index];
   if (!scene) return;
@@ -1303,8 +1383,9 @@ function openInspector(index) {
   els.inspInsert.hidden = true;
   els.inspProject.hidden = true;
   els.inspBody.hidden = false;
-  const kind = scene.type === "graphic" ? `${scene.type} · ${scene.graphic?.kind}` : scene.type;
+  const kind = scene.type === "graphic" ? `${scene.type} · ${scene.graphic?.template ? `${scene.graphic.template} (template)` : scene.graphic?.kind}` : scene.type;
   els.inspTitle.textContent = `${kind} · ${fmt(scene.start)}–${fmt(scene.end)}`;
+  renderTemplateEditor(scene);
 
   const hasText = scene.type === "title" || scene.type === "callout" || kindHas(scene, "text");
   els.inspTextWrap.hidden = !hasText;

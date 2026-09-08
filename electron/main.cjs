@@ -697,6 +697,16 @@ async function snapshotWindow(window) {
       await run(`document.getElementById("tab-export").click(); true`);
       await wait(1200);
       await shoot("4-export");
+      // A scene's inspector, when one is named: the Scenes step, then the
+      // timeline block for that index.
+      const scene = process.env.FABULA_SNAPSHOT_SCENE;
+      if (scene !== undefined) {
+        await run(`document.getElementById("tab-scenes").click(); true`);
+        await wait(1500);
+        await run(`(document.querySelector('[data-scene="${Number(scene)}"]') ?? {click(){}}).click(); true`);
+        await wait(900);
+        await shoot("5-scene");
+      }
     }
     console.log(JSON.stringify({ snapshots: shots }));
   } catch (error) {

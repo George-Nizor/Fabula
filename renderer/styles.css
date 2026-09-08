@@ -1602,3 +1602,9 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 /* The shape, where the list already carries the stage. Weight rather than a
    border, because the row is one line of small type and a box in it shouts. */
 .project-meta .stage.is-short { color: var(--accent); font-weight: 600; }
+
+/* A template's fields in the inspector: a head line, then one field each. */
+.insp-template { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; border-top: 1px solid var(--line); }
+.insp-template-head { font-size: 12px; color: var(--muted, #6e6b63); line-height: 1.35; }
+.insp-template-fields { display: flex; flex-direction: column; gap: 6px; }
+.insp-template-fields textarea { min-height: 3.4em; }
