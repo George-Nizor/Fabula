@@ -1242,6 +1242,33 @@ server.registerTool("preview_frame", {
   return ok(result);
 });
 
+server.registerTool("render_thumbnail", {
+  description:
+    "The still a platform shows before anyone presses play: one frame of the composed film — captions taken off — with a few big words over it from the thumbnail template (a kicker, a line of up to six words, a shade behind them so they read on any frame), written to out/thumbnail.png at 1280×720 (a tall film keeps its shape). Pick a frame where the face is doing something: preview_sheet shows the candidates. The line is a promise, not a summary, and never one the film does not keep.",
+  inputSchema: {
+    line: z.string().min(1).max(40).describe("The words, six at most"),
+    kicker: z.string().max(24).optional(),
+    side: z.enum(["left", "right", "bottom"]).optional().describe("Where the words sit; leave the face on the other side"),
+    shade: z.number().min(0).max(1).optional().describe("How dark the shade behind the words is, 0.55 by default"),
+    word_id: z.number().int().min(0).optional().describe("The frame, a beat after this word"),
+    at_seconds: z.number().min(0).optional().describe("Or an exact time on the clean timeline"),
+    name: z.string().max(40).optional().describe("File name under out/, thumbnail.png by default"),
+  },
+}, async ({ line, kicker, side, shade, word_id, at_seconds, name }) => {
+  const dir = currentProjectDir();
+  if (word_id === undefined && at_seconds === undefined) throw new Error("give a word_id or an at_seconds");
+  const spec = path.join(dir, "out", "frames", "thumbnail-spec.json");
+  fs.mkdirSync(path.dirname(spec), { recursive: true });
+  fs.writeFileSync(spec, JSON.stringify({ template: "thumbnail", params: { line, kicker, side, shade } }));
+  const leaf = (name ?? "thumbnail.png").replace(/[^a-z0-9._-]/gi, "_").replace(/(\.png)?$/i, ".png");
+  const args = [`--thumb=${spec}`, `--out=${path.join(dir, "out", leaf)}`, `--width=${projectFormatSafe() === "vertical" ? 1080 : 1280}`];
+  if (word_id !== undefined) args.push(`--word=${word_id}`);
+  else args.push(`--at=${at_seconds}`);
+  const result = await runFrame(dir, args);
+  fs.rmSync(spec, { force: true });
+  return ok({ ...result, hint: "look at it; a thumbnail is judged at a fifth of this size, so if the words are not the first thing you see, use fewer" });
+});
+
 server.registerTool("preview_sheet", {
   description:
     "Several frames of the composed film tiled into ONE picture, in time order, so the rhythm of a whole passage — or the whole film — can be looked at at once: where the head is, where the cards are, how often the picture changes, whether two cards in a row look like the same card. Give every_seconds to walk the film at that interval (a 106 s film every 8 s is 14 tiles), or a list of at_seconds or word_ids for chosen moments. Tiles are 640 wide by default, which shows arrangement and colour rather than small type; use preview_frame for one moment at full size. Costs a few seconds per tile. The result lists what each tile holds.",

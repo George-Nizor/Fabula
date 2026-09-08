@@ -145,7 +145,40 @@ async function main() {
   fs.mkdirSync(framesDir, { recursive: true });
 
   if (!many) {
-    await contents.executeJavaScript(`__renderAt(${T}, ${JSON.stringify(layout)})`);
+    // A thumbnail is the face and the words: the head at focus whatever the
+    // plan says for that instant, and no cards, titles or captions under the
+    // line. The film's field and look stay.
+    const thumbLayout = flag("thumb")
+      ? stageEngine.layoutAt(stageEngine.resolveLayoutTimeline([], duration), T, dims.width / dims.height, stage)
+      : layout;
+    await contents.executeJavaScript(`__renderAt(${T}, ${JSON.stringify(thumbLayout)})`);
+    // A thumbnail: the frame as composed, the captions taken off (a caption
+    // in a thumbnail is noise), and a template's words laid over everything
+    // — above the head, which is where a thumbnail's words go — with its
+    // entrance already played.
+    if (flag("thumb")) {
+      const templates = await import(pathToFileURL(path.join(REPO_ROOT, "core", "templates.mjs")).href);
+      const spec = JSON.parse(fs.readFileSync(flag("thumb"), "utf8"));
+      const graphic = templates.renderTemplate(spec.template ?? "thumbnail", spec.params ?? {}, { format: formats.resolveFormat(meta).id });
+      await contents.executeJavaScript(`(() => {
+        for (const node of document.getElementById("stage").querySelectorAll(".ov-caption, .ov-graphic, .ov-title, .ov-callout, .ov-kinetic")) node.remove();
+        const card = document.createElement("div");
+        card.className = "ov-graphic kind-custom is-full";
+        // The painter positions every part inline; a static card has no
+        // stacking of its own and the head (z-index 3) paints over it.
+        card.style.position = "absolute"; card.style.inset = "0"; card.style.zIndex = "6";
+        const style = document.createElement("style");
+        style.textContent = "@scope (.ov-custom-root) { " + ${JSON.stringify(graphic.css)} + " }";
+        const root = document.createElement("div");
+        root.className = "ov-custom-root";
+        root.innerHTML = ${JSON.stringify(graphic.html)};
+        root.style.setProperty("--p", "1"); root.style.setProperty("--q", "1"); root.style.setProperty("--alpha", "1");
+        card.append(style, root);
+        document.getElementById("stage").append(card);
+        return true;
+      })()`);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
     const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
     const out = path.resolve(flag("out") ?? path.join(framesDir, `t-${T.toFixed(2)}.png`));
     fs.mkdirSync(path.dirname(out), { recursive: true });

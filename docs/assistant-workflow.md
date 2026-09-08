@@ -244,6 +244,11 @@ is the lookup from what the speaker is doing to which one.
 
 ## What goes with the film
 
+`render_thumbnail` writes `out/thumbnail.png`: one frame of the film at focus, with no cards
+or captions, and a line of up to six words over it from the `thumbnail` template — a kicker,
+the line, a shade behind them. Pick the frame from a `preview_sheet` where the face is doing
+something; put the words on the side the face is not. The line is a promise the film keeps.
+
 `export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
 description, one `m:ss Title` per line from the plan's `section`, `cover` and `headline`
 marks (or from `read_story`'s sections where the plan has none). `list_assets` carries the

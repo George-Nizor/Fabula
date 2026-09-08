@@ -655,6 +655,34 @@ export const TEMPLATES = {
   },
 };
 
+TEMPLATES.thumbnail = {
+  label: "Thumbnail line",
+  about: "A few big words over the picture, with a shade behind them so they read on any frame, and a small kicker. Made for render_thumbnail — the still a platform shows before anyone presses play — and usable as a title card over a cutaway.",
+  when: "The thumbnail, or a cold-open title over a still. Up to six words; fewer read better.",
+  persona: ["farmer", "editor"],
+  full: true,
+  fields: {
+    line: text("The words — six at most", 40),
+    kicker: text("A few small words above", 24, { required: false }),
+    side: field("choice", "Where the words sit", { options: ["left", "right", "bottom"], default: "left" }),
+    shade: field("number", "How dark the shade behind the words is, 0 to 1", { min: 0, max: 1, default: 0.55, required: false }),
+  },
+  example: { kicker: "Rendering", line: "16 minutes → 6", side: "left" },
+  render: (p, { portrait }) => {
+    const words = p.line.split(" ");
+    const html = `<div class="t t-thumb t-${p.side}"><div class="t-shade"></div><div class="t-text">${p.kicker ? `<div class="t-kicker">${esc(p.kicker)}</div>` : ""}<div class="t-line">${words.map((w, i) => `<span class="t-w" style="--k:${wake(i, { from: 0.05, each: 0.08, dur: 0.25 })}">${esc(w)}</span>`).join(" ")}</div></div></div>`;
+    const dir = { left: "90deg", right: "270deg", bottom: "0deg" }[p.side];
+    const css = `${base(portrait)}
+.t-thumb { padding: 0; justify-content: ${p.side === "bottom" ? "flex-end" : "center"}; }
+.t-shade { position: absolute; inset: 0; background: linear-gradient(${dir}, rgba(0,0,0,${p.shade.toFixed(2)}) 0%, rgba(0,0,0,${(p.shade * 0.7).toFixed(2)}) ${p.side === "bottom" ? "35%" : "45%"}, rgba(0,0,0,0) ${p.side === "bottom" ? "70%" : "80%"}); opacity: ${wake(0, { from: 0, dur: 0.3 })}; }
+.t-text { position: relative; ${frame(portrait)} ${p.side === "right" ? "align-self: flex-end; text-align: right;" : ""} ${portrait ? "padding-bottom: 22cqh;" : ""} max-width: ${portrait ? "100%" : "46%"}; display: flex; flex-direction: column; gap: 1.6cqh; }
+.t-kicker { color: ${ACCENT}; text-shadow: 0 0.2cqh 1cqh rgba(0,0,0,0.6); }
+.t-line { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "10cqh, 15cqi" : "16cqh, 11cqi"}); line-height: 0.98; letter-spacing: -0.03em; color: #ffffff; text-shadow: 0 0.4cqh 2cqh rgba(0,0,0,0.55); text-wrap: balance; }
+.t-w { display: inline-block; opacity: var(--k); transform: translateY(calc((1 - var(--k)) * 0.3em)); }`;
+    return { html, css };
+  },
+};
+
 export const TEMPLATE_IDS = Object.keys(TEMPLATES);
 // The templates whose items can be spread over the span (`pace: "span"`).
 export const PACED_TEMPLATES = TEMPLATE_IDS.filter((id) => TEMPLATES[id].fields.pace);

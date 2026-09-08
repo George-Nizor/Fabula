@@ -78,6 +78,14 @@ A short that just stops loses the funnel. The last two seconds are a decision:
 - **The loop** ends on a line that reads as a lead-in to the first line, so a replay feels
   intended. Rare; only when the transcript happens to give it to you.
 
+## The thumbnail and the title
+
+The thumbnail is the first frame the platform shows and the words on it are the hook's
+written twin. `render_thumbnail`: a frame where the face is expressive, three to five words
+that promise what the film delivers, the words on the side the face is not. The video's
+title says the same thing in different words; the two are read together. Never a promise the
+film does not keep — the platform measures whether people stay.
+
 ## Choosing the clips
 
 `suggest_clips` narrows a forty-minute film to a shortlist of whole thoughts. It is honest and
