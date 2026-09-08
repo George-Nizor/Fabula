@@ -12,3 +12,4 @@ probe-frame.png
 fabula.settings.json
 fabula.settings.json.*.tmp
 __pycache__/
+out/

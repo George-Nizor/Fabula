@@ -212,7 +212,11 @@ FABULA_SNAPSHOT=/tmp/snap FABULA_SNAPSHOT_PROJECT=<project> \
 ```
 
 It writes the home screen, the Assistant sheet and, with a project named, the open project and its
-Export step as PNGs, then quits.
+Export step as PNGs, then quits (`FABULA_SNAPSHOT_LOOK=<gallery id>` adds a Look gallery,
+`FABULA_SNAPSHOT_SCENE=<index>` a scene's inspector, `FABULA_SNAPSHOT_EVAL=<js>` an answer from the
+page). `scripts/probe-templates.cjs`, run the same way, renders every template in both shapes
+through the export page and tiles them into two sheets under `out/template-probe/` — run it after
+touching `core/templates.mjs` or the painter, and look.
 
 ```bash
 npm install
