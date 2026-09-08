@@ -72,6 +72,7 @@ import(pathToFileURL(path.join(__dirname, "..", "core", "templates.mjs")).href)
   .then((templates) => {
     contextBridge.exposeInMainWorld("FabulaTemplates", {
       describe: (id) => templates.describeTemplates().find((t) => t.id === id) ?? null,
+      list: () => templates.describeTemplates(),
       render: (id, params, options) => {
         try { return { ok: true, graphic: templates.renderTemplate(id, params, options) }; }
         catch (error) { return { ok: false, error: error.message }; }

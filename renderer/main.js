@@ -57,7 +57,7 @@ const els = {
   inspector: $("inspector"), inspTitle: $("insp-title"), inspProject: $("insp-project"), inspBody: $("insp-body"),
   inspCutSummary: $("insp-cut-summary"), sumCuts: $("sum-cuts"), sumRemoved: $("sum-removed"), sumShots: $("sum-shots"), sumFraming: $("sum-framing"),
   themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
-  lookTitles: $("look-titles"), lookCallouts: $("look-callouts"), lookCaptions: $("look-captions"),
+  lookTitles: $("look-titles"), lookCallouts: $("look-callouts"), lookCaptions: $("look-captions"), lookTemplates: $("look-templates"),
   lookTransitions: $("look-transitions"), lookPunch: $("look-punch"),
   themeFontDisplay: $("theme-font-display"), themeFontBody: $("theme-font-body"), themeFontSerif: $("theme-font-serif"),
   themeTitleCase: $("theme-title-case"), themeRadius: $("theme-radius"), themeRadiusValue: $("theme-radius-value"),
@@ -762,6 +762,19 @@ function calloutScript(theme, style) {
   return (t) => ({ compose, layout: layoutOf(timeline, t) });
 }
 
+// A template, playing its own example where it would sit: a full-stage one
+// in a cutaway, a column one beside the head. Rendered by the same function
+// the server and the inspector use, in the film's shape.
+function templateScript(theme, template) {
+  const format = state?.format?.id ?? "landscape";
+  const rendered = window.FabulaTemplates.render(template.id, template.example, { format });
+  if (!rendered.ok) return null;
+  const timeline = previewTimeline([{ start: 0, end: 99, layout: rendered.graphic.full ? "cutaway" : "side" }], theme);
+  const scenes = [{ type: "graphic", start: 0.3, end: 5.7, graphic: rendered.graphic }];
+  const compose = previewCompose(theme, { scenes });
+  return (t) => ({ compose, layout: layoutOf(timeline, t) });
+}
+
 function captionScript(theme, style) {
   const words = ["Captions", "look", "like", "this"];
   const wordSpans = words.map((text, i) => ({ start: 0.4 + i * 0.5, end: 0.9 + i * 0.5, text }));
@@ -874,7 +887,7 @@ function renderLookPage() {
   if (!l) return;
   const theme = l.theme;
   const config = l.themeConfig;
-  clearPreviews(els.lookPresets, els.lookBrands, els.lookTitles, els.lookCallouts, els.lookCaptions, els.lookTransitions, els.lookPunch);
+  clearPreviews(els.lookPresets, els.lookBrands, els.lookTitles, els.lookCallouts, els.lookCaptions, els.lookTemplates, els.lookTransitions, els.lookPunch);
 
   // Each preset card plays that preset, not the project's theme: the point
   // is to show what picking it would do.
@@ -916,6 +929,12 @@ function renderLookPage() {
     script: captionScript(theme, style),
     onPick: () => window.fabula.setProject({ theme: { captionStyle: style } }),
   })));
+  // The templates are a reference, not a choice: nothing is picked here.
+  const templates = window.FabulaTemplates ? window.FabulaTemplates.list() : [];
+  els.lookTemplates.replaceChildren(...templates.map((template) => {
+    const script = templateScript(theme, template);
+    return lookCard({ id: template.id, title: template.label, about: template.when, active: false, loop: 6, script: script ?? undefined, onPick: () => {} });
+  }).filter(Boolean));
   els.lookTransitions.replaceChildren(...l.transitions.map((value) => lookCard({
     id: value, title: value, about: TRANSITION_ABOUT[value], active: theme.transition === value, loop: 5,
     script: transitionScript(theme, value),

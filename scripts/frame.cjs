@@ -168,9 +168,9 @@ async function main() {
         // stacking of its own and the head (z-index 3) paints over it.
         card.style.position = "absolute"; card.style.inset = "0"; card.style.zIndex = "6";
         const style = document.createElement("style");
-        style.textContent = "@scope (.ov-custom-root) { " + ${JSON.stringify(graphic.css)} + " }";
+        style.textContent = "@scope (.ov-custom-thumb) { " + ${JSON.stringify(graphic.css)} + " }";
         const root = document.createElement("div");
-        root.className = "ov-custom-root";
+        root.className = "ov-custom-root ov-custom-thumb";
         root.innerHTML = ${JSON.stringify(graphic.html)};
         root.style.setProperty("--p", "1"); root.style.setProperty("--q", "1"); root.style.setProperty("--alpha", "1");
         card.append(style, root);

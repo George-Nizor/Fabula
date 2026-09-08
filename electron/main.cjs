@@ -697,6 +697,15 @@ async function snapshotWindow(window) {
       await run(`document.getElementById("tab-export").click(); true`);
       await wait(1200);
       await shoot("4-export");
+      // The Look step, scrolled to one of its galleries, when one is named.
+      const gallery = process.env.FABULA_SNAPSHOT_LOOK;
+      if (gallery) {
+        await run(`document.getElementById("tab-look").click(); true`);
+        await wait(1800);
+        await run(`(document.getElementById(${JSON.stringify(gallery)}) ?? document.body).scrollIntoView({ block: "start" }); true`);
+        await wait(1200);
+        await shoot("6-look");
+      }
       // A scene's inspector, when one is named: the Scenes step, then the
       // timeline block for that index.
       const scene = process.env.FABULA_SNAPSHOT_SCENE;
@@ -707,6 +716,11 @@ async function snapshotWindow(window) {
         await wait(900);
         await shoot("5-scene");
       }
+    }
+    // A question for the page, when one is asked: its answer, as JSON.
+    if (process.env.FABULA_SNAPSHOT_EVAL) {
+      const answer = await run(process.env.FABULA_SNAPSHOT_EVAL);
+      console.log(JSON.stringify({ eval: answer }));
     }
     console.log(JSON.stringify({ snapshots: shots }));
   } catch (error) {

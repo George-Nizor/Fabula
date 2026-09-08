@@ -173,6 +173,7 @@ const stagger = (count, from, each, span, cap = 0.6) => {
 // the export captures those frames, not twelve seconds of them.
 const BUILD_SECONDS = 1.8;
 const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
+let customSerial = 0;
 
 function graphicSignature(graphic, p, t, scene) {
   const alpha = presenceAt(t, scene.start, scene.end, 0.45, 0.35);
@@ -453,9 +454,13 @@ function buildGraphic(part) {
     // engine refuses them), motion from the --p / --q / --t variables the
     // painter sets every frame.
     if (graphic.full !== false) card.classList.add("is-full");
+    // Scoped to THIS card, not to every custom root on the page: two custom
+    // graphics share class names freely (every template has a .t-line), and
+    // the Look gallery shows two dozen at once.
+    const scope = `ov-custom-${customSerial += 1}`;
     const style = el("style");
-    style.textContent = `@scope (.ov-custom-root) { ${graphic.css ?? ""} }`;
-    const root = el("div", "ov-custom-root");
+    style.textContent = `@scope (.${scope}) { ${graphic.css ?? ""} }`;
+    const root = el("div", `ov-custom-root ${scope}`);
     root.innerHTML = graphic.html;
     card.append(style, root);
   }
