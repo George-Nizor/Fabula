@@ -57,6 +57,7 @@ import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { validateAudio, describeAudio, bedSpans, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { chapterList } from "../core/chapters.mjs";
+import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
@@ -257,7 +258,8 @@ server.registerTool("open_project", {
     format: z.enum([...FORMAT_IDS]).optional().describe("The shape it is delivered in: landscape (16:9, the default) or vertical (9:16, for Shorts/Reels/TikTok). Ask if the person has not said — it decides the stage and the clean cut's ceiling, and changing it later makes the clean cut stale."),
     name: z.string().optional().describe("Folder name override; normally derived from the title"),
   },
-}, async ({ video_path, title, format, name }) => {
+}, async ({ video_path: given, title, format, name }) => {
+  const video_path = hostPath(given);
   if (!fs.existsSync(video_path)) throw new Error(`no such file: ${video_path}`);
   const ext = path.extname(video_path).toLowerCase();
   if (!/^\.(mp4|mov|mkv|webm|m4v)$/.test(ext)) throw new Error(`unsupported container: ${ext}`);
@@ -680,13 +682,13 @@ server.registerTool("import_audio", {
   description:
     "Copy a music file from the pipeline host into the project's assets/ so set_audio can use it as the bed: mp3, wav, m4a, aac, ogg, flac or opus. Music is the person's own or licensed; Fabula fetches none. Returns the project-relative src.",
   inputSchema: {
-    path: z.string().optional().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    path: z.string().optional().describe("Absolute path to the file; a Windows path (E:\\Music\\bed.mp3) or a WSL one, either is fine"),
     library: z.string().optional().describe("Or a name from list_music, relative to the music folder"),
     name: z.string().optional().describe("File name under assets/; the source's own name by default"),
   },
 }, async ({ path: given, library, name }) => {
   const dir = currentProjectDir();
-  let source = given;
+  let source = given === undefined ? undefined : hostPath(given);
   if (library !== undefined) {
     const root = configuredMusicRoot();
     if (!root) throw new Error("no music folder is set; set_music_root first, or give a path");
@@ -741,7 +743,8 @@ server.registerTool("list_music", {
 server.registerTool("set_music_root", {
   description: "Where the person's music lives, for list_music: a folder as the pipeline host sees it (a WSL path on Windows, e.g. /mnt/c/Users/me/Music/beds). Recorded in fabula.settings.json beside the projects root; null clears it.",
   inputSchema: { path: z.string().nullable().describe("The folder, or null to clear") },
-}, async ({ path: folder }) => {
+}, async ({ path: given }) => {
+  const folder = given === null ? null : hostPath(given);
   if (folder !== null && !fs.existsSync(folder)) throw new Error(`no such folder on the pipeline host: ${folder}`);
   return ok({ musicRoot: writeMusicRoot(folder) });
 });
@@ -1624,12 +1627,13 @@ server.registerTool("import_image", {
   description:
     "Copy a picture from the pipeline host into the project's assets/ for image, logos, cover and the theme logo: the person's own screenshots, product shots, a still they exported. png, jpg or webp (a gif's first frame). Nothing is fetched; fetch_image is for the web. Returns the project-relative src.",
   inputSchema: {
-    path: z.string().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    path: z.string().describe("Absolute path to the file; a Windows path (E:\\Music\\bed.mp3) or a WSL one, either is fine"),
     name: z.string().optional().describe("File name under assets/; the source's own name by default"),
     attribution: z.object({ author: z.string().optional(), license: z.string().optional(), note: z.string().optional() }).optional().describe("Who made it, if not the person; saved beside the asset"),
   },
-}, async ({ path: source, name, attribution }) => {
+}, async ({ path: given, name, attribution }) => {
   const dir = currentProjectDir();
+  const source = hostPath(given);
   if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
   if (!/\.(png|jpe?g|webp|gif)$/i.test(source)) throw new Error("import_image takes png, jpg, webp or gif");
   const ext = path.extname(source).toLowerCase() === ".gif" ? ".png" : path.extname(source).toLowerCase().replace(".jpeg", ".jpg");
@@ -1693,14 +1697,15 @@ server.registerTool("reanchor_scenes", {
 
 server.registerTool("render_final", {
   description:
-    "The composited render, as a background job: the head and screen tracks are placed on the 1080p stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached two-minute chunks — a tweak re-renders the chunks it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range. A whole film is minutes; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
+    "The composited render, as a background job: the head and screen tracks are placed on the 1080p stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached two-minute chunks — a tweak re-renders the chunks it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range, or out/draft.mp4 at half size with draft: true. A whole film is minutes, a draft a fraction of that; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
   inputSchema: {
     from_word_id: z.number().int().min(0).optional().describe("Render only from this clean word…"),
     to_word_id: z.number().int().min(0).optional().describe("…to this clean word (inclusive)"),
     fresh: z.boolean().optional().describe("Ignore cached chunks and render every one again"),
+    draft: z.boolean().optional().describe("The whole film at half size to out/draft.mp4, in a fraction of the time, with its own chunk cache: for looking at the film in motion before the real render. Never the deliverable."),
     wait_seconds: waitSchema,
   },
-}, async ({ from_word_id, to_word_id, fresh, wait_seconds }) => {
+}, async ({ from_word_id, to_word_id, fresh, draft, wait_seconds }) => {
   const dir = currentProjectDir();
   const paths = projectPaths(dir);
   if (!fs.existsSync(paths.compose)) throw new Error("no compose.json; set_scenes first");
@@ -1714,8 +1719,8 @@ server.registerTool("render_final", {
   if (!cleanCurrent(map, plan, paths.clean)) {
     warnings.push("clean.mp4 is stale: the cut list or framing changed after it was rendered. The film renders from the clean cut on disk; render_clean → retranscribe_clean → re-anchor if the change was meant.");
   }
-  const options = { fresh };
-  let output = paths.final;
+  const options = { fresh, ...(draft ? { draft: true } : {}) };
+  let output = draft ? path.join(dir, "out", "draft.mp4") : paths.final;
   if (from_word_id !== undefined || to_word_id !== undefined) {
     const words = cleanWords(dir);
     const byId = new Map(words.map((word) => [word.id, word]));

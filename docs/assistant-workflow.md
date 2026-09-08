@@ -241,6 +241,12 @@ what you disagree with, and `set_scenes` the result; or `apply: true` and refine
 `update_scenes`. It is a skeleton, not a composition: the head alone is still a choice it
 cannot make for you.
 
+`render_final` with `draft: true` renders the whole film at half size to `out/draft.mp4` with
+its own chunk cache, in a fraction of the time — for watching the film in motion before the
+real render. It is never the deliverable. Every tool that takes a file from the person
+(`open_project`, `import_image`, `import_audio`, `set_music_root`) accepts a Windows path as
+well as a WSL one.
+
 `film_sheet` tiles the rendered film itself, from `out/final.mp4` or a preview span, in
 seconds and without Electron: what the encoder actually wrote. Look at it after `render_final`
 and before handing the film over.

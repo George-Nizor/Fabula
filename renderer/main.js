@@ -972,7 +972,7 @@ const fmtWhen = (iso) => {
   return d.toDateString() === new Date().toDateString() ? `today ${time}` : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 };
 const STAGE_NAMES = { first_pass: "The first pass", render_clean: "The clean cut", render_final: "The film", transcribe: "The transcript", retranscribe: "The clean transcript", refresh_clean: "The clean cut", framing: "The framing scan" };
-const KIND_LABELS = { film: "film", clean: "clean cut", preview: "preview", captions: "captions", thumbnail: "thumbnail", chapters: "chapters", credits: "credits" };
+const KIND_LABELS = { film: "film", draft: "draft", clean: "clean cut", preview: "preview", captions: "captions", thumbnail: "thumbnail", chapters: "chapters", credits: "credits" };
 const CAPTION_FILES = {
   none: "No captions.",
   open: "Captions burned into the picture. The Look step sets the style.",

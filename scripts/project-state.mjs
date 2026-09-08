@@ -210,7 +210,7 @@ export function outputs(dir) {
   const outDir = path.join(dir, "out");
   if (!fs.existsSync(outDir)) return [];
   return fs.readdirSync(outDir)
-    .filter((name) => /^(final|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md)$/i.test(name))
+    .filter((name) => /^(final|draft|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md)$/i.test(name))
     .map((name) => {
       const file = path.join(outDir, name);
       const stat = fs.statSync(file);
@@ -219,7 +219,7 @@ export function outputs(dir) {
         path: file,
         bytes: stat.size,
         modifiedAt: stat.mtime.toISOString(),
-        kind: name === "final.mp4" ? "film" : name === "clean.mp4" ? "clean" : name.endsWith(".mp4") ? "preview"
+        kind: name === "final.mp4" ? "film" : name === "draft.mp4" ? "draft" : name === "clean.mp4" ? "clean" : name.endsWith(".mp4") ? "preview"
           : name.endsWith(".png") ? "thumbnail" : name === "chapters.txt" ? "chapters" : name === "credits.md" ? "credits" : "captions",
       };
     })
@@ -250,10 +250,11 @@ export function jobSpec(kind, dir, options = {}) {
       args.push(`--from=${options.from ?? 0}`, `--to=${options.to}`, `--out=${options.out}`);
     }
     if (options.fresh) args.push("--fresh");
+    if (options.draft) args.push(`--scale=${options.draft === true ? 0.5 : options.draft}`);
     args.push(dir);
     return {
       stage: "render_final",
-      label: options.out ? "Rendering a preview span" : "Rendering the film",
+      label: options.out ? "Rendering a preview span" : options.draft ? "Rendering a draft" : "Rendering the film",
       program: "electron",
       args,
       env: {

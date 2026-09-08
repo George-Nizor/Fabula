@@ -115,6 +115,9 @@ export function videoEncoderArgs(role, gop = CLEAN_GOP) {
       head: ["-preset", "p5", "-tune", "hq", "-cq", "21"],
       screen: ["-preset", "p4", "-tune", "hq", "-cq", "23"],
       film: ["-preset", "p6", "-tune", "hq", "-cq", "19", "-temporal-aq", "1"],
+      // A draft is looked at once and thrown away: the fastest preset, a
+      // coarse quantiser.
+      draft: ["-preset", "p1", "-cq", "30"],
     }[role];
     return ["-c:v", "h264_nvenc", ...quality, "-rc", "vbr", "-b:v", "0", "-bf", "2", "-spatial-aq", "1", "-profile:v", "high", ...common];
   }
@@ -122,6 +125,7 @@ export function videoEncoderArgs(role, gop = CLEAN_GOP) {
     head: ["-preset", "medium", "-crf", "18"],
     screen: ["-preset", "veryfast", "-crf", "20"],
     film: ["-preset", "medium", "-crf", "18"],
+    draft: ["-preset", "ultrafast", "-crf", "28"],
   }[role];
   return ["-c:v", "libx264", ...quality, "-keyint_min", String(gop), ...common];
 }

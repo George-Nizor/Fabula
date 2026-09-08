@@ -124,12 +124,20 @@ async function main() {
   const duration = probeDuration(cleanVideo);
   const dims = probeDimensions(cleanVideo);
   const videoAspect = dims.width / dims.height;
+  // A draft: the same film at a fraction of the stage, for looking at the
+  // whole thing in a fraction of the time. Everything downstream reads the
+  // stage's size, so scaling that one object scales the capture windows,
+  // the head's rectangles, the glow and the masks together.
+  const scale = Math.min(Math.max(Number(flag("scale") ?? 1), 0.25), 1);
+  const draft = scale < 1;
   // The canvas is the project's delivery format, so the capture windows, the
   // field plate, the glow and every rectangle follow from one number.
   const meta = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
   })();
-  const stage = formats.stageOf(meta);
+  const fullStage = formats.stageOf(meta);
+  const stage = draft ? { width: Math.round(fullStage.width * scale / 2) * 2, height: Math.round(fullStage.height * scale / 2) * 2 } : fullStage;
+  if (draft) say(`draft at ${Math.round(scale * 100)}%: ${stage.width}×${stage.height}`);
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
   for (const scene of scenes) {
@@ -159,14 +167,14 @@ async function main() {
 
   const from = Math.round(Math.max(Number(flag("from") ?? 0), 0) * FPS) / FPS;
   const to = Math.min(Number(flag("to") ?? duration), duration);
-  const outPath = flag("out") ?? path.join(projectDir, "out", "final.mp4");
+  const outPath = flag("out") ?? path.join(projectDir, "out", draft ? "draft.mp4" : "final.mp4");
   const wholeFilm = outPath === path.join(projectDir, "out", "final.mp4");
   label = wholeFilm ? "Rendering the film" : "Rendering a preview span";
   const chunkSeconds = Number(flag("chunk") ?? plan.DEFAULT_CHUNK_SECONDS);
   const chunks = plan.chunkPlan(from, to, FPS, chunkSeconds);
   const total = chunks.reduce((n, c) => n + c.frames, 0);
 
-  const cacheDir = path.join(projectDir, "out", "chunks");
+  const cacheDir = path.join(projectDir, "out", draft ? "chunks-draft" : "chunks");
   fs.mkdirSync(cacheDir, { recursive: true });
   // Leftovers of an interrupted run are never resumable: their captures
   // belong to a chunk hash that may no longer exist.
@@ -174,7 +182,7 @@ async function main() {
     if (entry.endsWith(".work")) fs.rmSync(path.join(cacheDir, entry), { recursive: true, force: true });
   }
   const media = { clean: stamp(cleanVideo), screen: hasScreen ? stamp(screenVideo) : null };
-  const encoder = pipeline.videoEncoderArgs("film", FPS);
+  const encoder = pipeline.videoEncoderArgs(draft ? "draft" : "film", FPS);
   // The painter's own files are part of every chunk's identity: a change to
   // a stylesheet or the overlay script is a new picture, and a cached chunk
   // from the old one must never be stitched in.
