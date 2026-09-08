@@ -1407,6 +1407,41 @@ server.registerTool("preview_frame", {
   return ok(result);
 });
 
+server.registerTool("film_sheet", {
+  description:
+    "A contact sheet tiled from the RENDERED film (out/final.mp4, or a preview span) rather than from the preview page: every N seconds of what the encoder actually wrote, in one picture. preview_sheet shows what the plan will look like; this shows what the render did. Look at it after render_final and before handing the film over — a card behind the head, a black tail, a stitch that lost its sound are all visible here and nowhere else. Seconds, not minutes; no Electron.",
+  inputSchema: {
+    every_seconds: z.number().min(1).max(120).optional().describe("Tile interval; the film's length over twelve by default"),
+    file: z.string().optional().describe("A file under out/ to tile instead of final.mp4, e.g. preview-0-60.mp4"),
+    columns: z.number().int().min(1).max(8).optional(),
+  },
+}, async ({ every_seconds, file, columns }) => {
+  const dir = currentProjectDir();
+  const leaf = (file ?? "final.mp4").replace(/[^a-z0-9._-]/gi, "_");
+  const video = path.join(dir, "out", leaf);
+  if (!fs.existsSync(video)) throw new Error(`no ${leaf} in out/; render_final first`);
+  const duration = probeDuration(video);
+  const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
+  const tiles = Math.max(1, Math.min(48, Math.floor((duration - 0.5) / every) + 1));
+  const dims = probeDimensions(video);
+  const tall = dims.height > dims.width;
+  const cols = Math.max(1, Math.min(columns ?? (tall ? 6 : 4), tiles));
+  const rows = Math.ceil(tiles / cols);
+  const width = tall ? 270 : 480;
+  const out = path.join(dir, "out", "frames", `film-sheet-${leaf.replace(/\.mp4$/, "")}-${every}s.png`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const { execFileSync } = await import("node:child_process");
+  execFileSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-i", video,
+    "-vf", `fps=1/${every},scale=${width}:-2,tile=${cols}x${rows}:padding=4:color=0x0b0e12`, "-frames:v", "1", out], { stdio: ["ignore", "ignore", "pipe"] });
+  const audio = (() => {
+    try {
+      const probe = execFileSync(FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", video]).toString().trim();
+      return probe || "none";
+    } catch { return "unknown"; }
+  })();
+  return ok({ file: out, video: leaf, seconds: Number(duration.toFixed(1)), every, tiles, columns: cols, rows, audio, hint: "tiles run left to right, top to bottom, one every " + every + "s from 0" });
+});
+
 server.registerTool("render_thumbnail", {
   description:
     "The still a platform shows before anyone presses play: one frame of the composed film — captions taken off — with a few big words over it from the thumbnail template (a kicker, a line of up to six words, a shade behind them so they read on any frame), written to out/thumbnail.png at 1280×720 (a tall film keeps its shape). Pick a frame where the face is doing something: preview_sheet shows the candidates. The line is a promise, not a summary, and never one the film does not keep.",

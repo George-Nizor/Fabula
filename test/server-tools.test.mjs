@@ -15,7 +15,7 @@ const EXPECTED = [
   "plan_shots", "render_clean", "retranscribe_clean", "list_clean_words",
   "get_scenes", "set_scenes", "update_scenes", "add_scenes", "remove_scenes", "set_inserts", "get_inserts", "apply_insert", "wait_for_input",
   "describe_kit", "describe_templates", "adopt_persona", "read_craft", "read_story", "draft_scenes", "review_plan", "review_film",
-  "preview_frame", "preview_sheet", "render_thumbnail",
+  "preview_frame", "preview_sheet", "film_sheet", "render_thumbnail",
   "set_captions", "list_themes", "get_theme", "set_theme",
   "search_images", "fetch_image", "import_image", "list_assets",
   "import_audio", "list_music", "set_music_root", "set_audio", "export_chapters",

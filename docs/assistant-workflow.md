@@ -241,6 +241,10 @@ what you disagree with, and `set_scenes` the result; or `apply: true` and refine
 `update_scenes`. It is a skeleton, not a composition: the head alone is still a choice it
 cannot make for you.
 
+`film_sheet` tiles the rendered film itself, from `out/final.mp4` or a preview span, in
+seconds and without Electron: what the encoder actually wrote. Look at it after `render_final`
+and before handing the film over.
+
 `review_film` is the whole film in one call: the plan's reads, the chapter list it would
 export, the sound, the captions, and a contact sheet across it. Use it before a render and
 after the person has been editing.
