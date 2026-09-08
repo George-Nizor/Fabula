@@ -8,7 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
-import { describeVariety, uncoveredCutaways, hiddenFullStage } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways, hiddenFullStage, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -253,4 +253,21 @@ test("a full-stage graphic under a head-first layout is reported, under a cutawa
   // A column card is never hidden: it sits beside the head by design.
   const column = hiddenFullStage([{ ...cta, graphic: { kind: "custom", template: "alert", html: "x", full: false } }], 40);
   assert.deepEqual(column, []);
+});
+
+test("caption emphasis leans on numbers, absolutes and listed words, two per phrase at most", () => {
+  assert.deepEqual(emphasisFor(["it", "took", "sixteen", "minutes"], "auto"), [false, false, true, false]);
+  assert.deepEqual(emphasisFor(["never", "do", "this", "with", "80%", "of", "them"], "auto"), [true, false, false, false, true, false, false]);
+  assert.deepEqual(emphasisFor(["the", "thing", "nobody", "tells", "you"], "none"), [false, false, false, false, false]);
+  assert.deepEqual(emphasisFor(["we", "use", "WhisperX", "here"], "auto"), [false, false, true, false]);
+  assert.deepEqual(emphasisFor(["turn", "sideways", "as", "it", "climbs"], ["sideways", "climbs"]), [false, true, false, false, true]);
+  assert.equal(emphasisFor(["one", "two", "three"], "auto").filter(Boolean).length, 2, "at most two");
+  assert.equal(captionEmphasis(undefined), "none");
+  assert.equal(captionEmphasis(true), "auto");
+  assert.deepEqual(captionEmphasis(["Orbit,", "gravity"]), ["orbit", "gravity"]);
+  assert.throws(() => captionEmphasis("loud"), /none, auto, or a list/);
+  const phrases = resolvePhraseCaptions([{ id: 0, text: "sixteen", start: 0, end: 0.4 }, { id: 1, text: "minutes.", start: 0.5, end: 0.9 }], { emphasis: "auto" });
+  assert.equal(phrases[0].words[0].emph, true);
+  assert.equal(phrases[0].words[1].emph, undefined);
+  assert.equal(resolvePhraseCaptions([{ id: 0, text: "sixteen", start: 0, end: 0.4 }])[0].words[0].emph, undefined, "none by default");
 });

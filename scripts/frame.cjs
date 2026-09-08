@@ -107,7 +107,7 @@ async function main() {
     videoUrl: pathToFileURL(cleanVideo).href,
     screenUrl: fs.existsSync(screenVideo) ? pathToFileURL(screenVideo).href : null,
     scenes,
-    captions: engine.captionsBurnedIn(config.captions) ? engine.resolvePhraseCaptions(words) : null,
+    captions: engine.captionsBurnedIn(config.captions) ? engine.resolvePhraseCaptions(words, { emphasis: config.captionEmphasis }) : null,
     wordSpans: engine.resolveCaptions(words),
     stage,
     theme,

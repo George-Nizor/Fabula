@@ -181,7 +181,7 @@ function readCompose(dir) {
       screenSpans: map?.screenSpans ?? [],
       words,
       scenes,
-      captions: core.compose.captionsBurnedIn(config.captions) ? core.compose.resolvePhraseCaptions(words) : null,
+      captions: core.compose.captionsBurnedIn(config.captions) ? core.compose.resolvePhraseCaptions(words, { emphasis: config.captionEmphasis }) : null,
       wordSpans: core.compose.resolveCaptions(words),
       captionsOn: core.compose.captionsBurnedIn(config.captions),
       captionMode: core.compose.captionMode(config.captions),

@@ -367,6 +367,11 @@
 
 .ov-caption.style-karaoke .ov-caption-word { opacity: 0.55; transition: none; }
 .ov-caption.style-karaoke .ov-caption-word.is-on { opacity: 1; color: var(--ov-accent, #d97757); }
+/* The word a phrase leans on: the accent and a heavier weight, and in
+   karaoke — where the accent already marks the playhead — a size step. */
+.ov-caption .ov-caption-word.is-emph { color: var(--ov-accent, #d97757); font-weight: 900; }
+.ov-caption.style-karaoke .ov-caption-word.is-emph { font-size: 1.12em; }
+.ov-caption.style-karaoke .ov-caption-word.is-emph.is-on { color: var(--ov-accent2, var(--ov-accent, #d97757)); }
 
 .field-light .ov-caption { text-shadow: none; }
 

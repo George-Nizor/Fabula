@@ -144,7 +144,7 @@ async function main() {
   if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
   const accent = theme.accent;
   const punchSpans = composeFile.punch ? shotEngine.punchSpans(cleanMap.pieces, composeFile.punch.zoom) : [];
-  const phrases = engine.resolvePhraseCaptions(words);
+  const phrases = engine.resolvePhraseCaptions(words, { emphasis: composeFile.captionEmphasis });
   const compose = {
     videoUrl: pathToFileURL(cleanVideo).href,
     screenUrl: hasScreen ? pathToFileURL(screenVideo).href : null,

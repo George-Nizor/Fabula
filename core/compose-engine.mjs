@@ -184,12 +184,63 @@ const PHRASE_BREAK_GAP = 0.5;
 // in — one word at a time three times a second is noise over thirteen
 // minutes. Each phrase shows from its first word until its last word ends
 // plus a hang, never past the next phrase.
-export function resolvePhraseCaptions(words) {
+// ---- Which words a caption leans on ----
+//
+// Burned-in captions on a phone are read, not heard, and a phrase in one
+// weight is a wall. Emphasis picks the one or two words a phrase turns on —
+// a number, an absolute, a negation, a name, or a word the person listed —
+// and the painter sets them in the accent and a heavier weight. At most two
+// per phrase, numbers first, so the emphasis still means something.
+export const CAPTION_EMPHASIS_MODES = new Set(["none", "auto"]);
+const EMPHASIS_ABSOLUTE = /^(never|always|nobody|everyone|everything|nothing|only|biggest|best|worst|fastest|slowest|cheapest|free|secret|impossible|wrong|right|stop|why|huge|massive|tiny|zero|double|triple|half)$/;
+const EMPHASIS_NEGATION = /^(not|don'?t|doesn'?t|didn'?t|can'?t|won'?t|isn'?t|aren'?t|no)$/;
+const EMPHASIS_NUMBER = /\d|^(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|percent)$/;
+
+export function captionEmphasis(value) {
+  if (value === undefined || value === null || value === "none" || value === false) return "none";
+  if (value === "auto" || value === true) return "auto";
+  if (Array.isArray(value)) {
+    const list = [...new Set(value.map((w) => String(w).toLowerCase().replace(/[^\p{L}\p{N}'%$-]/gu, "")).filter(Boolean))];
+    if (list.length > 60) throw new Error("caption emphasis takes at most 60 words");
+    return list;
+  }
+  throw new Error("caption emphasis is none, auto, or a list of words");
+}
+
+export function emphasisFor(texts, emphasis, { max = 2 } = {}) {
+  const mode = captionEmphasis(emphasis);
+  const flags = texts.map(() => false);
+  if (mode === "none") return flags;
+  const bare = texts.map((t) => String(t).toLowerCase().replace(/[^\p{L}\p{N}'%$-]/gu, ""));
+  const scored = [];
+  texts.forEach((text, i) => {
+    const w = bare[i];
+    if (!w) return;
+    let score = 0;
+    if (Array.isArray(mode)) { if (mode.includes(w)) score = 4; }
+    else {
+      if (EMPHASIS_NUMBER.test(w)) score = 3;
+      else if (EMPHASIS_ABSOLUTE.test(w)) score = 2;
+      else if (EMPHASIS_NEGATION.test(w)) score = 1.5;
+      else if (i > 0 && /^[A-Z][a-z]{2,}/.test(String(text)) && !/[.!?]$/.test(String(texts[i - 1]))) score = 1;
+    }
+    if (score > 0) scored.push({ i, score });
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i).slice(0, max).forEach(({ i }) => { flags[i] = true; });
+  return flags;
+}
+
+export function resolvePhraseCaptions(words, { emphasis = "none" } = {}) {
   const phrases = [];
   let current = [];
   const flush = () => {
     if (current.length === 0) return;
-    phrases.push({ start: current[0].start, end: current.at(-1).end, text: current.map((w) => w.text).join(" ") });
+    const flags = emphasisFor(current.map((w) => w.text), emphasis);
+    phrases.push({
+      start: current[0].start, end: current.at(-1).end,
+      text: current.map((w) => w.text).join(" "),
+      words: current.map((w, i) => ({ text: w.text, start: w.start, end: w.end, ...(flags[i] ? { emph: true } : {}) })),
+    });
     current = [];
   };
   words.forEach((word, index) => {

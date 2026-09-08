@@ -37,7 +37,9 @@ Nothing else matters if this fails.
 - **Captions from the first word, burned in.** Most of the audience is silent. `set_captions
   open`. The caption style is part of the look; `karaoke` for energy, `band` for a calmer
   piece. The captions *are* the audio track for most viewers, so the words have to be right —
-  fix the transcript in the window before rendering.
+  fix the transcript in the window before rendering. Let them lean: `set_captions` with
+  `emphasis: "auto"` sets the number, the absolute, the name in each phrase in the accent, or
+  name the words yourself when the argument turns on a word the rule would not pick.
 
 ## Every four seconds
 

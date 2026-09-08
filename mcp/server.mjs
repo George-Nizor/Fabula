@@ -58,7 +58,7 @@ import { validateAudio, describeAudio, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "
 import { chapterList } from "../core/chapters.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -634,6 +634,7 @@ server.registerTool("get_scenes", {
   return ok({
     scenes: (config.scenes ?? []).map((scene, index) => ({ index, ...scene, ...(scene.insertId ? { insert_id: scene.insertId } : {}) })),
     captions: captionMode(config.captions),
+    captionEmphasis: config.captionEmphasis ?? "none",
     theme: config.theme ?? null,
     punch: readPunch(dir),
     audio: config.audio ?? null,
@@ -1292,14 +1293,21 @@ server.registerTool("preview_sheet", {
 });
 
 server.registerTool("set_captions", {
-  description: "How the film carries its captions: open (burned into the picture in the theme's caption style), closed (not in the picture; an SRT and a VTT are written beside every render for the player to offer as CC), both, or none. Previews at once; a change between open and closed re-renders the chunks.",
-  inputSchema: { mode: z.enum([...CAPTION_MODES]) },
-}, async ({ mode }) => {
+  description: "How the film carries its captions: open (burned into the picture in the theme's caption style), closed (not in the picture; an SRT and a VTT are written beside every render for the player to offer as CC), both, or none. emphasis picks the one or two words each burned-in phrase leans on and sets them in the accent, heavier: auto (numbers, absolutes, negations, names), a list of words, or none. A short is read more than heard, so auto is the usual choice there; a film usually wants none. Previews at once; a change re-renders the chunks it touches.",
+  inputSchema: {
+    mode: z.enum([...CAPTION_MODES]).optional().describe("omit to keep the current mode"),
+    emphasis: z.union([z.enum(["none", "auto"]), z.array(z.string().min(1).max(30)).max(60)]).optional().describe("none, auto, or the words to lean on; omit to keep"),
+  },
+}, async ({ mode, emphasis }) => {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
-  config.captions = captionMode(mode);
+  if (mode !== undefined) config.captions = captionMode(mode);
+  if (emphasis !== undefined) {
+    const value = captionEmphasis(emphasis);
+    if (value === "none") delete config.captionEmphasis; else config.captionEmphasis = value;
+  }
   writeComposeConfig(dir, config);
-  return ok({ captions: config.captions });
+  return ok({ captions: captionMode(config.captions), emphasis: config.captionEmphasis ?? "none" });
 });
 
 // ---- The look: themes and brand ----

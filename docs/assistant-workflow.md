@@ -181,6 +181,10 @@ then keep listening. Leave the loop when they say they are done; render only wit
 Captions have four modes (`set_captions`): open (burned in), closed (an SRT and VTT beside the
 render, nothing in the picture), both, none. Ask which the film is for; a YouTube upload usually
 wants closed so viewers can turn them off, or both when the style is part of the look.
+`set_captions` also takes `emphasis`: the one or two words each burned-in phrase leans on, set in
+the accent and heavier — `auto` (numbers, absolutes, negations, names), a list of the words to
+lean on, or `none`. A short is read more than heard and is created with `auto`; a film usually
+wants `none`.
 
 Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
 licences, SVGs rasterised) and `fetch_image` (a direct image, a page's share image, or a site's

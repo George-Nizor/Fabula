@@ -283,8 +283,12 @@ function buildCallout(part) {
 
 function buildCaption(part) {
   const node = el("div", `ov ov-caption style-${part.style}`);
-  if (part.words) for (const word of part.words) node.append(el("span", "ov-caption-word", word.text), " ");
-  else node.textContent = part.text;
+  if (part.words) {
+    for (const word of part.words) {
+      const span = el("span", `ov-caption-word${word.emph ? " is-emph" : ""}`, word.text);
+      node.append(span, " ");
+    }
+  } else node.textContent = part.text;
   return node;
 }
 
@@ -889,11 +893,13 @@ window.FabulaStage = {
       // each end is eight captures a phrase in the export for a flicker
       // nobody watches. On and off, one capture.
       const part = { key: `caption:${captionAt.start}`, kind: "caption", layer: "over", style: theme.captionStyle, text: captionAt.text, enter: 1 };
-      if (theme.captionStyle === "karaoke") {
-        const spans = (compose.wordSpans ?? []).filter((s) => s.start >= captionAt.start - 0.01 && s.start < captionAt.end);
+      // The phrase's own words, when the engine gave them: emphasis rides
+      // them in every style, and karaoke lights them up to the playhead.
+      const own = captionAt.words ?? (compose.wordSpans ?? []).filter((s) => s.start >= captionAt.start - 0.01 && s.start < captionAt.end);
+      if (own.length === words(captionAt.text).length && (theme.captionStyle === "karaoke" || own.some((w) => w.emph))) {
         let active = -1;
-        spans.forEach((s, i) => { if (s.start <= t) active = i; });
-        if (spans.length === words(captionAt.text).length) part.words = spans.map((s, i) => ({ text: s.text, on: i <= active }));
+        own.forEach((s, i) => { if (s.start <= t) active = i; });
+        part.words = own.map((s, i) => ({ text: s.text, on: theme.captionStyle !== "karaoke" || i <= active, ...(s.emph ? { emph: true } : {}) }));
       }
       parts.push(part);
     }

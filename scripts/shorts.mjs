@@ -94,6 +94,8 @@ export function createShort(parentDir, { fromWordId, toWordId, title, format = "
   if (parentCompose.theme) compose.theme = parentCompose.theme;
   if (parentCompose.punch) compose.punch = parentCompose.punch;
   compose.captions = shape.shortForm ? "open" : (parentCompose.captions ?? "none");
+  // Read more than heard: a short's captions lean on their numbers and absolutes.
+  if (shape.shortForm) compose.captionEmphasis = "auto";
   fs.writeFileSync(path.join(dir, "compose.json"), JSON.stringify(compose, null, 2));
 
   writeProjectTitle(dir, shown);
