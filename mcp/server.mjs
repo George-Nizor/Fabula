@@ -1428,7 +1428,9 @@ server.registerTool("film_sheet", {
   if (!fs.existsSync(video)) throw new Error(`no ${leaf} in out/; render_final first`);
   const duration = probeDuration(video);
   const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
-  const tiles = Math.max(1, Math.min(48, Math.floor((duration - 0.5) / every) + 1));
+  // fps=1/N emits a frame at 0, N, 2N… while the source lasts; the last one
+  // needs a whole interval behind it, so the count is the floor.
+  const tiles = Math.max(1, Math.min(48, Math.floor(duration / every)));
   const dims = probeDimensions(video);
   const tall = dims.height > dims.width;
   const cols = Math.max(1, Math.min(columns ?? (tall ? 6 : 4), tiles));
