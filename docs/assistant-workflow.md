@@ -242,6 +242,29 @@ hand-written `custom` graphic is for a moment none of them fit. Full-stage templ
 with a `cutaway` or `full` layout; column templates sit beside the head. `docs/craft/visual-grammar.md`
 is the lookup from what the speaker is doing to which one.
 
+## Sound
+
+The clean cut's voice is the film's audio as recorded. Two things can be done to it, both in
+the stitch and therefore in seconds, never re-rendering a chunk:
+
+- **A music bed** (`set_audio` with `music`): a file the person owns or has licensed, brought
+  into `assets/` by `import_audio` — Fabula fetches no music. The bed sits at `level` dB while
+  nobody speaks and `duck` dB lower under the voice, and the duck is computed from the
+  transcript's own words, not guessed by a compressor listening to the track: it comes up in
+  every pause longer than a breath, in the run-in before the first word and the tail after the
+  last, ramping over `ramp` seconds either side, faded in and out over `fade`, looped when the
+  file is shorter than the film. `set_audio` reports how many pauses it comes up in. A short
+  nearly always wants a bed; a long film wants one under its opening, its section marks and
+  its ending, and often nothing under the argument — there is no per-span bed yet, so choose
+  the level for the whole film.
+- **Voice loudness** (`voice_loudness`): an integrated LUFS target for the voice, -16 for a
+  film, -14 for a short, null to leave it as recorded. Platforms normalise on upload; this
+  makes the film sound the same everywhere before they do.
+
+`get_scenes` carries the `audio` block; `music: null` removes the bed. Ask before adding
+music to a film that did not ask for it — a bed is a tone, and the wrong tone is worse than
+none.
+
 ## Changing part of a plan
 
 `set_scenes` replaces the whole plan. That is right for the first pass and wasteful for every

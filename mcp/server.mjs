@@ -54,6 +54,7 @@ import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templa
 import { readStory } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
+import { validateAudio, describeAudio, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -634,8 +635,68 @@ server.registerTool("get_scenes", {
     captions: captionMode(config.captions),
     theme: config.theme ?? null,
     punch: readPunch(dir),
+    audio: config.audio ?? null,
     inserts: (config.inserts ?? []).map((insert) => ({ id: insert.id, chosen: insert.chosen ?? null, note: insert.note ?? null })),
   });
+});
+
+// ---- Sound ----
+
+server.registerTool("import_audio", {
+  description:
+    "Copy a music file from the pipeline host into the project's assets/ so set_audio can use it as the bed: mp3, wav, m4a, aac, ogg, flac or opus. Music is the person's own or licensed; Fabula fetches none. Returns the project-relative src.",
+  inputSchema: {
+    path: z.string().describe("Absolute path to the file, as the pipeline host sees it (a WSL path on Windows)"),
+    name: z.string().optional().describe("File name under assets/; the source's own name by default"),
+  },
+}, async ({ path: source, name }) => {
+  const dir = currentProjectDir();
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
+  if (!AUDIO_EXTENSIONS.test(source)) throw new Error("import_audio takes mp3, wav, m4a, aac, ogg, flac or opus");
+  const leaf = (name ?? path.basename(source)).replace(/[^a-z0-9._-]/gi, "_");
+  if (!AUDIO_EXTENSIONS.test(leaf)) throw new Error("the name must keep the audio extension");
+  const assets = path.join(dir, "assets");
+  fs.mkdirSync(assets, { recursive: true });
+  fs.copyFileSync(source, path.join(assets, leaf));
+  const seconds = Number(probeDuration(path.join(assets, leaf)).toFixed(1));
+  return ok({ src: `assets/${leaf}`, seconds, bytes: fs.statSync(path.join(assets, leaf)).size, next: `set_audio with music: { src: "assets/${leaf}" }` });
+});
+
+server.registerTool("set_audio", {
+  description:
+    `The sound under the voice. music: a bed from assets/ (import_audio) at level dB while nobody speaks (${MUSIC_DEFAULTS.level} by default), duck dB lower under the voice (${MUSIC_DEFAULTS.duck}), ramping over ramp seconds (${MUSIC_DEFAULTS.ramp}) either side of every pause the transcript shows — the duck is computed from the words, not guessed from a compressor — faded in and out over fade seconds (${MUSIC_DEFAULTS.fade}), looped to the film's length unless loop is false. voice_loudness normalises the voice to an integrated LUFS target (-16 for a film, -14 for a short; null leaves it as recorded). Sound lives only in the stitch, so changing it re-renders no chunk: render_final after it is seconds, not minutes. music: null removes the bed. Returns what the bed will do and how many pauses it comes up in.`,
+  inputSchema: {
+    music: z.object({
+      src: z.string().describe("assets/…, from import_audio"),
+      level: z.number().min(-40).max(0).optional(),
+      duck: z.number().min(-40).max(0).optional(),
+      ramp: z.number().min(0.1).max(3).optional(),
+      fade: z.number().min(0).max(10).optional(),
+      loop: z.boolean().optional(),
+    }).nullable().optional().describe("The bed; null removes it; omit to keep the current one"),
+    voice_loudness: z.number().min(-30).max(-8).nullable().optional().describe("Integrated LUFS target for the voice; null leaves it as recorded; omit to keep"),
+  },
+}, async ({ music, voice_loudness }) => {
+  const dir = currentProjectDir();
+  const config = readComposeConfig(dir);
+  const audio = { ...(config.audio ?? {}) };
+  if (music !== undefined) {
+    if (music === null) delete audio.music;
+    else {
+      if (!fs.existsSync(path.join(dir, music.src))) throw new Error(`no such asset ${music.src}; import_audio first`);
+      audio.music = { ...(audio.music?.src === music.src ? audio.music : {}), ...music };
+    }
+  }
+  if (voice_loudness !== undefined) {
+    if (voice_loudness === null) delete audio.voice;
+    else audio.voice = { loudness: voice_loudness };
+  }
+  validateAudio(audio);
+  if (Object.keys(audio).length) config.audio = audio; else delete config.audio;
+  writeComposeConfig(dir, config);
+  const words = fs.existsSync(projectPaths(dir).cleanTranscript) ? cleanWords(dir) : [];
+  const duration = words.at(-1)?.end ?? 0;
+  return ok({ audio: config.audio ?? null, ...describeAudio(config.audio, words, duration), stale: ["final"], hint: "render_final to hear it; the chunks are cached, so only the stitch runs" });
 });
 
 // ---- Insert points and the dialogue ----
@@ -1090,6 +1151,7 @@ server.registerTool("describe_kit", {
   fonts: VENDORED_FONTS,
   templates: `${TEMPLATE_IDS.length} named graphics the kit has no fixed shape for — ${TEMPLATE_IDS.join(", ")} — each filled in from a few fields and laid out for this shape. describe_templates lists the fields; write one as graphic: { kind: "custom", template: "<id>", params: { … } }. Reach for a template before writing html by hand.`,
   editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
+  sound: `set_audio puts a music bed under the voice (import_audio brings the file in), ducked from the transcript's own pauses, and can normalise the voice; audio lives only in the stitch so it costs seconds, not minutes.`,
   reading: "read_story marks the transcript up before you compose (sections, the opening, the ending, every drawable moment); review_plan and every plan write return the variety and pacing reads; preview_sheet tiles the whole film into one picture.",
   craft: `adopt_persona (${PERSONA_IDS.join(" or ")}) hands you the brief and the craft guides for the job at hand; read_craft has the rest, including a visual grammar of what goes with what is said and a set of reference styles.`,
   });

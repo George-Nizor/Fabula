@@ -88,6 +88,15 @@ is about to say is filler unless the viewer will need to keep count.
 - Never put a card where captions will sit. In a tall frame the bottom is captions and
   platform chrome; the layouts keep it clear, and so should a `custom` graphic.
 
+## Sound
+
+The voice is the film. Anything under it is there to make the room feel finished, not to be
+heard. A bed sits far below the voice, comes up only where the person stops talking — the
+opening, the section marks, the end — and never carries a melody the viewer will hum instead
+of listening. `set_audio` ducks it from the words themselves, so the only decisions left are
+which piece, how low, and whether this film wants one at all. Many do not. Normalise the voice
+to -16 LUFS for a film so it lands at the same level on every platform.
+
 ## Looking
 
 The plan is numbers. The film is a picture. `preview_frame` a moment after every card that

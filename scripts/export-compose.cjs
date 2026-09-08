@@ -383,12 +383,27 @@ async function main() {
   const audioSeek = span < duration - 0.01 ? ["-ss", String(from), "-t", String(span)] : [];
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const partial = outPath.replace(/\.mp4$/, ".partial.mp4");
+  // The sound: the clean cut's voice as it is, or the voice normalised with
+  // a music bed under it, ducked from the transcript (core/audio-engine.mjs).
+  // Audio lives only in the stitch, so a change to it never re-renders a
+  // chunk.
+  const audioEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "audio-engine.mjs")).href);
+  const musicSrc = composeFile.audio?.music?.src;
+  const musicPath = musicSrc ? path.join(projectDir, musicSrc) : null;
+  if (musicSrc && !fs.existsSync(musicPath)) throw new Error(`the music bed ${musicSrc} is not in the project; import_audio puts it there`);
+  const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath });
+  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${composeFile.audio?.voice?.loudness != null ? `, voice normalised to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
+  const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
+  if (sound) fs.writeFileSync(soundFile, sound.filter);
   await run([
     "-f", "concat", "-safe", "0", "-i", listFile,
     ...audioSeek, "-i", cleanVideo,
-    "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart", "-shortest",
+    ...(sound ? sound.inputs : []),
+    ...(sound ? ["-/filter_complex", soundFile, "-map", "0:v", "-map", sound.map, "-c:a", "aac", "-b:a", "192k"] : ["-map", "0:v", "-map", "1:a", "-c:a", "copy"]),
+    "-c:v", "copy", "-movflags", "+faststart", "-shortest",
     partial,
   ], "stitch");
+  if (sound) fs.rmSync(soundFile, { force: true });
   fs.renameSync(partial, outPath);
   fs.rmSync(listFile, { force: true });
   // The captions as files beside the film, whatever the mode: a player's CC
