@@ -73,7 +73,9 @@ async function main() {
   if (flag("every") !== undefined) {
     const every = Math.max(Number(flag("every")), 1);
     instants = [];
-    for (let t = Math.min(0.8, duration); t < duration; t += every) instants.push({ t: clampT(t), wordId: null });
+    // The walk stops short of the last half second: the final frames of a
+    // clean cut decode black on some seeks, and a black tile says nothing.
+    for (let t = Math.min(0.8, duration); t < duration - 0.5; t += every) instants.push({ t: clampT(t), wordId: null });
     if (instants.length > 48) instants = instants.filter((_, i) => i % Math.ceil(instants.length / 48) === 0);
   } else if (flag("word") !== undefined) {
     instants = String(flag("word")).split(",").map((s) => wordAt(Number(s))).map((word) => ({ t: clampT(word.start + 0.35), wordId: word.id }));

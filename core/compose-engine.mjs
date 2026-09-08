@@ -11,7 +11,7 @@ function path_isAbsoluteLike(p) {
   return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\");
 }
 
-import { LAYOUTS, PIP_CORNERS, TRANSITIONS, resolveLayoutTimeline } from "./stage-engine.mjs";
+import { LAYOUTS, PIP_CORNERS, TRANSITIONS, FULL_STAGE_KINDS, resolveLayoutTimeline } from "./stage-engine.mjs";
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
@@ -408,12 +408,38 @@ export function uncoveredCutaways(scenes, durationSeconds = 0, options = {}) {
   return holes.filter(([from, to]) => to - from > 0.12).map(([from, to]) => ({ start: Number(from.toFixed(2)), end: Number(to.toFixed(2)) }));
 }
 
+// Full-stage graphics that the head is standing in front of.
+//
+// A cover, a section or a full-stage custom graphic is drawn under the head.
+// In a full layout the head is a corner card and the graphic owns the stage;
+// in a cutaway there is no head. Under focus, side or band the head covers
+// most or all of it — in a tall frame, all of it — and the plan looks
+// complete while the picture shows a face. Reported by scene index.
+export function hiddenFullStage(scenes, durationSeconds = 0, options = {}) {
+  const timeline = resolveLayoutTimeline(scenes, durationSeconds, options);
+  const hidden = [];
+  scenes.forEach((scene, index) => {
+    if (scene.type !== "graphic" || !scene.graphic) return;
+    const fullStage = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;
+    if (!fullStage) return;
+    const covering = timeline.filter((segment) => segment.start < scene.end && segment.end > scene.start && !["full", "cutaway"].includes(segment.layout));
+    if (!covering.length) return;
+    const seconds = covering.reduce((sum, segment) => sum + Math.min(segment.end, scene.end) - Math.max(segment.start, scene.start), 0);
+    if (seconds < 0.25) return;
+    hidden.push({ index, kind: scene.graphic.template ?? scene.graphic.kind, seconds: Number(seconds.toFixed(1)), layouts: [...new Set(covering.map((s) => s.layout))] });
+  });
+  return hidden;
+}
+
 export function describeVariety(scenes, durationSeconds = 0) {
   const notes = [];
   const cards = scenes.filter((scene) => scene.type === "graphic" && scene.graphic?.kind);
   const staged = scenes.filter((scene) => scene.type === "stage" && scene.layout);
 
-  for (const run of runsOfSame(cards, (scene) => scene.graphic.kind)) {
+  // A template is its own kind of card: six different templates in a row
+  // are six shapes, not six "custom" cards.
+  const kindOf = (scene) => scene.graphic.template ?? scene.graphic.kind;
+  for (const run of runsOfSame(cards, kindOf)) {
     if (run.length >= 3) {
       notes.push(`${run.length} ${run.value} cards in a row, ${at(run.from.start)}–${at(run.to.end)}. The same card kind twice running reads as a template; change the shape or let the head hold the frame between them.`);
     }
@@ -425,7 +451,7 @@ export function describeVariety(scenes, durationSeconds = 0) {
   }
   if (cards.length >= 4) {
     const counts = new Map();
-    for (const card of cards) counts.set(card.graphic.kind, (counts.get(card.graphic.kind) ?? 0) + 1);
+    for (const card of cards) counts.set(kindOf(card), (counts.get(kindOf(card)) ?? 0) + 1);
     const [kind, count] = [...counts].sort((a, b) => b[1] - a[1])[0];
     if (count / cards.length > 0.5) {
       notes.push(`${count} of ${cards.length} cards are ${kind}. The kit has chart, stat, list, image, quote, compare, steps, ring, logos, and custom for anything it has no shape for.`);

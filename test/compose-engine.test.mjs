@@ -8,7 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
-import { describeVariety, uncoveredCutaways } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways, hiddenFullStage } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -237,4 +237,20 @@ test("a cutaway with nothing over part of it is reported", () => {
   assert.deepEqual(uncoveredCutaways([{ type: "stage", layout: "side", start: 10, end: 30 }], 60), []);
   // A cutaway the plan forgot entirely is one hole, end to end.
   assert.deepEqual(uncoveredCutaways([cutaway(10, 30)], 60), [{ start: 10, end: 30 }]);
+});
+
+test("a full-stage graphic under a head-first layout is reported, under a cutaway or full it is not", () => {
+  const cta = { type: "graphic", start: 30, end: 36, fromWordId: 0, toWordId: 1, graphic: { kind: "custom", template: "cta", html: "x" } };
+  const alone = hiddenFullStage([cta], 40);
+  assert.equal(alone.length, 1);
+  assert.equal(alone[0].index, 0);
+  assert.equal(alone[0].kind, "cta");
+  assert.deepEqual(alone[0].layouts, ["focus"]);
+  const covered = hiddenFullStage([{ type: "stage", layout: "cutaway", start: 30, end: 36, fromWordId: 0, toWordId: 1 }, cta], 40);
+  assert.deepEqual(covered, []);
+  const corner = hiddenFullStage([{ type: "stage", layout: "full", start: 30, end: 36, fromWordId: 0, toWordId: 1 }, cta], 40);
+  assert.deepEqual(corner, []);
+  // A column card is never hidden: it sits beside the head by design.
+  const column = hiddenFullStage([{ ...cta, graphic: { kind: "custom", template: "alert", html: "x", full: false } }], 40);
+  assert.deepEqual(column, []);
 });

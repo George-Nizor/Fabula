@@ -65,3 +65,14 @@ test("a tall frame refuses a six-bar chart and a wide compare", () => {
   assert.ok(notes.some((n) => n.includes("scene 0: a chart with 6 bars")));
   assert.ok(notes.some((n) => n.includes("scene 1: two columns")));
 });
+
+test("a span-paced template counts each arrival as a change", () => {
+  const still = [scene("stage", 2, 14, { layout: "cutaway" }), scene("graphic", 2, 14, { graphic: { kind: "custom", template: "flow", params: { items: [{ label: "a" }, { label: "b" }, { label: "c" }, { label: "d" }] } } })];
+  const before = describePacing(still, { duration: 16, format: "vertical", shortForm: true, captions: "open" });
+  assert.ok(before.notes.some((n) => n.includes("Nothing changes from 2.0s to 14.0s")), before.notes.join("\n"));
+  const paced = JSON.parse(JSON.stringify(still));
+  paced[1].graphic.params.pace = "span";
+  const after = describePacing(paced, { duration: 16, format: "vertical", shortForm: true, captions: "open" });
+  assert.ok(!after.notes.some((n) => n.includes("Nothing changes from 2.0s")), after.notes.join("\n"));
+  assert.ok(after.stats.longestStill.seconds < 6);
+});

@@ -27,6 +27,24 @@ const esc = (value) => String(value ?? "")
 const wake = (i, { from = 0.05, each = 0.12, dur = 0.35 } = {}) =>
   `clamp(0, calc((var(--q) - ${(from + i * each).toFixed(2)}) / ${dur.toFixed(2)}), 1)`;
 
+// The same window on the SPAN variable: item i of n arrives at an even share
+// of the card's whole time, so a diagram develops as the explanation does
+// instead of landing complete in the first two seconds and then sitting
+// still. `--p` runs 0→1 over the scene; the last item lands by 80% of it.
+const spread = (i, n, { from = 0.04, until = 0.8, dur = 0.12 } = {}) =>
+  `clamp(0, calc((var(--p) - ${(from + (n > 1 ? (i * (until - from)) / (n - 1) : 0)).toFixed(3)}) / ${dur.toFixed(2)}), 1)`;
+
+// Item i's arrival under the template's pace: on the entrance (default) or
+// spread over the span.
+const arrive = (p, i, n, entrance) => (p.pace === "span" ? spread(i, n) : wake(i, entrance));
+
+// Where the arrival times of a span-paced card fall, as shares of its span.
+// The pacing read counts each as a change in the picture, which it is.
+export function revealShares(n, { from = 0.04, until = 0.8 } = {}) {
+  return Array.from({ length: n }, (_, i) => Number((from + (n > 1 ? (i * (until - from)) / (n - 1) : 0)).toFixed(3)));
+}
+
+
 // Type sizes that hold in either shape: cqi is the inline (width) container
 // unit, cqh the height. A vertical stage is narrow, so width leads.
 const FONT_DISPLAY = `var(--ov-font-display, "Inter", system-ui, sans-serif)`;
@@ -51,6 +69,7 @@ const frame = (portrait) => portrait
 const field = (type, about, extra = {}) => ({ type, about, ...extra });
 const text = (about, max = 80, extra = {}) => field("text", about, { max, ...extra });
 const items = (about, { min = 1, max = 5, value = false, required = true } = {}) => field("items", about, { min, max, value, required });
+const PACE = field("choice", "entrance: everything arrives in the first two seconds; span: the items arrive one by one across the card's whole time, so the picture keeps developing while the speaker talks — for a card that holds longer than five seconds", { options: ["entrance", "span"], default: "entrance", required: false });
 
 function checkText(value, spec, name, id) {
   if (value === undefined || value === null || value === "") {
@@ -186,10 +205,10 @@ export const TEMPLATES = {
     when: "A set of figures that belong together: before/during/after, three products, three years.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("A heading", 48, { required: false }), items: items("Figures with labels: value is the figure as typed", { min: 2, max: 4, value: "required" }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("Figures with labels: value is the figure as typed", { min: 2, max: 4, value: "required" }), pace: PACE },
     example: { title: "One render, three passes", items: [{ value: "16 min", label: "first render" }, { value: "6 min", label: "after the fix" }, { value: "10 min", label: "saved, every export" }] },
     render: (p, { portrait }) => {
-      const html = `<div class="t t-trio">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-row">${p.items.map((it, i) => `<div class="t-cell" style="--k:${wake(i, { from: 0.1, each: 0.18, dur: 0.35 })}"><div class="t-v">${esc(it.value)}</div><div class="t-l">${esc(it.label)}</div></div>`).join("")}</div></div>`;
+      const html = `<div class="t t-trio">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-row">${p.items.map((it, i) => `<div class="t-cell" style="--k:${arrive(p, i, p.items.length, { from: 0.1, each: 0.18, dur: 0.35 })}"><div class="t-v">${esc(it.value)}</div><div class="t-l">${esc(it.label)}</div></div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-trio { gap: 4cqh; }
 .t-row { display: flex; flex-direction: ${portrait ? "column" : "row"}; gap: ${portrait ? "3cqh" : "3cqw"}; }
@@ -206,15 +225,15 @@ export const TEMPLATES = {
     when: "A sequence in time: what happened, then what, then what. History, a project, a career, a day.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("A heading", 48, { required: false }), items: items("Moments: value is the date or mark, label what happened", { min: 3, max: 6, value: "required" }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("Moments: value is the date or mark, label what happened", { min: 3, max: 6, value: "required" }), pace: PACE },
     example: { title: "How it went", items: [{ value: "Mon", label: "recorded the talk" }, { value: "Tue", label: "the sixteen-minute render" }, { value: "Wed", label: "found the filter graph" }, { value: "Thu", label: "six minutes" }] },
     render: (p, { portrait }) => {
       const n = p.items.length;
-      const html = `<div class="t t-tl">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-track"><div class="t-line"></div>${p.items.map((it, i) => `<div class="t-ev" style="--k:${wake(i, { from: 0.1, each: 0.7 / n, dur: 0.3 })}"><div class="t-dot"></div><div class="t-when">${esc(it.value)}</div><div class="t-what">${esc(it.label)}</div></div>`).join("")}</div></div>`;
+      const html = `<div class="t t-tl">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-track"><div class="t-line"></div>${p.items.map((it, i) => `<div class="t-ev" style="--k:${arrive(p, i, n, { from: 0.1, each: 0.7 / n, dur: 0.3 })}"><div class="t-dot"></div><div class="t-when">${esc(it.value)}</div><div class="t-what">${esc(it.label)}</div></div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-tl { gap: 4cqh; }
 .t-track { position: relative; display: flex; flex-direction: ${portrait ? "column" : "row"}; gap: ${portrait ? "3cqh" : "2cqw"}; ${portrait ? "padding-left: 6cqw;" : "padding-top: 5cqh;"} }
-.t-line { position: absolute; ${portrait ? "left: 6cqw; top: 0; bottom: 0; width: min(0.5cqw, 0.7cqi); transform-origin: top;" : "top: 5cqh; left: 0; right: 0; height: min(0.6cqh, 0.8cqi); transform-origin: left;"} background: ${ACCENT}; transform: scale${portrait ? "Y" : "X"}(${wake(0, { from: 0.05, dur: 0.75 })}); }
+.t-line { position: absolute; ${portrait ? "left: 6cqw; top: 0; bottom: 0; width: min(0.5cqw, 0.7cqi); transform-origin: top;" : "top: 5cqh; left: 0; right: 0; height: min(0.6cqh, 0.8cqi); transform-origin: left;"} background: ${ACCENT}; transform: scale${portrait ? "Y" : "X"}(${p.pace === "span" ? "clamp(0, calc(var(--p) / 0.8), 1)" : wake(0, { from: 0.05, dur: 0.75 })}); }
 .t-ev { position: relative; flex: 1; ${portrait ? "padding-left: 5cqw;" : "padding-top: 6.5cqh; padding-right: 1cqw;"} opacity: var(--k); transform: translate${portrait ? "X" : "Y"}(calc((1 - var(--k)) * 1.5cqi)); }
 .t-dot { position: absolute; ${portrait ? "left: calc(-1 * min(1.1cqw, 1.5cqi)); top: 0.6cqh;" : "left: 0; top: calc(-1 * min(1.3cqw, 1.7cqi) + min(0.3cqh, 0.4cqi));"} width: min(2.6cqw, 3.4cqi); height: min(2.6cqw, 3.4cqi); border-radius: 50%; background: ${ACCENT}; box-shadow: 0 0 0 min(0.8cqw, 1cqi) ${INK}; }
 .t-when { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(3.4cqh, 4.8cqi); color: ${ACCENT}; }
@@ -229,10 +248,10 @@ export const TEMPLATES = {
     when: "A mechanism or a pipeline: input to output, cause to effect. Use steps when the order is a list to follow rather than a thing that happens.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("A heading", 48, { required: false }), items: items("The steps, in order", { min: 2, max: 5 }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("The steps, in order", { min: 2, max: 5 }), pace: PACE },
     example: { title: "The clean cut", items: [{ label: "transcribe" }, { label: "propose cuts" }, { label: "review" }, { label: "render once" }] },
     render: (p, { portrait }) => {
-      const html = `<div class="t t-flow">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-chain">${p.items.map((it, i) => `${i ? `<div class="t-arrow" style="--k:${wake(i, { from: 0.0, each: 0.18, dur: 0.25 })}"></div>` : ""}<div class="t-step" style="--k:${wake(i, { from: 0.08, each: 0.18, dur: 0.3 })}">${esc(it.label)}</div>`).join("")}</div></div>`;
+      const html = `<div class="t t-flow">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-chain">${p.items.map((it, i) => `${i ? `<div class="t-arrow" style="--k:${arrive(p, i, p.items.length, { from: 0.0, each: 0.18, dur: 0.25 })}"></div>` : ""}<div class="t-step" style="--k:${arrive(p, i, p.items.length, { from: 0.08, each: 0.18, dur: 0.3 })}">${esc(it.label)}</div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-flow { gap: 4cqh; }
 .t-chain { display: flex; flex-direction: ${portrait ? "column" : "row"}; align-items: center; gap: ${portrait ? "1.6cqh" : "1.2cqw"}; }
@@ -318,10 +337,10 @@ export const TEMPLATES = {
     when: "A line of code, a command, a config value the speaker is reading out. Keep it to the lines that matter.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("The filename or a label", 40, { required: false }), items: items("The lines, in order; label is the line", { min: 1, max: 8 }), mark: field("number", "1-based line to highlight", { required: false, min: 1, max: 8 }) },
+    fields: { title: text("The filename or a label", 40, { required: false }), items: items("The lines, in order; label is the line", { min: 1, max: 8 }), mark: field("number", "1-based line to highlight", { required: false, min: 1, max: 8 }), pace: PACE },
     example: { title: "clean-graph.mjs", items: [{ label: "// convert once, before any scale" }, { label: "format=yuv420p," }, { label: "scale=w=1920:h=1080" }], mark: 2 },
     render: (p, { portrait }) => {
-      const html = `<div class="t t-code"><div class="t-win"><div class="t-bar"><span class="t-d"></span><span class="t-d"></span><span class="t-d"></span>${p.title ? `<span class="t-file">${esc(p.title)}</span>` : ""}</div><pre class="t-pre">${p.items.map((it, i) => `<div class="t-ln${p.mark === i + 1 ? " t-mark" : ""}" style="--k:${wake(i, { from: 0.15, each: 0.1, dur: 0.2 })}"><span class="t-n">${i + 1}</span>${esc(it.label)}</div>`).join("")}</pre></div></div>`;
+      const html = `<div class="t t-code"><div class="t-win"><div class="t-bar"><span class="t-d"></span><span class="t-d"></span><span class="t-d"></span>${p.title ? `<span class="t-file">${esc(p.title)}</span>` : ""}</div><pre class="t-pre">${p.items.map((it, i) => `<div class="t-ln${p.mark === i + 1 ? " t-mark" : ""}" style="--k:${arrive(p, i, p.items.length, { from: 0.15, each: 0.1, dur: 0.2 })}"><span class="t-n">${i + 1}</span>${esc(it.label)}</div>`).join("")}</pre></div></div>`;
       const css = `${base(portrait)}
 .t-win { background: ${CARD}; border: 1px solid color-mix(in srgb, ${ACCENT} 35%, transparent); border-radius: calc(1.4cqi * var(--ov-radius, 1)); overflow: hidden; opacity: ${wake(0, { from: 0.02, dur: 0.25 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.02, dur: 0.25 })}) * 2cqh)); }
 .t-bar { display: flex; align-items: center; gap: 0.8cqi; padding: 1.4cqi 1.8cqi; border-bottom: 1px solid color-mix(in srgb, ${TEXT} 12%, transparent); }
@@ -384,11 +403,11 @@ export const TEMPLATES = {
     when: "Levels: what comes first, what rests on what. Use steps for a sequence; this is for a stack.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("A heading", 48, { required: false }), items: items("Tiers from the TOP down", { min: 3, max: 5 }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("Tiers from the TOP down", { min: 3, max: 5 }), pace: PACE },
     example: { title: "What a short needs", items: [{ label: "a hook" }, { label: "one idea" }, { label: "captions" }, { label: "an ending that lands" }] },
     render: (p, { portrait }) => {
       const n = p.items.length;
-      const html = `<div class="t t-ladder">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-tiers">${p.items.map((it, i) => `<div class="t-tier" style="--k:${wake(n - 1 - i, { from: 0.08, each: 0.16, dur: 0.3 })}; --w:${(55 + (45 * i) / Math.max(n - 1, 1)).toFixed(1)}%">${esc(it.label)}</div>`).join("")}</div></div>`;
+      const html = `<div class="t t-ladder">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-tiers">${p.items.map((it, i) => `<div class="t-tier" style="--k:${arrive(p, n - 1 - i, n, { from: 0.08, each: 0.16, dur: 0.3 })}; --w:${(55 + (45 * i) / Math.max(n - 1, 1)).toFixed(1)}%">${esc(it.label)}</div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-ladder { gap: 3cqh; align-items: center; }
 .t-tiers { display: flex; flex-direction: column; align-items: center; gap: 0.8cqh; width: 100%; }
@@ -488,10 +507,10 @@ export const TEMPLATES = {
     when: "Right after the hook of a long film, or at a section change: what the rest holds.",
     persona: ["farmer", "editor"],
     full: true,
-    fields: { title: text("The heading", 30, { required: false }), items: items("What is coming", { min: 2, max: 4 }) },
+    fields: { title: text("The heading", 30, { required: false }), items: items("What is coming", { min: 2, max: 4 }), pace: PACE },
     example: { title: "Coming up", items: [{ label: "why the second render was ten minutes faster" }, { label: "the one line that did it" }, { label: "what it cost" }] },
     render: (p, { portrait }) => {
-      const html = `<div class="t t-teaser"><div class="t-kicker">${esc(p.title || "Coming up")}</div><ol class="t-list">${p.items.map((it, i) => `<li class="t-item" style="--k:${wake(i, { from: 0.15, each: 0.2, dur: 0.3 })}"><span class="t-num">${String(i + 1).padStart(2, "0")}</span><span>${esc(it.label)}</span></li>`).join("")}</ol></div>`;
+      const html = `<div class="t t-teaser"><div class="t-kicker">${esc(p.title || "Coming up")}</div><ol class="t-list">${p.items.map((it, i) => `<li class="t-item" style="--k:${arrive(p, i, p.items.length, { from: 0.15, each: 0.2, dur: 0.3 })}"><span class="t-num">${String(i + 1).padStart(2, "0")}</span><span>${esc(it.label)}</span></li>`).join("")}</ol></div>`;
       const css = `${base(portrait)}
 .t-teaser { gap: 3cqh; }
 .t-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2cqh; }
@@ -507,11 +526,11 @@ export const TEMPLATES = {
     when: "A price, a budget, a breakdown of time or money the speaker itemises.",
     persona: ["editor", "farmer"],
     full: false,
-    fields: { title: text("A heading", 40, { required: false }), items: items("Lines: label and value as typed", { min: 2, max: 6, value: "required" }), total: text("The total, as typed", 20, { required: false }), totalLabel: text("Label for the total", 20, { required: false }) },
+    fields: { title: text("A heading", 40, { required: false }), items: items("Lines: label and value as typed", { min: 2, max: 6, value: "required" }), total: text("The total, as typed", 20, { required: false }), totalLabel: text("Label for the total", 20, { required: false }), pace: PACE },
     example: { title: "One export", items: [{ label: "capture", value: "1:40" }, { label: "encode", value: "3:10" }, { label: "stitch", value: "0:20" }], total: "5:10", totalLabel: "Total" },
     render: (p, { portrait }) => {
       const n = p.items.length;
-      const html = `<div class="t t-rc"><div class="t-paper">${p.title ? `<div class="t-title">${esc(p.title)}</div>` : ""}${p.items.map((it, i) => `<div class="t-line" style="--k:${wake(i, { from: 0.1, each: 0.12, dur: 0.2 })}"><span class="t-l">${esc(it.label)}</span><span class="t-dots"></span><span class="t-v">${esc(it.value)}</span></div>`).join("")}${p.total ? `<div class="t-line t-total" style="--k:${wake(n, { from: 0.2, each: 0.12, dur: 0.3 })}"><span class="t-l">${esc(p.totalLabel || "Total")}</span><span class="t-dots"></span><span class="t-v">${esc(p.total)}</span></div>` : ""}</div></div>`;
+      const html = `<div class="t t-rc"><div class="t-paper">${p.title ? `<div class="t-title">${esc(p.title)}</div>` : ""}${p.items.map((it, i) => `<div class="t-line" style="--k:${arrive(p, i, n + (p.total ? 1 : 0), { from: 0.1, each: 0.12, dur: 0.2 })}"><span class="t-l">${esc(it.label)}</span><span class="t-dots"></span><span class="t-v">${esc(it.value)}</span></div>`).join("")}${p.total ? `<div class="t-line t-total" style="--k:${arrive(p, n, n + 1, { from: 0.2, each: 0.12, dur: 0.3 })}"><span class="t-l">${esc(p.totalLabel || "Total")}</span><span class="t-dots"></span><span class="t-v">${esc(p.total)}</span></div>` : ""}</div></div>`;
       const css = `${base(portrait)}
 .t-paper { padding: 2.4cqh 2.6cqi; background: ${CARD}; border-radius: calc(1cqi * var(--ov-radius, 1)); font-family: ${FONT_MONO}; font-size: min(${portrait ? "7.0cqh, 4.6cqi" : "5.5cqh, 4.6cqi"}); opacity: ${wake(0, { from: 0.02, dur: 0.25 })}; }
 .t-title { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: 1.2em; margin-bottom: 1.4cqh; }
@@ -529,12 +548,12 @@ export const TEMPLATES = {
     when: "The speaker counts down or ranks: the best, the worst, the most.",
     persona: ["farmer", "editor"],
     full: true,
-    fields: { title: text("A heading", 48, { required: false }), items: items("From first place down; value is an optional note", { min: 3, max: 6, value: "optional" }), countdown: field("choice", "Reveal order", { options: ["up", "down"], default: "up" }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("From first place down; value is an optional note", { min: 3, max: 6, value: "optional" }), countdown: field("choice", "Reveal order", { options: ["up", "down"], default: "up" }), pace: PACE },
     example: { title: "Where the render time went", items: [{ label: "the filter graph", value: "10 min" }, { label: "capture", value: "2 min" }, { label: "the encoder", value: "40 s" }] },
     render: (p, { portrait }) => {
       const n = p.items.length;
       const order = (i) => (p.countdown === "up" ? n - 1 - i : i);
-      const html = `<div class="t t-rank">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-rows">${p.items.map((it, i) => `<div class="t-row" style="--k:${wake(order(i), { from: 0.1, each: 0.16, dur: 0.3 })}"><div class="t-pos">${i + 1}</div><div class="t-what">${esc(it.label)}</div>${it.value ? `<div class="t-note">${esc(it.value)}</div>` : ""}</div>`).join("")}</div></div>`;
+      const html = `<div class="t t-rank">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-rows">${p.items.map((it, i) => `<div class="t-row" style="--k:${arrive(p, order(i), n, { from: 0.1, each: 0.16, dur: 0.3 })}"><div class="t-pos">${i + 1}</div><div class="t-what">${esc(it.label)}</div>${it.value ? `<div class="t-note">${esc(it.value)}</div>` : ""}</div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-rank { gap: 3cqh; }
 .t-rows { display: flex; flex-direction: column; gap: 1.2cqh; }
@@ -575,13 +594,13 @@ export const TEMPLATES = {
     when: "Parts of a whole. A chart compares amounts; this shows a division.",
     persona: ["editor"],
     full: false,
-    fields: { title: text("A heading", 48, { required: false }), items: items("Parts: value is the share as a number; they are normalised", { min: 2, max: 5, value: "number" }) },
+    fields: { title: text("A heading", 48, { required: false }), items: items("Parts: value is the share as a number; they are normalised", { min: 2, max: 5, value: "number" }), pace: PACE },
     example: { title: "Where the render time went", items: [{ label: "filter graph", value: 62 }, { label: "capture", value: 25 }, { label: "encode", value: 13 }] },
     render: (p, { portrait }) => {
       const total = p.items.reduce((sum, it) => sum + Math.max(it.value, 0), 0) || 1;
       const shares = p.items.map((it) => Math.max(it.value, 0) / total);
       const tones = [ACCENT, ACCENT2, `color-mix(in srgb, ${ACCENT} 55%, ${TEXT})`, MUTED, `color-mix(in srgb, ${TEXT} 35%, ${INK})`];
-      const html = `<div class="t t-split">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-bar">${p.items.map((it, i) => `<div class="t-seg" style="--s:${shares[i].toFixed(4)}; --c:${tones[i]}; --k:${wake(i, { from: 0.05, each: 0.12, dur: 0.35 })}"></div>`).join("")}</div><div class="t-legend">${p.items.map((it, i) => `<div class="t-key" style="--c:${tones[i]}; --k:${wake(i, { from: 0.25, each: 0.12, dur: 0.3 })}"><span class="t-swatch"></span><span>${esc(it.label)}</span><span class="t-pct">${Math.round(shares[i] * 100)}%</span></div>`).join("")}</div></div>`;
+      const html = `<div class="t t-split">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-bar">${p.items.map((it, i) => `<div class="t-seg" style="--s:${shares[i].toFixed(4)}; --c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.05, each: 0.12, dur: 0.35 })}"></div>`).join("")}</div><div class="t-legend">${p.items.map((it, i) => `<div class="t-key" style="--c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.25, each: 0.12, dur: 0.3 })}"><span class="t-swatch"></span><span>${esc(it.label)}</span><span class="t-pct">${Math.round(shares[i] * 100)}%</span></div>`).join("")}</div></div>`;
       const css = `${base(portrait)}
 .t-split { gap: 2.4cqh; }
 .t-bar { display: flex; height: min(${portrait ? "14.4" : "9"}cqh, 10cqi); border-radius: 999px; overflow: hidden; background: color-mix(in srgb, ${TEXT} 10%, transparent); }
@@ -600,10 +619,10 @@ export const TEMPLATES = {
     when: "The speaker recounts an exchange: what was said and what came back.",
     persona: ["farmer", "editor"],
     full: true,
-    fields: { title: text("The name at the top", 30, { required: false }), items: items("Messages in order; value is 'me' for the right-hand side, anything else for the left", { min: 1, max: 4, value: "optional" }) },
+    fields: { title: text("The name at the top", 30, { required: false }), items: items("Messages in order; value is 'me' for the right-hand side, anything else for the left", { min: 1, max: 4, value: "optional" }), pace: PACE },
     example: { title: "Editor", items: [{ label: "did you see the render time?" }, { label: "six minutes", value: "me" }, { label: "what did you change??" }, { label: "one line", value: "me" }] },
     render: (p, { portrait }) => {
-      const html = `<div class="t t-phone"><div class="t-device"><div class="t-notch"></div>${p.title ? `<div class="t-bar">${esc(p.title)}</div>` : ""}<div class="t-msgs">${p.items.map((it, i) => `<div class="t-msg ${it.value === "me" ? "t-me" : "t-them"}" style="--k:${wake(i, { from: 0.15, each: 0.22, dur: 0.3 })}">${esc(it.label)}</div>`).join("")}</div></div></div>`;
+      const html = `<div class="t t-phone"><div class="t-device"><div class="t-notch"></div>${p.title ? `<div class="t-bar">${esc(p.title)}</div>` : ""}<div class="t-msgs">${p.items.map((it, i) => `<div class="t-msg ${it.value === "me" ? "t-me" : "t-them"}" style="--k:${arrive(p, i, p.items.length, { from: 0.15, each: 0.22, dur: 0.3 })}">${esc(it.label)}</div>`).join("")}</div></div></div>`;
       const css = `${base(portrait)}
 .t-phone { align-items: center; }
 .t-device { position: relative; width: ${portrait ? "78cqw" : "34cqw"}; aspect-ratio: 9 / 17; max-height: 84cqh; padding: 5cqi 2.2cqi 3cqi; background: ${INK}; border: min(0.7cqw, 1cqi) solid color-mix(in srgb, ${TEXT} 30%, ${INK}); border-radius: 5cqi; box-shadow: 0 2cqh 5cqh rgba(0,0,0,0.45); opacity: ${wake(0, { from: 0.02, dur: 0.3 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.02, dur: 0.3 })}) * 3cqh)); overflow: hidden; }
@@ -637,6 +656,14 @@ export const TEMPLATES = {
 };
 
 export const TEMPLATE_IDS = Object.keys(TEMPLATES);
+// The templates whose items can be spread over the span (`pace: "span"`).
+export const PACED_TEMPLATES = TEMPLATE_IDS.filter((id) => TEMPLATES[id].fields.pace);
+// How many things a rendered template reveals, for the pacing read.
+export function revealCount(graphic) {
+  if (!graphic?.template || graphic.params?.pace !== "span") return 0;
+  const n = graphic.params?.items?.length ?? 0;
+  return graphic.template === "receipt" && graphic.params?.total ? n + 1 : n;
+}
 
 // What describe_templates prints: everything the assistant needs to fill one
 // in, and nothing about how it is drawn.

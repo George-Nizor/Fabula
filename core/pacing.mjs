@@ -15,6 +15,7 @@
 
 import { resolveLayoutTimeline } from "./stage-engine.mjs";
 import { captionsBurnedIn } from "./compose-engine.mjs";
+import { revealCount, revealShares } from "./templates.mjs";
 
 const at = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 const wordCount = (text) => String(text ?? "").trim().split(/\s+/).filter(Boolean).length;
@@ -43,7 +44,13 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
   // Every instant the picture changes: a visual arrives or leaves, or the
   // layout moves. What lies between two of them is a still.
   const changes = new Set([0]);
-  for (const scene of visuals) { changes.add(scene.start); changes.add(scene.end); }
+  for (const scene of visuals) {
+    changes.add(scene.start); changes.add(scene.end);
+    // A span-paced template keeps arriving across its time; each arrival is
+    // a change the viewer sees.
+    const reveals = revealCount(scene.graphic);
+    if (reveals > 0) for (const share of revealShares(reveals)) changes.add(scene.start + share * (scene.end - scene.start));
+  }
   for (const segment of timeline) changes.add(segment.start);
   const ticks = [...changes].filter((t) => t >= 0 && t <= duration).sort((a, b) => a - b);
   if (duration > 0) ticks.push(duration);

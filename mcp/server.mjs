@@ -56,7 +56,7 @@ import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -920,6 +920,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
     const covered = spans.some((span) => span.start <= scene.start + 0.05 && scene.end - 0.05 <= span.end);
     if (!covered) warnings.push(`scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span ${JSON.stringify(spans)}`);
   });
+  for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
+    warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
+  }
   const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
   for (const hole of holes) {
     warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
