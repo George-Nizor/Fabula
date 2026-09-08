@@ -8,7 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
-import { describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, absorbedStages, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -282,4 +282,24 @@ test("a title or callout over a full-stage card is reported; over a column card 
   assert.deepEqual(overFullStage([column, callout]), []);
   const apart = { ...callout, start: 21, end: 24 };
   assert.deepEqual(overFullStage([cover, apart]), []);
+});
+
+test("a card hangs through a short seam to the next card, and a stage span under the dwell floor is reported", () => {
+  const ws = [
+    { id: 0, text: "a", start: 0, end: 0.4 }, { id: 1, text: "b", start: 0.5, end: 0.9 },
+    { id: 2, text: "c", start: 1.2, end: 1.6 }, { id: 3, text: "d", start: 1.7, end: 2.1 },
+    { id: 4, text: "e", start: 4.0, end: 4.4 }, { id: 5, text: "f", start: 4.5, end: 4.9 },
+  ];
+  const resolved = resolveScenes([
+    { type: "graphic", fromWordId: 0, toWordId: 1, graphic: { kind: "stat", value: 1, label: "x" } },
+    { type: "graphic", fromWordId: 2, toWordId: 3, graphic: { kind: "stat", value: 2, label: "y" } },
+    { type: "graphic", fromWordId: 4, toWordId: 5, graphic: { kind: "stat", value: 3, label: "z" } },
+    { type: "stage", fromWordId: 2, toWordId: 3, layout: "side" },
+    { type: "stage", fromWordId: 0, toWordId: 5, layout: "cutaway" },
+  ], ws);
+  assert.equal(resolved[0].end, 1.2, "the first card hangs to the second");
+  assert.equal(resolved[1].end, 2.1, "a 1.9 s gap is a gap, not a seam");
+  const short = absorbedStages(resolved);
+  assert.equal(short.length, 1);
+  assert.deepEqual(short[0], { index: 3, layout: "side", seconds: 0.9, floor: 3 });
 });

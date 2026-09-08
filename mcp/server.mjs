@@ -61,7 +61,7 @@ import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -246,7 +246,7 @@ function describeFinished(dir, stage) {
 const server = new McpServer({ name: "fabula", version: "0.2.0" }, {
   instructions: `${INVARIANTS}
 
-The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. adopt_persona (editor for a film, farmer for shorts) hands you the craft for the job; read_story marks the transcript up before you compose; describe_templates lists the named graphics; every plan write returns variety and pacing reads, and preview_sheet shows the whole film in one picture. Long jobs continue in the background: pass wait_seconds: 25 and call wait_render until done. Only one assistant controls a checkout at a time. Window messages arrive through wait_for_input: listen after setting insert points or when asked, keep listening until told to stop, and do not poll unprompted.`,
+The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. adopt_persona (editor for a film, farmer for shorts) hands you the craft for the job; read_story marks the transcript up before you compose and draft_scenes turns it into a skeleton; describe_templates lists the named graphics; every plan write returns variety and pacing reads; review_film is the whole film in one look, render_final draft: true the whole film at half size in a fraction of the time, and film_sheet what the encoder actually wrote.`,
 });
 
 server.registerTool("open_project", {
@@ -1151,6 +1151,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
     warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
   }
+  for (const short of absorbedStages(resolved)) {
+    warnings.push(`scene ${short.index}: a ${short.layout} layout of ${short.seconds}s is under the ${short.floor}s dwell floor and will be absorbed into its neighbour; a card planned for it lands wherever the neighbour puts cards. Give it more words, or drop the stage scene.`);
+  }
   for (const over of overFullStage(resolved)) {
     warnings.push(`scene ${over.index}: the ${over.type} sits over the full-stage ${over.card} for ${over.seconds}s and lands on its text. Put the words in the card, or move the ${over.type} to a moment the head holds.`);
   }
@@ -1322,7 +1325,7 @@ server.registerTool("describe_kit", {
   templates: `${TEMPLATE_IDS.length} named graphics the kit has no fixed shape for — ${TEMPLATE_IDS.join(", ")} — each filled in from a few fields and laid out for this shape. describe_templates lists the fields; write one as graphic: { kind: "custom", template: "<id>", params: { … } }. Reach for a template before writing html by hand.`,
   editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
   sound: `set_audio puts a music bed under the voice (import_audio brings the file in), ducked from the transcript's own pauses, and can normalise the voice; audio lives only in the stitch so it costs seconds, not minutes.`,
-  reading: "read_story marks the transcript up before you compose (sections, the opening, the ending, every drawable moment); review_plan and every plan write return the variety and pacing reads; preview_sheet tiles the whole film into one picture.",
+  reading: "read_story marks the transcript up before you compose (sections, the opening, the ending, every drawable moment, the figures); draft_scenes turns it into a skeleton; review_plan and every plan write return the variety and pacing reads and the collision warnings; preview_sheet tiles the plan, film_sheet the rendered film, and render_final draft: true renders the whole film at half size to look at in motion.",
   craft: `adopt_persona (${PERSONA_IDS.join(" or ")}) hands you the brief and the craft guides for the job at hand; read_craft has the rest, including a visual grammar of what goes with what is said and a set of reference styles.`,
   });
 });

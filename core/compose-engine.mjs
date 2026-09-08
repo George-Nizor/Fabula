@@ -150,14 +150,42 @@ export function validateScenes(scenes, words) {
 // Word anchors -> seconds. A scene holds from its first word's start to its
 // last word's end; the anchors stay in the output so re-resolving after a
 // new transcript needs nothing else.
+// A card hangs through the pause between its last word and the next card's
+// first: cards anchor to words, words have breath between them, and a
+// third of a second of empty stage between two cards is a blink, not a
+// beat. Captions hang the same way.
+export const GRAPHIC_HANG_SECONDS = 0.5;
+
 export function resolveScenes(scenes, words) {
   validateScenes(scenes, words);
   const byId = new Map(words.map((word) => [word.id, word]));
-  return scenes.map((scene) => ({
+  const resolved = scenes.map((scene) => ({
     ...scene,
     start: byId.get(scene.fromWordId).start,
     end: byId.get(scene.toWordId).end,
   }));
+  const cards = resolved.filter((scene) => scene.type === "graphic").sort((a, b) => a.start - b.start);
+  for (let i = 0; i + 1 < cards.length; i += 1) {
+    const gap = cards[i + 1].start - cards[i].end;
+    if (gap > 0 && gap <= GRAPHIC_HANG_SECONDS) cards[i].end = cards[i + 1].start;
+  }
+  return resolved;
+}
+
+// Stage scenes the dwell rule will not honour: a placed layout shorter than
+// three seconds (1.2 for a cutaway) is absorbed into its neighbour, so a
+// side card planned for a breath lands wherever the neighbour puts cards —
+// in a cutaway, the whole stage. Reported by scene index, before the render
+// shows it.
+export function absorbedStages(scenes) {
+  const out = [];
+  scenes.forEach((scene, index) => {
+    if (scene.type !== "stage" || !scene.layout) return;
+    const floor = scene.layout === "cutaway" ? 1.2 : 3;
+    const seconds = scene.end - scene.start;
+    if (seconds < floor - 0.01) out.push({ index, layout: scene.layout, seconds: Number(seconds.toFixed(1)), floor });
+  });
+  return out;
 }
 
 // Karaoke caption spans: each word holds the caption from its start until

@@ -20,8 +20,9 @@ const PROMPT = "Read docs/assistant-workflow.md completely. You are the Fabula e
   "and preserve them. Tell me in a few lines where the project stands and what you would do next, then wait for my instruction here. " +
   "Call describe_kit before you plan anything: it says whether this film is landscape or vertical and what each layout means in that shape. " +
   "When I ask you to compose: if framing.json is missing but framing-scan.json exists, look at the saved frames and set_framing; " +
-  "render_clean and retranscribe_clean if status says they are stale; plan_shots; ask what the film is for and set_theme; set_scenes with " +
-  "your editorial judgment; render_final over a minute first, the whole film once I approve. Do not render until I ask. " +
+  "render_clean and retranscribe_clean if status says they are stale; plan_shots; ask what the film is for and set_theme; read_story, then " +
+  "draft_scenes for a skeleton and rework it with your editorial judgment (describe_templates has the named graphics); review_film and look at " +
+  "the sheet; render_final over a minute first, or draft: true for the whole film at half size, the real render once I approve. Do not render until I ask. " +
   "Listen to the window with wait_for_input only when I ask you to listen or after you have set insert points, and keep listening until I say stop.";
 
 // What the window asked the session to begin with, appended to the brief.
@@ -34,8 +35,9 @@ export const TASKS = {
     "3. The look, before any scene. status and get_theme report whether anyone actually chose it — an unset theme resolves to the studio " +
     "preset and reads like a decision. If it is unchosen, stop and ask me one short question: what the film is for, and whether it uses " +
     "one of my saved brands (list_themes shows them). Then set_theme, with use: \"<id>\" for a brand.\n" +
-    "4. describe_kit, then plan_shots, then set_scenes with your editorial judgment. Compose for the shape the film is in — a tall frame has no column beside the head and a title has room for three words rather than nine. Act on the variety notes set_scenes returns.\n" +
-    "5. render_final over the first minute only, and ask me to look at it in the window before the whole film.",
+    "4. describe_kit, read_story, then plan_shots. draft_scenes gives you a skeleton from the reading; rework it with your editorial judgment — the todo list says what it left to you — and describe_templates has the named graphics. Compose for the shape the film is in — a tall frame has no column beside the head and a title has room for three words rather than nine. Act on the variety and pacing notes every plan write returns.\n" +
+    "5. review_film and look at the sheet; preview_frame any card that carries text. Then render_final over the first minute only, or draft: true for the whole film at half size, and ask me to look at it in the window before the real render.\n" +
+    "6. When the film is approved: export_chapters, render_thumbnail if I want one, and say what is in the Export step to hand over.",
 };
 
 export function selection(provider, model = "", effort = "") {
