@@ -214,7 +214,8 @@ on it like any other.
 Tuning that matters on real recordings: `cut_pass` at the default 0.6 s minimum pause reads
 fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Say which you chose.
 `story_cuts` adds the cuts an editor makes from reading — the preamble before the film promises
-anything, a false start said again at once, a stuttered word — as proposals the person toggles
+anything, a false start said again at once, a stuttered word, a retake (the same sentence said
+again within half a minute; the earlier one goes) — as proposals the person toggles
 like the rest. Run it after the first pass and before `render_clean`; `add_cut` is for the
 judgment calls it cannot make (a tangent, a repetition ten sentences apart).
 
@@ -283,7 +284,9 @@ or captions, and a line of up to six words over it from the `thumbnail` template
 the line, a shade behind them. Pick the frame from a `preview_sheet` where the face is doing
 something; put the words on the side the face is not. The line is a promise the film keeps.
 
-`export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
+`export_description` writes `out/description.md`: the title, a summary you write from the
+story, the links, the chapter list and the image credits, as one block to paste into the
+upload. `export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
 description, one `m:ss Title` per line from the plan's `section`, `cover` and `headline`
 marks (or from `read_story`'s sections where the plan has none). `list_assets` carries the
 credits for every fetched picture; `out/credits.md` is written with the film. Hand both over

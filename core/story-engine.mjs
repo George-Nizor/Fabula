@@ -481,11 +481,45 @@ export function preambleCuts(words) {
   return open.preamble.map((sentence) => ({ fromWordId: sentence.fromWordId, toWordId: sentence.toWordId, reason: "preamble", detail: `“${sentence.text}” — before the film promises anything` }));
 }
 
-export function editorialCuts(words, { kinds = ["preamble", "false-start", "stutter"] } = {}) {
+// A retake: a sentence said, then said again within half a minute with
+// mostly the same words — the speaker stopped and went again. The earlier
+// take goes; the later one is the one they meant. Judged on the words the
+// two sentences share, so a sentence that merely echoes a phrase is kept.
+const RETAKE_WINDOW = 30;
+const RETAKE_SHARED = 0.7;
+
+export function retakes(words) {
+  const said = sentences(words);
+  const bag = (sentence) => new Set(sentence.words.map((w) => clean(w.text)).filter((t) => t.length > 2));
+  const out = [];
+  const gone = new Set();
+  for (let i = 0; i < said.length; i += 1) {
+    if (gone.has(i)) continue;
+    const a = said[i];
+    if (a.words.length < 4) continue;
+    const bagA = bag(a);
+    for (let j = i + 1; j < said.length && said[j].start - a.end <= RETAKE_WINDOW; j += 1) {
+      const b = said[j];
+      if (b.words.length < 4) continue;
+      const bagB = bag(b);
+      const shared = [...bagA].filter((t) => bagB.has(t)).length;
+      const overlap = shared / Math.max(Math.min(bagA.size, bagB.size), 1);
+      if (overlap >= RETAKE_SHARED && Math.abs(bagA.size - bagB.size) <= Math.max(bagA.size, bagB.size) * 0.5) {
+        out.push({ fromWordId: a.fromWordId, toWordId: a.toWordId, reason: "retake", detail: `“${a.text}” — said again ${(b.start - a.end).toFixed(1)}s later as “${b.words.slice(0, 6).map((w) => w.text).join(" ")}…”` });
+        gone.add(i);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+export function editorialCuts(words, { kinds = ["preamble", "false-start", "stutter", "retake"] } = {}) {
   const wanted = new Set(kinds);
   return [
     ...(wanted.has("preamble") ? preambleCuts(words) : []),
     ...(wanted.has("false-start") ? falseStarts(words) : []),
     ...(wanted.has("stutter") ? stutters(words) : []),
+    ...(wanted.has("retake") ? retakes(words) : []),
   ].sort((a, b) => a.fromWordId - b.fromWordId);
 }

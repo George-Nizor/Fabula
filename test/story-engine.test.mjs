@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenWords } from "../core/cut-engine.mjs";
-import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts, numberIn } from "../core/story-engine.mjs";
+import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts, retakes, numberIn } from "../core/story-engine.mjs";
 
 function transcriptOf(spec) {
   const segments = [];
@@ -152,4 +152,22 @@ test("the number in a sentence: value, how it reads, and its unit", () => {
   assert.equal(numberIn("Back in 2019 I used to render everything."), null, "a year is a date");
   assert.equal(numberIn("2019 users signed up").shown, "2019 users");
   assert.equal(numberIn("nothing numeric here"), null);
+});
+
+test("a retake is the earlier of two near-identical sentences within half a minute; an echo is not", () => {
+  const spec = [
+    { text: "The first render took sixteen minutes on this laptop and I nearly gave up.", pauseAfter: 0.8 },
+    { text: "Sorry, again.", pauseAfter: 0.6 },
+    { text: "The first render took sixteen minutes on this laptop and I nearly gave up on it.", pauseAfter: 0.5 },
+    { text: "Sixteen minutes is a long time." },
+    { text: "So I looked at the filter graph.", pauseAfter: 0.4 },
+  ];
+  const ws = flattenWords(transcriptOf(spec));
+  const found = retakes(ws);
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.equal(found[0].reason, "retake");
+  assert.equal(found[0].fromWordId, 0);
+  assert.ok(ws[found[0].toWordId].text === "up.", "the whole first take goes");
+  assert.ok(editorialCuts(ws).some((c) => c.reason === "retake"));
+  assert.ok(!editorialCuts(ws, { kinds: ["stutter"] }).some((c) => c.reason === "retake"));
 });

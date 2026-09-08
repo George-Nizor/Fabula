@@ -547,9 +547,9 @@ server.registerTool("add_cut", {
 
 server.registerTool("story_cuts", {
   description:
-    "The cuts an editor makes from reading rather than from the waveform, added to review.json as proposals the person toggles like any other: the preamble before the film promises anything (“hi everyone, welcome back”), a false start (a run of words abandoned and said again at once), a stutter (a word said twice running, close, not for emphasis). Run it after the first pass and before render_clean. Overlapping proposals merge; re-running adds nothing twice. Say what it struck.",
+    "The cuts an editor makes from reading rather than from the waveform, added to review.json as proposals the person toggles like any other: the preamble before the film promises anything (“hi everyone, welcome back”), a false start (a run of words abandoned and said again at once), a stutter (a word said twice running, close, not for emphasis), a retake (a sentence said and then said again within half a minute with mostly the same words — the earlier take goes). Run it after the first pass and before render_clean. Overlapping proposals merge; re-running adds nothing twice. Say what it struck.",
   inputSchema: {
-    kinds: z.array(z.enum(["preamble", "false-start", "stutter"])).optional().describe("Which to propose; all three by default"),
+    kinds: z.array(z.enum(["preamble", "false-start", "stutter", "retake"])).optional().describe("Which to propose; all four by default"),
   },
 }, async ({ kinds }) => {
   const dir = currentProjectDir();
@@ -1373,6 +1373,40 @@ server.registerTool("export_chapters", {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, list.text);
   return ok({ file, ...list, hint: list.enough ? "paste the text into the upload's description" : "fewer than three chapters: add section or cover marks where the subject changes (read_story's sections say where), then export again" });
+});
+
+server.registerTool("export_description", {
+  description:
+    "The upload's description as one paste-ready block, written to out/description.md and returned: the title, a summary you give (two or three sentences the platform shows before the fold — write it from the story, not from the plan), the chapter list from export_chapters, and the image credits the film owes. Hand it over with the film.",
+  inputSchema: {
+    summary: z.string().min(20).max(1200).describe("What the film is, in the person's voice, for the description's first lines"),
+    title: z.string().max(100).optional().describe("The upload's title; the project's title by default"),
+    links: z.array(z.object({ label: z.string().max(60), url: z.string().url() })).max(8).optional().describe("Links the description should carry, in order"),
+  },
+}, async ({ summary, title, links }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const scenes = resolveScenes(config.scenes ?? [], words);
+  const shown = title ?? readProjectMeta(dir).title ?? "Untitled";
+  const chapters = chapterList({ scenes, words, title: shown, duration: words.at(-1)?.end });
+  const credits = listAssets(path.join(dir, "assets")).filter((asset) => asset.attribution?.author || asset.attribution?.license || asset.attribution?.pageUrl);
+  const lines = [`# ${shown}`, "", summary.trim(), ""];
+  if (links?.length) { for (const link of links) lines.push(`${link.label}: ${link.url}`); lines.push(""); }
+  if (chapters.chapters.length > 1) { lines.push("Chapters", chapters.text.trim(), ""); }
+  if (credits.length) {
+    lines.push("Credits");
+    for (const asset of credits) {
+      const a = asset.attribution;
+      lines.push(`${a.author ? `${a.author}: ` : ""}${asset.src.replace(/^assets\//, "")}${a.license ? ` — ${a.license}` : ""}${a.pageUrl ? ` (${a.pageUrl})` : ""}`);
+    }
+    lines.push("");
+  }
+  const text = lines.join("\n");
+  const file = path.join(dir, "out", "description.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+  return ok({ file, text, chapters: chapters.chapters.length, credits: credits.length });
 });
 
 server.registerTool("describe_templates", {

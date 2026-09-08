@@ -210,7 +210,7 @@ export function outputs(dir) {
   const outDir = path.join(dir, "out");
   if (!fs.existsSync(outDir)) return [];
   return fs.readdirSync(outDir)
-    .filter((name) => /^(final|draft|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md)$/i.test(name))
+    .filter((name) => /^(final|draft|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md|description\.md)$/i.test(name))
     .map((name) => {
       const file = path.join(outDir, name);
       const stat = fs.statSync(file);
@@ -220,7 +220,7 @@ export function outputs(dir) {
         bytes: stat.size,
         modifiedAt: stat.mtime.toISOString(),
         kind: name === "final.mp4" ? "film" : name === "draft.mp4" ? "draft" : name === "clean.mp4" ? "clean" : name.endsWith(".mp4") ? "preview"
-          : name.endsWith(".png") ? "thumbnail" : name === "chapters.txt" ? "chapters" : name === "credits.md" ? "credits" : "captions",
+          : name.endsWith(".png") ? "thumbnail" : name === "chapters.txt" ? "chapters" : name === "credits.md" ? "credits" : name === "description.md" ? "description" : "captions",
       };
     })
     .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
