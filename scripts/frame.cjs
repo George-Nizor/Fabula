@@ -58,10 +58,30 @@ async function main() {
   // A word id is the anchor everything else in Fabula uses, so it is the
   // anchor here too: the frame lands where that word is spoken, a beat in so
   // an entrance has played rather than caught mid-flight.
-  const wordId = flag("word") === undefined ? null : Number(flag("word"));
-  const word = wordId === null ? null : words.find((w) => w.id === wordId);
-  if (wordId !== null && !word) throw new Error(`no word ${wordId}; the clean transcript has 0–${words.length - 1}`);
-  const T = Math.min(Math.max(word ? word.start + 0.35 : Number(flag("at") ?? 0.8), 0), Math.max(duration - 0.05, 0));
+  const clampT = (t) => Math.min(Math.max(t, 0), Math.max(duration - 0.05, 0));
+  const wordAt = (id) => {
+    const word = words.find((w) => w.id === id);
+    if (!word) throw new Error(`no word ${id}; the clean transcript has 0–${words.length - 1}`);
+    return word;
+  };
+  // One instant, or several. --word and --at take a comma list; --every=N
+  // walks the film at that interval. Several frames become one sheet
+  // (--sheet, tiled --columns wide) so the rhythm of a whole film can be
+  // looked at in one picture.
+  const many = flag("every") !== undefined || String(flag("word") ?? flag("at") ?? "").includes(",");
+  let instants;
+  if (flag("every") !== undefined) {
+    const every = Math.max(Number(flag("every")), 1);
+    instants = [];
+    for (let t = Math.min(0.8, duration); t < duration; t += every) instants.push({ t: clampT(t), wordId: null });
+    if (instants.length > 48) instants = instants.filter((_, i) => i % Math.ceil(instants.length / 48) === 0);
+  } else if (flag("word") !== undefined) {
+    instants = String(flag("word")).split(",").map((s) => wordAt(Number(s))).map((word) => ({ t: clampT(word.start + 0.35), wordId: word.id }));
+  } else {
+    instants = String(flag("at") ?? "0.8").split(",").map((s) => ({ t: clampT(Number(s)), wordId: null }));
+  }
+  const T = instants[0].t;
+  const word = instants[0].wordId === null ? null : wordAt(instants[0].wordId);
 
   const scenes = engine.resolveScenes(config.scenes ?? [], words);
   for (const scene of scenes) {
@@ -92,10 +112,14 @@ async function main() {
     punchSpans: config.punch && map?.pieces ? shotEngine.punchSpans(map.pieces, config.punch.zoom) : [],
   };
   const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
-  const layout = stageEngine.layoutAt(timeline, T, dims.width / dims.height, stage);
+  const layoutOf = (t) => stageEngine.layoutAt(timeline, t, dims.width / dims.height, stage);
+  const layout = layoutOf(T);
 
   // The still keeps the film's shape: a vertical frame comes back vertical.
-  const width = Math.max(Math.min(Number(flag("width") ?? Math.round(1280 * Math.min(stage.width / stage.height, 1))), 1920), 320);
+  // A sheet's tiles are smaller, because the point of a sheet is the rhythm
+  // rather than the legibility of any one card.
+  const defaultWidth = many ? 640 : Math.round(1280 * Math.min(stage.width / stage.height, 1));
+  const width = Math.max(Math.min(Number(flag("width") ?? defaultWidth), 1920), 320);
   const height = Math.round(width * stage.height / stage.width);
   const win = new BrowserWindow({
     show: false, width, height, frame: false,
@@ -106,19 +130,54 @@ async function main() {
   if (!contents.isPainting()) contents.startPainting();
   contents.debugger.attach("1.3");
   await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)})`);
-  await contents.executeJavaScript(`__renderAt(${T}, ${JSON.stringify(layout)})`);
-  const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
-  const out = path.resolve(flag("out") ?? path.join(projectDir, "out", "frames", `t-${T.toFixed(2)}.png`));
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, Buffer.from(shot.data, "base64"));
-  const segment = timeline.find((s) => T >= s.start && T < s.end) ?? timeline.at(-1);
+  const describe = (t, wordId, lay) => {
+    const segment = timeline.find((s) => t >= s.start && t < s.end) ?? timeline.at(-1);
+    return {
+      at: Number(t.toFixed(2)), wordId,
+      layout: segment?.layout ?? "focus", headOpacity: Number((lay.alpha ?? 1).toFixed(3)),
+      showing: scenes.filter((s) => s.type !== "stage" && s.start <= t && t < s.end)
+        .map((s) => (s.type === "graphic" ? `${s.type}:${s.graphic.template ?? s.graphic.kind}` : s.type)),
+    };
+  };
+  const framesDir = path.join(projectDir, "out", "frames");
+  fs.mkdirSync(framesDir, { recursive: true });
+
+  if (!many) {
+    await contents.executeJavaScript(`__renderAt(${T}, ${JSON.stringify(layout)})`);
+    const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+    const out = path.resolve(flag("out") ?? path.join(framesDir, `t-${T.toFixed(2)}.png`));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, Buffer.from(shot.data, "base64"));
+    console.log(JSON.stringify({ file: out, ...describe(T, word?.id ?? null, layout), format: formats.resolveFormat(meta).id, width, height }));
+    app.quit();
+    return;
+  }
+
+  // The sheet: every instant captured in turn, then tiled left to right,
+  // top to bottom, in time order. The JSON says what each tile holds.
+  const { FFMPEG } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
+  const { execFileSync } = require("node:child_process");
+  const tiles = [];
+  for (const [i, instant] of instants.entries()) {
+    const lay = layoutOf(instant.t);
+    await contents.executeJavaScript(`__renderAt(${instant.t}, ${JSON.stringify(lay)})`);
+    const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+    const file = path.join(framesDir, `sheet-${String(i).padStart(2, "0")}-${instant.t.toFixed(2)}.png`);
+    fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
+    tiles.push({ index: i, file, ...describe(instant.t, instant.wordId, lay) });
+  }
+  const columns = Math.max(1, Math.min(Number(flag("columns") ?? (stage.width > stage.height ? 4 : 6)), tiles.length));
+  const rows = Math.ceil(tiles.length / columns);
+  const list = path.join(framesDir, "sheet.txt");
+  fs.writeFileSync(list, ["ffconcat version 1.0", ...tiles.map((tile) => `file '${tile.file}'\nduration 1`)].join("\n") + "\n");
+  const out = path.resolve(flag("sheet") ?? flag("out") ?? path.join(framesDir, `sheet-${instants[0].t.toFixed(1)}-${instants.at(-1).t.toFixed(1)}.png`));
+  execFileSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list,
+    "-vf", `tile=${columns}x${rows}:padding=4:color=0x0b0e12`, "-frames:v", "1", out], { stdio: ["ignore", "ignore", "inherit"] });
+  for (const tile of tiles) fs.rmSync(tile.file, { force: true });
+  fs.rmSync(list, { force: true });
   console.log(JSON.stringify({
-    file: out, at: Number(T.toFixed(2)), wordId: word?.id ?? null,
-    format: formats.resolveFormat(meta).id,
-    layout: segment?.layout ?? "focus", headOpacity: Number((layout.alpha ?? 1).toFixed(3)),
-    showing: scenes.filter((s) => s.type !== "stage" && s.start <= T && T < s.end)
-      .map((s) => (s.type === "graphic" ? `${s.type}:${s.graphic.kind}` : s.type)),
-    width, height,
+    file: out, format: formats.resolveFormat(meta).id, columns, rows, tileWidth: width, tileHeight: height,
+    tiles: tiles.map(({ file, ...rest }) => rest),
   }));
   app.quit();
 }

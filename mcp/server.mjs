@@ -51,6 +51,8 @@ import {
 import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
 import { suggestClips, createShort } from "../scripts/shorts.mjs";
 import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templates.mjs";
+import { readStory } from "../core/story-engine.mjs";
+import { describePacing } from "../core/pacing.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -84,7 +86,7 @@ function runFrame(dir, args) {
       // ozone-platform has to be a real argument: by the time the script can
       // appendSwitch it, Chromium has already chosen a platform and died.
       ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", path.join(REPO_ROOT, "scripts", "frame.cjs"), dir, ...args],
-      { env: { ...process.env, ...(spec.env ?? {}) }, stdio: ["ignore", "pipe", "pipe"] });
+      { env: frameEnv(spec), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk) => { out += chunk; });
@@ -96,6 +98,16 @@ function runFrame(dir, args) {
       try { resolve(JSON.parse(line)); } catch (error) { reject(new Error(`unreadable frame result: ${error.message}`)); }
     });
   });
+}
+
+// The environment the frame's Electron gets. A session started from inside
+// another Electron (an editor's terminal, the window's own pane) carries
+// ELECTRON_RUN_AS_NODE, which would turn the child into a bare node and make
+// every Chromium flag a "bad option"; it is dropped here.
+function frameEnv(spec) {
+  const env = { ...process.env, ...(spec.env ?? {}) };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
 }
 
 // The Electron the pipeline runs. The real binary under dist/, not the
@@ -831,13 +843,50 @@ server.registerTool("set_scenes", {
   // What the plan looks like as a sequence, read from the plan itself. The
   // rule against a repetitive film is worth nothing if it only lives in a
   // document read at the start of the session.
-  const { warnings, variety } = readBackPlan(dir, shaped, words, config.theme);
+  const { warnings, variety, pacing } = readBackPlan(dir, shaped, words, config.theme, config.captions);
   const look = describeLook(config.theme, listSavedThemes(mediaRoot()));
   if (!look.chosen && shaped.length > 0) warnings.push(look.hint);
   return ok({
     scenes: shaped.length, captions: config.captions, theme: config.theme ?? null, punch: config.punch ?? null,
-    warnings, variety,
-    ...(variety.length ? { varietyHint: "These are observations about the plan you just wrote, not errors. Fix the ones you agree with with update_scenes — it changes the scenes you name and leaves the rest alone — then tell the person what you changed." } : {}),
+    warnings, variety, pacing,
+    ...(variety.length || pacing.notes.length ? { varietyHint: "variety and pacing are observations about the plan you just wrote, not errors. Fix the ones you agree with with update_scenes — it changes the scenes you name and leaves the rest alone — then tell the person what you changed." } : {}),
+  });
+});
+
+server.registerTool("review_plan", {
+  description:
+    "Read the CURRENT plan the way set_scenes reads one back, without writing anything: the warnings worth stopping for (an uncovered cutaway, a screen graphic outside its span), the variety read (does the picture keep changing its kind), and the pacing read (how long the viewer waits for the first visual, the longest stretch where nothing changes, titles over the frame's word budget, a short without burned-in captions or without an ending). Use it after the person has edited scenes in the window, or before render_final, to see what the plan looks like now.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
+  const look = describeLook(config.theme, listSavedThemes(mediaRoot()));
+  return ok({
+    scenes: (config.scenes ?? []).length,
+    format: projectFormat(dir),
+    look: look.chosen ? "chosen" : "unchosen",
+    warnings: read.warnings,
+    variety: read.variety,
+    pacing: read.pacing,
+  });
+});
+
+server.registerTool("read_story", {
+  description:
+    "Read the clean transcript the way an editor marks up a script before cutting: the paragraphs (by pause and by signpost), the sections with a drafted heading each, the opening (its preamble, and where the promise to the viewer actually arrives), the ending (the conclusion and the ask, if either exists), and every moment whose shape the kit already has a graphic for — a number, a list, a comparison, a question, a definition, a process, a quote, a claim, a warning, a date, a named product or tool, something typed, a call to action — each with its sentence, its word ids and the graphic to try first. It is a reading, not a plan: disagree from the words. Call it once before set_scenes, and before suggest_clips when looking for shorts, instead of holding eight thousand words in your head.",
+  inputSchema: {
+    limit: z.number().int().min(10).max(200).optional().describe("How many moments at most, 80 by default; the most drawable kinds are kept first"),
+  },
+}, async ({ limit }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const story = readStory(words, { limit: limit ?? 80 });
+  return ok({
+    ...story,
+    format: projectFormat(dir),
+    hint: "Sections are where a section heading or a cover belongs; moments are where a card belongs. A moment's first suggestion is a kit kind or a template id (describe_templates); search_images is a suggestion to fetch a picture. Pick the moments that carry the argument, not all of them.",
   });
 });
 
@@ -854,10 +903,15 @@ server.registerTool("set_scenes", {
 // shape, and the faults that are worth stopping for. Shared by set_scenes
 // and the three that edit part of a plan, so a patch is read as carefully
 // as a rewrite.
-function readBackPlan(dir, scenes, words, themeConfig) {
+function readBackPlan(dir, scenes, words, themeConfig, captions) {
   const resolved = resolveScenes(scenes, words);
   const duration = words.at(-1)?.end ?? 0;
   const theme = resolveTheme(themeConfig ?? {});
+  const shape = resolveFormat(projectFormat(dir));
+  const pacing = describePacing(resolved, {
+    duration, format: shape.id, shortForm: shape.shortForm, captions: captionMode(captions),
+    transition: theme.transition, transitionSeconds: theme.transitionSeconds,
+  });
   const warnings = [];
   const spans = readCleanMap(dir)?.screenSpans ?? [];
   resolved.forEach((scene, index) => {
@@ -869,7 +923,7 @@ function readBackPlan(dir, scenes, words, themeConfig) {
   for (const hole of holes) {
     warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
   }
-  return { resolved, warnings, holes, variety: describeVariety(resolved, duration) };
+  return { resolved, warnings, holes, variety: describeVariety(resolved, duration), pacing };
 }
 
 const sceneEdits = (dir, mutate) => {
@@ -885,12 +939,13 @@ const sceneEdits = (dir, mutate) => {
   config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
   if (!config.cutIdentity) delete config.cutIdentity;
   writeComposeConfig(dir, config);
-  const read = readBackPlan(dir, scenes, words, config.theme);
+  const read = readBackPlan(dir, scenes, words, config.theme, config.captions);
   return ok({
     ...result,
     scenes: scenes.length,
     warnings: read.warnings,
     variety: read.variety,
+    pacing: read.pacing,
   });
 };
 
@@ -1071,6 +1126,28 @@ server.registerTool("preview_frame", {
   else args.push(`--at=${at_seconds}`);
   const result = await runFrame(dir, args);
   return ok(result);
+});
+
+server.registerTool("preview_sheet", {
+  description:
+    "Several frames of the composed film tiled into ONE picture, in time order, so the rhythm of a whole passage — or the whole film — can be looked at at once: where the head is, where the cards are, how often the picture changes, whether two cards in a row look like the same card. Give every_seconds to walk the film at that interval (a 106 s film every 8 s is 14 tiles), or a list of at_seconds or word_ids for chosen moments. Tiles are 640 wide by default, which shows arrangement and colour rather than small type; use preview_frame for one moment at full size. Costs a few seconds per tile. The result lists what each tile holds.",
+  inputSchema: {
+    every_seconds: z.number().min(1).max(120).optional().describe("Walk the film at this interval (at most 48 tiles; a longer film is thinned)"),
+    at_seconds: z.array(z.number().min(0)).min(2).max(48).optional().describe("Or exact times on the clean timeline"),
+    word_ids: z.array(z.number().int().min(0)).min(2).max(48).optional().describe("Or words, each a beat in"),
+    columns: z.number().int().min(1).max(8).optional().describe("Tiles per row; 4 for a wide film, 6 for a tall one"),
+    width: z.number().int().min(320).max(1280).optional().describe("Tile width, 640 by default"),
+  },
+}, async ({ every_seconds, at_seconds, word_ids, columns, width }) => {
+  const dir = currentProjectDir();
+  const args = [];
+  if (every_seconds !== undefined) args.push(`--every=${every_seconds}`);
+  else if (word_ids) args.push(`--word=${word_ids.join(",")}`);
+  else if (at_seconds) args.push(`--at=${at_seconds.join(",")}`);
+  else throw new Error("give every_seconds, at_seconds or word_ids");
+  if (columns !== undefined) args.push(`--columns=${columns}`);
+  if (width !== undefined) args.push(`--width=${width}`);
+  return ok(await runFrame(dir, args));
 });
 
 server.registerTool("set_captions", {
