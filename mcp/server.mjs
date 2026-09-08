@@ -1374,10 +1374,12 @@ server.registerTool("describe_templates", {
   },
 }, async ({ persona }) => {
   const format = projectFormatSafe();
+  const who = persona ?? (PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : undefined);
   return ok({
     format,
+    persona: who ?? "all",
     note: "full: true takes the whole stage (pair it with a cutaway or full layout; over focus it covers the face); full: false sits in the layout's content rect beside the head. A template's own default is the right one unless you have a reason. The example on each is a complete params object.",
-    templates: describeTemplates({ persona }),
+    templates: describeTemplates({ persona: who }),
   });
 });
 
@@ -1736,6 +1738,8 @@ server.registerTool("status", {
   state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
   state.clean = cleanSummary(dir);
   state.stale = staleness(dir);
+  // Who this session was started as, when the launcher said.
+  state.persona = PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : null;
   // What is in out/ that a person would hand over: the film, previews, the
   // caption files, the thumbnail, the chapter list, the credits.
   state.deliverables = outputs(dir).map(({ name, kind, bytes }) => ({ name, kind, bytes }));

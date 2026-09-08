@@ -660,6 +660,52 @@ function savedBounds() {
   return visible ? saved : null;
 }
 
+// A look at the window without a display. FABULA_SNAPSHOT=<dir> opens the
+// app headless (pass --ozone-platform=headless --no-sandbox --no-zygote on
+// the command line), captures the home screen, the Assistant sheet, and — a
+// project opened — the Export step, writes them as PNGs and quits. It is how
+// the window is checked from a machine that cannot show it.
+const SNAPSHOT_DIR = process.env.FABULA_SNAPSHOT || null;
+
+async function snapshotWindow(window) {
+  const contents = window.webContents;
+  const shots = [];
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const shoot = async (name) => {
+    const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+    const file = path.join(SNAPSHOT_DIR, `${name}.png`);
+    fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
+    shots.push(file);
+  };
+  const run = (code) => contents.executeJavaScript(code).catch((error) => { console.error(`snapshot: ${error.message}`); return null; });
+  try {
+    fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+    await new Promise((resolve) => contents.once("did-finish-load", resolve));
+    if (!contents.isPainting()) contents.startPainting();
+    contents.debugger.attach("1.3");
+    await wait(1500);
+    await shoot("1-home");
+    await run(`document.getElementById("open-assistant").click(); true`);
+    await wait(900);
+    await shoot("2-assistant");
+    await run(`document.getElementById("assistant").close(); true`);
+    const project = process.env.FABULA_SNAPSHOT_PROJECT;
+    if (project) {
+      await run(`window.fabula.switchProject(${JSON.stringify(project)})`);
+      await wait(2500);
+      await shoot("3-project");
+      await run(`document.getElementById("tab-export").click(); true`);
+      await wait(1200);
+      await shoot("4-export");
+    }
+    console.log(JSON.stringify({ snapshots: shots }));
+  } catch (error) {
+    console.error(`snapshot failed: ${error.message}`);
+  } finally {
+    app.exit(0);
+  }
+}
+
 function createWindow() {
   const bounds = savedBounds();
   const window = new BrowserWindow({
@@ -684,8 +730,10 @@ function createWindow() {
       // preload cannot load files. Isolation stays on; the page gets no node.
       sandbox: false,
       nodeIntegration: false,
+      ...(SNAPSHOT_DIR ? { offscreen: true, backgroundThrottling: false } : {}),
     },
   });
+  if (SNAPSHOT_DIR) snapshotWindow(window);
   if (bounds?.maximized) window.maximize();
   window.once("ready-to-show", () => window.show());
   window.on("close", () => {

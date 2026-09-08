@@ -74,13 +74,14 @@ export function buildLaunch(options, root = ROOT, node = process.execPath) {
       "-c", `mcp_servers.fabula.args=${JSON.stringify([server])}`,
       "-c", `mcp_servers.fabula.cwd=${JSON.stringify(root)}`,
       "-c", "mcp_servers.fabula.enabled=true",
+      "-c", `mcp_servers.fabula.env={FABULA_PERSONA=${JSON.stringify(persona)}}`,
       "-c", "mcp_servers.fabula.tool_timeout_sec=60");
     if (effort) args.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
   } else {
     // Only the fabula server: the checked-in .mcp.json would register it a second
     // time, and the user's other MCP servers would spend the editing session's
     // context on tool schemas the film never needs.
-    args.push("--mcp-config", JSON.stringify({ mcpServers: { fabula: { command: node, args: [server] } } }),
+    args.push("--mcp-config", JSON.stringify({ mcpServers: { fabula: { command: node, args: [server], env: { FABULA_PERSONA: persona } } } }),
       "--strict-mcp-config", "--append-system-prompt", INVARIANTS);
     if (effort) args.push("--effort", effort);
   }

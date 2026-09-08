@@ -203,6 +203,17 @@ in WSL under Claude Code or Codex; the Instrumenta launcher only opens the windo
 
 ## Development
 
+To look at the window from a machine that cannot show it (a WSL shell, a CI box), run it headless
+and let it photograph itself:
+
+```bash
+FABULA_SNAPSHOT=/tmp/snap FABULA_SNAPSHOT_PROJECT=<project> \
+  node_modules/electron/dist/electron --no-sandbox --no-zygote --ozone-platform=headless --disable-gpu .
+```
+
+It writes the home screen, the Assistant sheet and, with a project named, the open project and its
+Export step as PNGs, then quits.
+
 ```bash
 npm install
 npm test              # core cut-engine suite (pure node, no tools needed)

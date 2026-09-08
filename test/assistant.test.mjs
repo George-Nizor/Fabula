@@ -34,6 +34,9 @@ test("model IDs remain literal arguments; provider effort mappings and default i
   assert.match(composing.args.at(-1), /adopt_persona with persona "editor"/);
   const farming = buildLaunch({ provider: "codex", model: "", effort: "", persona: "farmer" });
   assert.equal(farming.persona, "farmer");
+  assert.ok(farming.args.includes('mcp_servers.fabula.env={FABULA_PERSONA="farmer"}'), "codex's server learns the persona");
+  const claudeFarming = buildLaunch({ provider: "claude", model: "", effort: "", persona: "farmer" });
+  assert.ok(JSON.parse(claudeFarming.args[claudeFarming.args.indexOf("--mcp-config") + 1]).mcpServers.fabula.env.FABULA_PERSONA === "farmer", "claude's server learns the persona");
   assert.match(farming.args.at(-1), /short-form editor cutting for a feed/);
   assert.ok(farming.args.at(-1).startsWith(INVARIANTS), "the invariants still lead Codex's first message");
   assert.throws(() => buildLaunch({ provider: "claude", model: "", effort: "", persona: "influencer" }), /persona must be one of/);
