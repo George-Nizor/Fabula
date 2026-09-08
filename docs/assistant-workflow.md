@@ -213,6 +213,7 @@ on it like any other.
 
 Tuning that matters on real recordings: `cut_pass` at the default 0.6 s minimum pause reads
 fast-cut on a conversational speaker — 0.8–1.0 s keeps the natural beats. Say which you chose.
+The first pass already proposes the editorial cuts beside the pauses and fillers;
 `story_cuts` adds the cuts an editor makes from reading — the preamble before the film promises
 anything, a false start said again at once, a stuttered word, a retake (the same sentence said
 again within half a minute; the earlier one goes) — as proposals the person toggles

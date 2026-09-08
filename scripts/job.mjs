@@ -16,6 +16,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { validateFraming } from "../core/framing-engine.mjs";
+import { editorialCuts } from "../core/story-engine.mjs";
+import { normalizeCuts } from "../core/cut-engine.mjs";
 import { ceilingOf } from "../core/formats.mjs";
 import { readProjectMeta } from "./project-state.mjs";
 import {
@@ -159,8 +161,22 @@ const steps = {
       report("Proposing cuts");
       const transcript = readJson(transcriptFile);
       const review = computeReview(transcript, video.path, probeDuration(video.path), { minGapSeconds: 0.8 });
+      // The cuts an editor makes from reading, as proposals beside the
+      // pauses and fillers: the preamble, a false start, a stutter, a retake.
+      // The person toggles them in the Cut step like the rest.
+      const byId = new Map(review.words.map((word) => [word.id, word]));
+      const pad = 0.04;
+      const editorial = editorialCuts(review.words).map((cut) => {
+        const first = byId.get(cut.fromWordId);
+        const last = byId.get(cut.toWordId);
+        return {
+          start: Math.max(first.start - pad, 0), end: last.end + pad, reason: cut.reason, detail: cut.detail, enabled: true,
+          wordIds: review.words.filter((word) => word.start >= first.start && word.end <= last.end).map((word) => word.id),
+        };
+      });
+      review.cuts = normalizeCuts([...review.cuts, ...editorial]);
       fs.writeFileSync(reviewFile, JSON.stringify(review, null, 2));
-      say(`proposed ${review.cuts.length} cuts at a 0.8 s minimum pause`);
+      say(`proposed ${review.cuts.length} cuts at a 0.8 s minimum pause${editorial.length ? `, ${editorial.length} of them from the words (${[...new Set(editorial.map((c) => c.reason))].join(", ")})` : ""}`);
     }
   },
 
