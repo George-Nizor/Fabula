@@ -972,7 +972,7 @@ const fmtWhen = (iso) => {
   return d.toDateString() === new Date().toDateString() ? `today ${time}` : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 };
 const STAGE_NAMES = { first_pass: "The first pass", render_clean: "The clean cut", render_final: "The film", transcribe: "The transcript", retranscribe: "The clean transcript", refresh_clean: "The clean cut", framing: "The framing scan" };
-const KIND_LABELS = { film: "film", clean: "clean cut", preview: "preview", captions: "captions" };
+const KIND_LABELS = { film: "film", clean: "clean cut", preview: "preview", captions: "captions", thumbnail: "thumbnail", chapters: "chapters", credits: "credits" };
 const CAPTION_FILES = {
   none: "No captions.",
   open: "Captions burned into the picture. The Look step sets the style.",
@@ -1102,7 +1102,7 @@ function renderExportPage() {
       tr.append(make("td", "export-file-name", `<span class="export-kind is-${o.kind}">${KIND_LABELS[o.kind]}</span>${esc(o.name)}`));
       tr.append(make("td", "export-file-meta", `${fmtBytes(o.bytes)} · ${fmtWhen(o.modifiedAt)}`));
       const td = make("td", "export-file-actions");
-      if (o.kind !== "captions") td.append(actionButton("Play", () => window.fabula.openOutput(o.path), { small: true }));
+      if (o.kind !== "captions") td.append(actionButton(["thumbnail", "chapters", "credits"].includes(o.kind) ? "Open" : "Play", () => window.fabula.openOutput(o.path), { small: true }));
       td.append(actionButton("Show in folder", () => window.fabula.reveal(o.path), { small: true }));
       tr.append(td);
       table.append(tr);

@@ -210,7 +210,7 @@ export function outputs(dir) {
   const outDir = path.join(dir, "out");
   if (!fs.existsSync(outDir)) return [];
   return fs.readdirSync(outDir)
-    .filter((name) => /^(final|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name))
+    .filter((name) => /^(final|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md)$/i.test(name))
     .map((name) => {
       const file = path.join(outDir, name);
       const stat = fs.statSync(file);
@@ -219,7 +219,8 @@ export function outputs(dir) {
         path: file,
         bytes: stat.size,
         modifiedAt: stat.mtime.toISOString(),
-        kind: name === "final.mp4" ? "film" : name === "clean.mp4" ? "clean" : name.endsWith(".mp4") ? "preview" : "captions",
+        kind: name === "final.mp4" ? "film" : name === "clean.mp4" ? "clean" : name.endsWith(".mp4") ? "preview"
+          : name.endsWith(".png") ? "thumbnail" : name === "chapters.txt" ? "chapters" : name === "credits.md" ? "credits" : "captions",
       };
     })
     .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));

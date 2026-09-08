@@ -44,6 +44,7 @@ import {
   logTail,
   lastJobStage,
   staleness,
+  outputs,
   jobSpec,
   launchJob,
   listProjects, describeProject, PROJECT_NAME_RE, readProjectMeta, writeProjectTitle, writeProjectFormat, projectFormat, slugify, cleanTitle,
@@ -1547,6 +1548,9 @@ server.registerTool("status", {
   state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
   state.clean = cleanSummary(dir);
   state.stale = staleness(dir);
+  // What is in out/ that a person would hand over: the film, previews, the
+  // caption files, the thumbnail, the chapter list, the credits.
+  state.deliverables = outputs(dir).map(({ name, kind, bytes }) => ({ name, kind, bytes }));
   return ok(state);
 });
 
