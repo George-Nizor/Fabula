@@ -157,3 +157,17 @@ export function keepSegments(cuts, durationSeconds) {
 export function totalCutSeconds(cuts) {
   return normalizeCuts(cuts.filter((cut) => cut.enabled)).reduce((sum, cut) => sum + (cut.end - cut.start), 0);
 }
+
+// A cut the person drew over words in the window: the first word's start to
+// the last word's end, merged into the list like any other. A merge with a
+// disabled proposal must not disable what was just asked for.
+export function addWordCut(cuts, words, wordIds) {
+  const chosen = words.filter((word) => wordIds.includes(word.id)).sort((a, b) => a.start - b.start);
+  if (chosen.length === 0) throw new Error("no words to cut");
+  const start = chosen[0].start;
+  const end = chosen.at(-1).end;
+  const manual = { start, end, enabled: true, sources: [{ start, end, reason: "manual", wordIds: chosen.map((word) => word.id), enabled: true }] };
+  const merged = normalizeCuts([...cuts, manual]);
+  for (const cut of merged) if (cut.start <= start + 0.001 && cut.end >= end - 0.001) cut.enabled = true;
+  return merged;
+}

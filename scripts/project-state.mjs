@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { flattenWords } from "../core/cut-engine.mjs";
+import { resolveFormat, ceilingOf, validateFormat } from "../core/formats.mjs";
 import {
   REPO_ROOT,
   cleanPlan,
@@ -16,7 +17,7 @@ import {
   startJob,
 } from "./pipeline.mjs";
 
-export const JOB_STAGES = ["render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean"];
+export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean"];
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
@@ -107,6 +108,11 @@ export function currentCleanPlan(dir, { dims = null } = {}) {
     framing,
     dims: framing ? null : (dims ?? probeDimensions(paths.video)),
     source: sourceRecord(dir),
+    // The delivery shape caps the head track. A vertical film crops its head
+    // at compose time, so its ceiling has room for a crop that is not an
+    // upscale — and headOutputSize never grows past the source, so a 1080p
+    // recording gets exactly the track it always did.
+    ceiling: ceilingOf(readProjectMeta(dir)),
   });
 }
 
@@ -235,6 +241,7 @@ export function jobSpec(kind, dir, options = {}) {
   if (kind === "retranscribe") return { stage: "retranscribe", label: "Transcribing the clean cut", program: "node", args: [job, "retranscribe", dir] };
   if (kind === "transcribe") return { stage: "transcribe", label: "Transcribing on the GPU", program: "node", args: [job, "transcribe", dir] };
   if (kind === "refresh") return { stage: "refresh_clean", label: "Refreshing the clean cut", program: "node", args: [job, "refresh_clean", dir] };
+  if (kind === "first") return { stage: "first_pass", label: "The first pass", program: "node", args: [job, "first_pass", dir] };
   if (kind === "final") {
     const args = ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", join(root, "scripts", "export-compose.cjs")];
     if (options.from !== undefined || options.to !== undefined) {
@@ -274,6 +281,130 @@ export function shellLine(spec, { root, node = "node" }) {
   const command = spec.program === "electron" ? path.posix.join(root, "node_modules", "electron", "dist", "electron") : node;
   const env = Object.entries(spec.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(" ");
   return `cd ${quote(root)} && ${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
+}
+
+// ---- Projects, plural ----
+//
+// A project is a folder under media/ that stages a recording. Its stage is
+// read from what is on disk, the same files status reports, so the window's
+// project list and the assistant's list_projects never disagree.
+export const PROJECT_STAGES = [
+  ["final", "film rendered", (paths) => fs.existsSync(paths.final)],
+  // A compose.json holding only a look is not a composition. A short is made
+  // with its parent's theme already in it and no scenes at all, and reporting
+  // that as "composed" would tell the person the work was done.
+  ["composed", "scenes planned", (paths) => hasScenes(paths.compose)],
+  ["clean", "clean cut rendered", (paths) => fs.existsSync(paths.clean)],
+  ["cut", "cuts proposed", (paths) => fs.existsSync(paths.review)],
+  ["transcribed", "transcribed", (paths) => fs.existsSync(paths.transcript)],
+  ["staged", "waiting for a first pass", () => true],
+];
+
+export const PROJECT_NAME_RE = /^[a-z0-9][a-z0-9-_]*$/i;
+
+function hasScenes(file) {
+  try { return (readJson(file).scenes ?? []).length > 0; } catch { return false; }
+}
+
+// The person's name for a project lives in <dir>/project.json; the folder is
+// a slug of it that never has to change, so renaming moves nothing.
+export function readProjectMeta(dir) {
+  try {
+    const meta = readJson(path.join(dir, "project.json"));
+    return meta && typeof meta === "object" ? meta : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeProjectTitle(dir, title) {
+  const clean = cleanTitle(title);
+  writeProjectMeta(dir, { title: clean });
+  return clean;
+}
+
+function writeProjectMeta(dir, patch) {
+  const meta = { ...readProjectMeta(dir), ...patch };
+  fs.writeFileSync(path.join(dir, "project.json"), JSON.stringify(meta, null, 2) + "\n");
+  return meta;
+}
+
+// The shape the film is delivered in. It decides the stage the composition is
+// painted on and the ceiling the clean cut is encoded at, so it is chosen when
+// the project is created and lives beside the title rather than in the look.
+// Changing it later is legitimate — the scene plan means the same thing in
+// either shape — but it makes the clean cut stale, because the ceiling moved.
+export function projectFormat(dir) {
+  return resolveFormat(readProjectMeta(dir)).id;
+}
+
+export function writeProjectFormat(dir, format) {
+  return writeProjectMeta(dir, { format: validateFormat(format) }).format;
+}
+
+export function cleanTitle(title) {
+  const clean = String(title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!clean) throw new Error("A project needs a name.");
+  return clean;
+}
+
+// A folder name from a title: lowercase ASCII letters, digits and dashes.
+export function slugify(title) {
+  const slug = String(title ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return PROJECT_NAME_RE.test(slug) ? slug : `project-${Date.now().toString(36)}`;
+}
+
+// One project as the list shows it. `videoPresent` lets the caller check the
+// footage where it runs: the window on Windows maps the WSL path first.
+export function describeProject(dir, { videoPresent = (file) => fs.existsSync(file) } = {}) {
+  try {
+    if (!fs.statSync(dir).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const video = stagedVideo(dir);
+  if (!video) return null;
+  const paths = projectPaths(dir);
+  const [stage, stageLabel] = PROJECT_STAGES.find(([, , reached]) => reached(paths));
+  const touched = [paths.review, paths.compose, paths.transcript, paths.cleanTranscript, paths.framing,
+    paths.clean, paths.final, path.join(dir, "source.json"), path.join(dir, "progress.json")]
+    .map((file) => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } });
+  const latest = Math.max(...touched);
+  let bytes = null;
+  try { bytes = readJson(path.join(dir, "source.json")).bytes ?? null; } catch { /* staged copy */ }
+  let present = false;
+  try { present = Boolean(videoPresent(video)); } catch { present = false; }
+  const meta = readProjectMeta(dir);
+  const format = resolveFormat(meta);
+  return {
+    name: path.basename(dir),
+    title: typeof meta.title === "string" && meta.title.trim() ? meta.title.trim() : path.basename(dir),
+    format: format.id,
+    formatLabel: format.label,
+    shortForm: format.shortForm,
+    // Where this one came from, when it was cut out of a longer film.
+    derivedFrom: typeof meta.derivedFrom === "string" ? meta.derivedFrom : null,
+    video,
+    videoName: path.basename(video),
+    videoPresent: present,
+    bytes,
+    stage,
+    stageLabel,
+    modifiedAt: latest > 0 ? new Date(latest).toISOString() : null,
+  };
+}
+
+// Every project under media/, most recently touched first. Folders that stage
+// nothing (themes, spikes) are not projects and are left out.
+export function listProjects(mediaRoot, options = {}) {
+  let names;
+  try { names = fs.readdirSync(mediaRoot); } catch { return []; }
+  return names
+    .filter((name) => PROJECT_NAME_RE.test(name))
+    .map((name) => describeProject(path.join(mediaRoot, name), options))
+    .filter(Boolean)
+    .sort((a, b) => (b.modifiedAt ?? "").localeCompare(a.modifiedAt ?? "") || a.title.localeCompare(b.title));
 }
 
 export { flattenWords };

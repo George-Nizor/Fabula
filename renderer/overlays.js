@@ -87,6 +87,10 @@ function applyTheme(frameEl, theme) {
     if (/^(theme|field|caption|titlecase)-/.test(cls)) frameEl.classList.remove(cls);
   }
   frameEl.classList.add(`theme-${theme.preset}`, `field-${theme.fieldStyle}`, `caption-${theme.captionStyle}`, `titlecase-${theme.titleCase}`);
+  // Dark type over footage needs a halo where light type needs a shadow.
+  // Which one is a property of the field, not a list of preset names — the
+  // rule has to hold for a brand nobody has invented yet.
+  if (luminance(theme.field[1]) > 0.5) frameEl.classList.add("field-light");
 }
 
 // A slow pool of accent light drifting across the field — deterministic in
@@ -121,14 +125,19 @@ function punchAt(compose, t) {
 // callouts place themselves into real empty space instead of crossing the
 // footage — the smarts that keep production titles readable and the speaker
 // unobscured, in preview and export alike.
-function freeColumns(videoRect, stage) {
+//
+// The head's rectangle is clamped to the stage first. A cutaway parks it
+// three canvases to the left (so ffmpeg's overlay clips it for nothing),
+// and taking that literally put the wide column at x = -3840: every title
+// and callout over a cutaway was drawn off the side of the film. When the
+// head is hidden there is no column, only the whole stage.
+function freeColumns(videoRect, stage, headHidden) {
   if (!videoRect || !stage) return null;
-  const left = { x: 0, w: Math.max(videoRect.x, 0), side: "left" };
-  const right = {
-    x: videoRect.x + videoRect.w,
-    w: Math.max(stage.width - videoRect.x - videoRect.w, 0),
-    side: "right",
-  };
+  const on = (x) => Math.min(Math.max(x, 0), stage.width);
+  const from = headHidden ? 0 : on(videoRect.x);
+  const to = headHidden ? 0 : on(videoRect.x + videoRect.w);
+  const left = { x: 0, w: from, side: "left" };
+  const right = { x: to, w: stage.width - to, side: "right" };
   const wide = right.w > left.w ? right : left;
   const narrow = wide === right ? left : right;
   const usable = (col) => (col.w >= stage.width * 0.16 ? col : null);
@@ -492,6 +501,27 @@ function animateTitle(node, part) {
       bar.style.transform = `scaleY(${r3(e)})`;
       node.style.transform = "";
       break;
+    case "underline":
+      setOpacity(node, Math.min(e * 4, 1));
+      bar.style.transform = `scaleX(${r3(e)})`;
+      node.style.transform = `translateY(${r3((1 - e) * 1.2)}cqh)`;
+      break;
+    case "boxed": {
+      const b = easeOutBack(e);
+      setOpacity(node, Math.min(e * 3, 1));
+      bar.style.transform = `scaleX(${r3(Math.max(b, 0))})`;
+      text.style.opacity = String(r2(window01(e, 0.25, 0.5)));
+      if (sub) sub.style.opacity = String(r2(window01(e, 0.35, 0.5)));
+      node.style.transform = "";
+      break;
+    }
+    case "kicker":
+      setOpacity(node, e);
+      bar.style.transform = `scaleX(${r3(easeOut(Math.min(e * 1.6, 1)))})`;
+      text.style.transform = `translateY(${r3((1 - e) * 1.6)}cqh)`;
+      if (sub) sub.style.opacity = String(r2(window01(e, 0.2, 0.6)));
+      node.style.transform = "";
+      break;
     case "block": {
       const b = easeOutBack(e);
       setOpacity(node, Math.min(e * 4, 1));
@@ -530,6 +560,16 @@ function animateCallout(node, part) {
       setOpacity(node, Math.min(e * 3, 1));
       node.style.transform = `translateX(${r3((1 - easeOutBack(e)) * 2)}cqw)`;
       break;
+    case "bar":
+      setOpacity(node, Math.min(e * 3, 1));
+      node.style.transform = `translateX(${r3((1 - easeOut(e)) * 2.5)}cqw)`;
+      break;
+    case "bubble": {
+      const b = easeOutBack(e);
+      setOpacity(node, Math.min(e * 3, 1));
+      node.style.transform = `scale(${r3(0.72 + b * 0.28)})`;
+      break;
+    }
     default:
       setOpacity(node, e);
       node.style.transform = `translateY(${r3((1 - e) * 1.5)}cqh)`;
@@ -685,6 +725,7 @@ function animateGraphic(card, part) {
 
 function placeInColumn(node, column, stage, maxShare) {
   if (!column || !stage) return;
+  if (column.bottom !== undefined) node.style.bottom = pct(column.bottom, stage.height);
   const pad = stage.width * 0.03;
   node.style.left = pct(column.x + pad, stage.width);
   node.style.right = "auto";
@@ -706,6 +747,9 @@ function build(part, stage) {
         node.style.left = pct(part.column.x + pad, stage.width);
         node.style.right = "auto";
         node.style.width = pct(part.column.w - pad * 2, stage.width);
+        // A band also says how high: it is the room ABOVE the card, and a
+        // title that ignored that would sit on top of it.
+        if (part.column.bottom !== undefined) node.style.bottom = pct(part.column.bottom, stage.height);
       }
       return node;
     }
@@ -737,6 +781,7 @@ function build(part, stage) {
 function animate(node, part, stage, theme) {
   if (part.accent) node.style.setProperty("--ov-accent", part.accent);
   if (part.kind === "shadow") {
+    node.style.opacity = String(part.alpha ?? 1);
     node.style.left = pct(part.rect.x, stage.width);
     node.style.top = pct(part.rect.y, stage.height);
     node.style.width = pct(part.rect.w, stage.width);
@@ -766,11 +811,27 @@ window.FabulaStage = {
   plan(compose, t, layout) {
     const theme = compose.theme?.preset ? compose.theme : { ...FALLBACK_THEME, ...(compose.theme ?? {}) };
     const stage = compose.stage ?? null;
-    const columns = layout && stage ? freeColumns(layout.video, stage) : null;
+    const columns = layout && stage ? freeColumns(layout.video, stage, layout.headHidden) : null;
     const contentRect = layout?.content ?? null;
+    const alpha = layout?.alpha ?? 1;
+    // In a tall frame the head spans the width, so there is no column beside
+    // it and a title falling to its default place lands on top of whatever
+    // card is showing. The free room there is the BAND above the content rect;
+    // it is only needed while something actually occupies that rect.
+    const cardShowing = (compose.scenes ?? []).some((scene) =>
+      scene.type === "graphic" && scene.start <= t && t < scene.end
+      && !(FULL_STAGE_KINDS.has(scene.graphic?.kind) && scene.graphic.full !== false));
+    const band = !columns?.wide && cardShowing && contentRect && stage
+      ? { x: contentRect.x, w: contentRect.w, side: "band", bottom: stage.height - contentRect.y + stage.height * 0.025 }
+      : null;
     const parts = [];
-    if (layout && stage) {
-      parts.push({ key: "shadow", kind: "shadow", layer: "under", rect: roundRect(layout.video) });
+    // The head's shadow belongs to the head: it fades with it, and while the
+    // head is away there is nothing for it to be the shadow of. Its opacity
+    // is quantised to twentieths — the export captures a new plate for this
+    // layer every time the signature changes, and a soft drop shadow under a
+    // fading head does not need thirty of them per boundary.
+    if (layout && stage && alpha > 0.005) {
+      parts.push({ key: "shadow", kind: "shadow", layer: "under", rect: roundRect(layout.video), alpha: Math.round(alpha * 20) / 20 });
     }
     let screen = null;
     const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
@@ -807,7 +868,7 @@ window.FabulaStage = {
       } else if (scene.type === "title") {
         const style = scene.style ?? theme.titleStyle;
         const enter = presenceAt(t, scene.start, scene.end, 0.36, 0.28);
-        const part = { key, kind: "title", layer: "over", style, text: scene.text, subtitle: scene.subtitle ?? null, accent: scene.accent, enter, flair: scene.flair ? r3(p) : null, column: columns?.wide ?? null };
+        const part = { key, kind: "title", layer: "over", style, text: scene.text, subtitle: scene.subtitle ?? null, accent: scene.accent, enter, flair: scene.flair ? r3(p) : null, column: columns?.wide ?? band };
         if (style === "typewriter") {
           const typeSeconds = Math.min(1.4, (scene.end - scene.start) * 0.5);
           const typed = Math.floor(clamp01((t - scene.start) / typeSeconds) * scene.text.length);
@@ -820,7 +881,7 @@ window.FabulaStage = {
         // A callout's default corner is the top right; a brand mark there
         // pushes it down below the mark.
         const avoid = theme.logo?.corner === "tr" ? Math.round((theme.logo.size * stage.width * 0.35 + stage.height * 0.06) / stage.height * 100) : null;
-        parts.push({ key, kind: "callout", layer: "over", style, text: scene.text, accent: scene.accent, enter: presenceAt(t, scene.start, scene.end, 0.3, 0.25), column: columns?.narrow ?? columns?.wide ?? null, avoid });
+        parts.push({ key, kind: "callout", layer: "over", style, text: scene.text, accent: scene.accent, enter: presenceAt(t, scene.start, scene.end, 0.3, 0.25), column: columns?.narrow ?? columns?.wide ?? band, avoid });
       }
     }
     if (captionAt && !captionEaten && theme.captionStyle !== "none") {
@@ -893,6 +954,10 @@ window.FabulaStage = {
     const { stage, layout, screen, theme } = plan;
     if (layout && stage && headEl) {
       const rect = layout.video;
+      // The export drives the head's mask with the same number from the same
+      // engine (headExpressions in core/render-plan.mjs), so a dissolve in
+      // the window is the dissolve in the film.
+      headEl.style.opacity = String(layout.alpha ?? 1);
       headEl.style.left = pct(rect.x, stage.width);
       headEl.style.top = pct(rect.y, stage.height);
       headEl.style.width = pct(rect.w, stage.width);

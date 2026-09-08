@@ -2,10 +2,11 @@
   "name": "fabula",
   "version": "0.1.0",
   "private": true,
-  "description": "Transcript-driven talking-head video editor: automatic cuts, Claude-planned visuals, reviewed before anything renders.",
+  "description": "Transcript-driven talking-head video editor with Claude Code or Codex: reviewed before anything renders.",
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
+    "assistant": "node scripts/assistant.mjs",
     "test": "node --test test/*.test.mjs",
     "spike": "electron --no-sandbox --no-zygote scripts/spike-offscreen-capture.cjs",
     "setup:tools": "bash scripts/setup-tools.sh"
@@ -15,6 +16,8 @@
     "electron": "^38.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
   }
 }

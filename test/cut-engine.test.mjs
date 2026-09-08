@@ -8,6 +8,7 @@ import {
   keepSegments,
   totalCutSeconds,
 } from "../core/cut-engine.mjs";
+import { addWordCut } from "../core/cut-engine.mjs";
 
 function word(id, text, start, end) {
   return { id, text, start, end };
@@ -95,4 +96,19 @@ test("keepSegments drops slivers shorter than 50ms", () => {
     { start: 5.01, end: 9.99, enabled: true },
   ];
   assert.deepEqual(keepSegments(cuts, 10.0), []);
+});
+
+test("a cut drawn over words spans them exactly, merges with neighbours, and stays enabled", () => {
+  const words = [
+    { id: 0, text: "so", start: 0.0, end: 0.3 }, { id: 1, text: "anyway", start: 0.35, end: 0.9 },
+    { id: 2, text: "the", start: 1.0, end: 1.2 }, { id: 3, text: "point", start: 1.25, end: 1.7 },
+  ];
+  const kept = [{ start: 0.3, end: 0.35, enabled: false, sources: [{ start: 0.3, end: 0.35, reason: "silence", wordIds: [], enabled: false }] }];
+  const cuts = addWordCut(kept, words, [1, 0]);
+  assert.equal(cuts.length, 1, "the manual cut and the adjacent kept pause merged");
+  assert.equal(cuts[0].start, 0.0);
+  assert.equal(cuts[0].end, 0.9);
+  assert.equal(cuts[0].enabled, true, "what was asked for is cut, even merged with a kept pause");
+  assert.ok(cuts[0].sources.some((source) => source.reason === "manual" && source.wordIds.join() === "0,1"));
+  assert.throws(() => addWordCut([], words, [99]), /no words/);
 });

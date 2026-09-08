@@ -11,7 +11,7 @@ function path_isAbsoluteLike(p) {
   return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\");
 }
 
-import { LAYOUTS, PIP_CORNERS } from "./stage-engine.mjs";
+import { LAYOUTS, PIP_CORNERS, TRANSITIONS, resolveLayoutTimeline } from "./stage-engine.mjs";
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
@@ -137,6 +137,9 @@ export function validateScenes(scenes, words) {
       if (!LAYOUTS.has(scene.layout)) throw new Error(`${at}: unknown layout "${scene.layout}"`);
       if (scene.corner !== undefined && !PIP_CORNERS.has(scene.corner)) {
         throw new Error(`${at}: unknown corner "${scene.corner}"`);
+      }
+      if (scene.transition !== undefined && !TRANSITIONS.has(scene.transition)) {
+        throw new Error(`${at}: transition must be one of ${[...TRANSITIONS].join(", ")}`);
       }
     } else if (scene.type === "kinetic") {
       // Kinetic rides the transcript's own words; it carries no text.
@@ -354,4 +357,105 @@ export function subtitleFile(captions, format, from = 0, to = Infinity) {
     return ["WEBVTT", "", ...cues.map((cue, i) => `${i + 1}\n${timecode(cue.start, ".")} --> ${timecode(cue.end, ".")}\n${cue.text}\n`)].join("\n");
   }
   return cues.map((cue, i) => `${i + 1}\n${timecode(cue.start, ",")} --> ${timecode(cue.end, ",")}\n${cue.text}\n`).join("\n");
+}
+
+// ---- Does the film change its picture? ----
+//
+// The rule "the same card kind twice running reads as a template" is written
+// down in the workflow, but a document read at the start of a session is far
+// from the moment a plan is written. This reads the plan itself and says what
+// it sees, in the set_scenes result, where it can still be acted on. Pure and
+// deterministic: the same plan always draws the same notes.
+
+const at = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+
+// Runs of the same value in a row, as [{ value, from, to, length }].
+function runsOfSame(items, valueOf) {
+  const runs = [];
+  for (const item of items) {
+    const value = valueOf(item);
+    const last = runs.at(-1);
+    if (last && last.value === value) { last.to = item; last.length += 1; }
+    else runs.push({ value, from: item, to: item, length: 1 });
+  }
+  return runs;
+}
+
+// Moments where the camera is off and nothing is on the stage.
+//
+// A cutaway is a promise that a visual carries the narration. When the plan
+// does not keep it the film shows an empty field — and the dwell rule now
+// bridges away the momentary return to camera that used to paper over a gap
+// between two cards, which makes the hole visible instead of a flash. Either
+// is a fault; this one is at least reported before it renders.
+export function uncoveredCutaways(scenes, durationSeconds = 0, options = {}) {
+  const timeline = resolveLayoutTimeline(scenes, durationSeconds, options);
+  const covering = scenes
+    .filter((scene) => scene.type === "graphic" || scene.type === "kinetic")
+    .sort((a, b) => a.start - b.start);
+  const holes = [];
+  for (const span of timeline.filter((s) => s.layout === "cutaway")) {
+    let cursor = span.start;
+    for (const scene of covering) {
+      if (scene.end <= cursor || scene.start >= span.end) continue;
+      if (scene.start > cursor) holes.push([cursor, Math.min(scene.start, span.end)]);
+      cursor = Math.max(cursor, scene.end);
+      if (cursor >= span.end) break;
+    }
+    if (cursor < span.end) holes.push([cursor, span.end]);
+  }
+  // A couple of frames is a rounding artefact of word timings, not a hole.
+  return holes.filter(([from, to]) => to - from > 0.12).map(([from, to]) => ({ start: Number(from.toFixed(2)), end: Number(to.toFixed(2)) }));
+}
+
+export function describeVariety(scenes, durationSeconds = 0) {
+  const notes = [];
+  const cards = scenes.filter((scene) => scene.type === "graphic" && scene.graphic?.kind);
+  const staged = scenes.filter((scene) => scene.type === "stage" && scene.layout);
+
+  for (const run of runsOfSame(cards, (scene) => scene.graphic.kind)) {
+    if (run.length >= 3) {
+      notes.push(`${run.length} ${run.value} cards in a row, ${at(run.from.start)}–${at(run.to.end)}. The same card kind twice running reads as a template; change the shape or let the head hold the frame between them.`);
+    }
+  }
+  for (const run of runsOfSame(staged, (scene) => scene.layout)) {
+    if (run.length >= 4) {
+      notes.push(`${run.length} ${run.value} layouts in a row, ${at(run.from.start)}–${at(run.to.end)}. Move between the head alone, a side card, the screen and the full stage.`);
+    }
+  }
+  if (cards.length >= 4) {
+    const counts = new Map();
+    for (const card of cards) counts.set(card.graphic.kind, (counts.get(card.graphic.kind) ?? 0) + 1);
+    const [kind, count] = [...counts].sort((a, b) => b[1] - a[1])[0];
+    if (count / cards.length > 0.5) {
+      notes.push(`${count} of ${cards.length} cards are ${kind}. The kit has chart, stat, list, image, quote, compare, steps, ring, logos, and custom for anything it has no shape for.`);
+    }
+  }
+  // Judge the actual screen arrangement, not just the names of cards.
+  const timeline = resolveLayoutTimeline(scenes, durationSeconds);
+  const durations = new Map();
+  for (const span of timeline) durations.set(span.layout, (durations.get(span.layout) ?? 0) + span.end - span.start);
+  const sideSeconds = (durations.get("side") ?? 0) + (durations.get("pip") ?? 0);
+  if (durationSeconds >= 45 && sideSeconds / durationSeconds > 0.45) {
+    notes.push(`Presenter beside graphics occupies ${Math.round(100 * sideSeconds / durationSeconds)}% of the film. Different card kinds can still repeat the same composition; consider camera-free cutaways and purposeful presenter returns.`);
+  }
+  if (durationSeconds >= 60 && staged.length && !(durations.get("cutaway") > 0)) {
+    notes.push("The camera never leaves the stage. full still includes a corner camera; use cutaway when a visual should carry the narration alone.");
+  }
+  const wholeStage = scenes.some((scene) => ["full", "cutaway"].includes(scene.layout) || ["cover", "section"].includes(scene.graphic?.kind));
+  if (durationSeconds >= 180 && !wholeStage) {
+    notes.push(`No moment owns the whole stage in ${at(durationSeconds)}. A section heading or a cover marks a change of subject and lets the film breathe.`);
+  }
+  // A long silence between visuals is its own kind of sameness.
+  let previousEnd = 0;
+  const quiet = [];
+  for (const scene of [...scenes].sort((a, b) => a.start - b.start)) {
+    if (scene.start - previousEnd >= 90) quiet.push([previousEnd, scene.start]);
+    previousEnd = Math.max(previousEnd, scene.end);
+  }
+  if (durationSeconds - previousEnd >= 90) quiet.push([previousEnd, durationSeconds]);
+  for (const [from, to] of quiet) {
+    notes.push(`Nothing but the head from ${at(from)} to ${at(to)} (${Math.round((to - from) / 60)} min).`);
+  }
+  return notes;
 }

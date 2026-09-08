@@ -6,3 +6,9 @@ media/
 *.log
 .DS_Store
 probe-frame.png
+.assistant-preferences.json
+.assistant-preferences.json.*.tmp
+.assistant-session.lock
+fabula.settings.json
+fabula.settings.json.*.tmp
+__pycache__/

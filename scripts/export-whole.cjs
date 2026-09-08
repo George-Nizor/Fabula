@@ -42,6 +42,8 @@ async function main() {
   const { flattenWords } = await import(pathToFileURL(path.join(REPO_ROOT, "core", "cut-engine.mjs")).href);
   const engine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "compose-engine.mjs")).href);
   const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
+  const themes = await import(pathToFileURL(path.join(REPO_ROOT, "core", "themes.mjs")).href);
+  const formats = await import(pathToFileURL(path.join(REPO_ROOT, "core", "formats.mjs")).href);
   const { probeDuration, probeDimensions } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
 
   const cleanVideo = path.join(projectDir, "out", "clean.mp4");
@@ -53,7 +55,9 @@ async function main() {
   const duration = probeDuration(cleanVideo);
   const dims = probeDimensions(cleanVideo);
   const videoAspect = dims.width / dims.height;
-  const stage = stageEngine.DEFAULT_STAGE;
+  const stage = formats.stageOf((() => {
+    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
+  })());
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
   for (const scene of scenes) {
     if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(projectDir, scene.graphic.src)).href;
@@ -67,7 +71,7 @@ async function main() {
     stage,
     theme: composeFile.theme ?? null,
   };
-  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration);
+  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, (({ transition, transitionSeconds }) => ({ transition, transitionSeconds }))(themes.resolveTheme(composeFile.theme ?? null)));
 
   const from = Math.max(Number(flag("from") ?? 0), 0);
   const to = Math.min(Number(flag("to") ?? duration), duration);

@@ -8,6 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -181,4 +182,59 @@ test("caption modes read the old booleans and write subtitle files re-timed to t
   assert.ok(vtt.startsWith("WEBVTT\n"));
   assert.ok(vtt.includes("00:00:01.250 --> 00:00:03.900\nwe did it."), "a span re-times from its own zero");
   assert.ok(!vtt.includes("Well, guys"), "cues outside the span are dropped");
+});
+
+test("the variety read names repetition, concentration, a flat stage and dead stretches", () => {
+  const card = (kind, start, end) => ({ type: "graphic", graphic: { kind }, start, end });
+  const stage = (layout, start, end) => ({ type: "stage", layout, start, end });
+
+  const repetitive = describeVariety([card("chart", 10, 20), card("chart", 30, 40), card("chart", 50, 60), card("chart", 70, 80)], 600);
+  assert.ok(repetitive.some((note) => /4 chart cards in a row/.test(note)), repetitive.join(" | "));
+  assert.ok(repetitive.some((note) => /4 of 4 cards are chart/.test(note)));
+  assert.ok(repetitive.some((note) => /owns the whole stage/.test(note)));
+  assert.ok(repetitive.some((note) => /Nothing but the head/.test(note)));
+
+  const varied = describeVariety([
+    card("chart", 10, 20), card("quote", 30, 40), stage("full", 50, 60), card("cover", 50, 60),
+    card("list", 70, 80), card("stat", 95, 110),
+  ], 130);
+  assert.equal(varied.length, 1);
+  assert.match(varied[0], /camera never leaves/);
+
+  // Two in a row is a pair, not a template; four identical layouts is.
+  assert.deepEqual(describeVariety([card("stat", 0, 5), card("stat", 6, 10), card("list", 11, 15)], 60), []);
+  const flat = describeVariety([stage("side", 0, 5), stage("side", 6, 10), stage("side", 11, 15), stage("side", 16, 20)], 60);
+  assert.ok(flat.some((note) => /4 side layouts in a row/.test(note)), flat.join(" | "));
+});
+
+
+test("different cards do not disguise a presenter-side layout dominating the film", () => {
+  const scenes = ["steps", "compare", "custom"].flatMap((kind, i) => [
+    { type: "stage", layout: "side", start: i * 25, end: i * 25 + 22 },
+    { type: "graphic", graphic: { kind }, start: i * 25, end: i * 25 + 22 },
+  ]);
+  const notes = describeVariety(scenes, 90);
+  assert.ok(notes.some(n => /Presenter beside graphics/.test(n)));
+  assert.ok(notes.some(n => /camera never leaves/.test(n)));
+  const revised = describeVariety([{ type: "stage", layout: "cutaway", start: 0, end: 45 }], 90);
+  assert.ok(!revised.some(n => /camera never leaves/.test(n)));
+});
+
+// The dwell rule bridges away a momentary return to camera between two
+// cards. That is right — a third of a second of presenter is a flash — but
+// it turns a papered-over gap into a hole, and a hole in a cutaway is an
+// empty stage. So the hole is reported instead of being rendered quietly.
+test("a cutaway with nothing over part of it is reported", () => {
+  const card = (start, end) => ({ type: "graphic", start, end, graphic: { kind: "list", items: [{ label: "x" }] } });
+  const cutaway = (start, end) => ({ type: "stage", layout: "cutaway", start, end });
+  const holes = uncoveredCutaways([cutaway(10, 30), card(10, 19.8), card(20.2, 30)], 60);
+  assert.deepEqual(holes, [{ start: 19.8, end: 20.2 }]);
+  // Covered end to end: nothing to say.
+  assert.deepEqual(uncoveredCutaways([cutaway(10, 30), card(10, 30)], 60), []);
+  // A couple of frames is word timing, not a hole.
+  assert.deepEqual(uncoveredCutaways([cutaway(10, 30), card(10, 19.95), card(20, 30)], 60), []);
+  // The camera being on is never a hole, however bare the stage.
+  assert.deepEqual(uncoveredCutaways([{ type: "stage", layout: "side", start: 10, end: 30 }], 60), []);
+  // A cutaway the plan forgot entirely is one hole, end to end.
+  assert.deepEqual(uncoveredCutaways([cutaway(10, 30)], 60), [{ start: 10, end: 30 }]);
 });

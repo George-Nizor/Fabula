@@ -1,5 +1,53 @@
 # Fabula — product brief
 
+## Delivery shape and short-form (2026-09-07)
+
+A project is created landscape (16:9) or vertical (9:16) and records it in `project.json` beside
+its title. `core/formats.mjs` is the one place a shape is defined: the stage the composition is
+painted on, the ceiling the clean cut is encoded at, and whether the piece is short-form.
+
+Two decisions worth not re-litigating.
+
+**The crop is compose-time, not render-time.** A vertical film's clean cut is still the head at
+its own framing; `core/stage-engine.mjs` gives a portrait `focus` a window the head must cover,
+and the head is cropped to fill it when the film is composed. Cropping at `render_clean` would
+have been sharper from a 4K source and would have made the `band` layout — the whole recording,
+in its own shape, for a moment a crop would ruin — impossible, and would have made changing your
+mind about a shot re-render the cut. The ceiling for the vertical format is raised instead
+(`3840×1920`), so a recording that has the pixels keeps them and a 1080p one encodes exactly as
+it always did.
+
+Contain and cover are one rule, not two: `headDrawRect` covers the window, and a window that is
+already the footage's shape crops nothing. That is what makes a glide between a `band` and a
+`focus` continuous — the crop grows from nothing as the window's shape diverges — and it is why
+the export needs the `max()` inside the ffmpeg expression rather than two pre-computed rects.
+
+**A short is a project, not an output.** `create_short` writes a new project that references the
+same recording and inherits the long film's cut list with everything outside the span removed
+(`core/clip-engine.mjs`, `scripts/shorts.mjs`). Its clean cut is therefore rendered from the
+original footage and can be framed for the new shape. The look travels; the scene plan does not.
+The alternative — shorts as extra outputs of the parent project — would have needed a nested
+editing UI and a second set of tools for something the existing four steps already do.
+
+`suggest_clips` is a shortlist, not a decision: it scores runs of whole sentences on length,
+opening, ending, claim density and subject cohesion, and prints the reason beside each. It is
+deliberately explainable rather than clever, because the person has to be able to disagree with
+it from the text.
+
+## Current assistant integration (2026-09-07)
+
+Fabula supports Claude Code and Codex through the same stdio MCP server and shared
+`docs/assistant-workflow.md`. `npm run assistant` starts a companion CLI session with a
+provider, exact model ID and reasoning effort; preferences are remembered per provider.
+The UI is provider-neutral. Media, project formats and rendering are shared. The launcher
+uses session-only MCP configuration and existing CLI authentication, with no API dependency.
+Run it in WSL/Linux; the review window can run on Windows. Only one assistant controls the
+checkout at a time. Model/effort availability is checked by the provider, not hardcoded here.
+
+The older Claude-only cost and embedded-SDK descriptions below are historical. Current cost
+scope is existing Claude/ChatGPT subscriptions plus local hardware. Embedded chat is still
+not implemented; the window inbox is serviced by a listening companion session.
+
 Fabula turns a raw talking-head recording into a finished, animated video: pauses and fillers cut,
 visuals appearing beside the speaker that match what is being said, at Claude Design quality. It is
 the successor to the ambition behind Motus — automated video editing — rebuilt around a transcript

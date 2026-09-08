@@ -107,6 +107,7 @@ async function main() {
   const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
   const shotEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "shot-engine.mjs")).href);
   const themes = await import(pathToFileURL(path.join(REPO_ROOT, "core", "themes.mjs")).href);
+  const formats = await import(pathToFileURL(path.join(REPO_ROOT, "core", "formats.mjs")).href);
   const plan = await import(pathToFileURL(path.join(REPO_ROOT, "core", "render-plan.mjs")).href);
   pipeline = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
   FFMPEG = pipeline.FFMPEG;
@@ -123,7 +124,12 @@ async function main() {
   const duration = probeDuration(cleanVideo);
   const dims = probeDimensions(cleanVideo);
   const videoAspect = dims.width / dims.height;
-  const stage = stageEngine.DEFAULT_STAGE;
+  // The canvas is the project's delivery format, so the capture windows, the
+  // field plate, the glow and every rectangle follow from one number.
+  const meta = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
+  })();
+  const stage = formats.stageOf(meta);
   const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
   for (const scene of scenes) {
@@ -149,7 +155,7 @@ async function main() {
     theme,
     punchSpans,
   };
-  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration);
+  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
 
   const from = Math.round(Math.max(Number(flag("from") ?? 0), 0) * FPS) / FPS;
   const to = Math.min(Number(flag("to") ?? duration), duration);

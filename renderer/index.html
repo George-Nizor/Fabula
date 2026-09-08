@@ -7,12 +7,17 @@
   <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="overlays.css" />
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
 </head>
 <body>
   <header class="topbar" id="topbar">
     <div class="brand">
       <img class="brand-mark" src="assets/fabula-mark.png" alt="" />
       <h1>Fabula</h1>
+      <button type="button" class="projbtn" id="project-menu" hidden title="Projects (Ctrl+Shift+O)">
+        <span class="projbtn-name" id="project-name"></span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5l3 3 3-3"></path></svg>
+      </button>
     </div>
     <nav class="stages" id="stages" hidden>
       <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum">1</span>Cut</button>
@@ -31,21 +36,159 @@
       <span class="stat is-accent"><b id="stat-clean"></b> clean</span>
     </div>
     <div class="panel-toggles">
-      <button type="button" class="panelbtn is-on" id="toggle-rail" title="Transcript panel" aria-label="Toggle transcript panel">
+      <button type="button" class="assistantbtn" id="open-assistant" title="Claude Code or Codex, in a pane in this window">
+        <svg class="assistantbtn-mark" width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 2.6l1.9 5.1a4 4 0 0 0 2.4 2.4l5.1 1.9-5.1 1.9a4 4 0 0 0-2.4 2.4L12 21.4l-1.9-5.1a4 4 0 0 0-2.4-2.4L2.6 12l5.1-1.9a4 4 0 0 0 2.4-2.4z" fill="currentColor"></path>
+          <circle cx="19.5" cy="4.5" r="1.9" fill="currentColor" opacity="0.75"></circle>
+          <circle cx="4.6" cy="19.4" r="1.3" fill="currentColor" opacity="0.55"></circle>
+        </svg>
+        <span class="assistantbtn-label">Assistant</span>
+        <span class="assistantbtn-dot" id="assistant-dot" hidden></span>
+      </button>
+      <button type="button" class="panelbtn is-on" id="toggle-rail" title="Transcript panel" aria-label="Transcript panel" hidden>
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg>
       </button>
-      <button type="button" class="panelbtn is-on" id="toggle-insp" title="Inspector panel" aria-label="Toggle inspector panel">
+      <button type="button" class="panelbtn is-on" id="toggle-insp" title="Inspector panel" aria-label="Inspector panel" hidden>
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M10 2.5v11"></path></svg>
       </button>
     </div>
   </header>
 
-  <section class="empty" id="empty">
-    <img class="empty-mark" src="assets/fabula-mark.png" alt="" />
-    <h2 id="empty-line">Drop a recording here to begin.</h2>
-    <p class="hint" id="empty-hint">Then ask Claude for a first pass. It transcribes, cuts and designs; you review here.</p>
-    <button type="button" class="button" id="open-file">Open a recording…</button>
+  <!-- Home: nothing open. Start a project, or open one. -->
+  <section class="home" id="home" hidden>
+    <div class="home-head">
+      <h2 id="home-projects-title">Projects</h2>
+      <button type="button" class="button is-primary" id="home-new">New project…</button>
+    </div>
+    <div class="projects-where">
+      <span class="projects-where-label">Stored in</span>
+      <button type="button" class="projects-where-path" id="home-root" title="Show this folder"></button>
+      <button type="button" class="linkbtn" id="home-root-change">Change…</button>
+      <button type="button" class="linkbtn" id="home-root-default" hidden>Use the default</button>
+    </div>
+    <ul class="projects-list" id="home-projects-list"></ul>
+    <p class="projects-empty" id="home-projects-empty" hidden>No projects yet.</p>
+    <p class="projects-status" id="home-status"></p>
   </section>
+
+  <!-- A project is open but has no transcript yet: the assistant's first pass is next. -->
+  <section class="empty" id="empty" hidden>
+    <img class="empty-mark" src="assets/fabula-mark.png" alt="" />
+    <h2 id="empty-line"></h2>
+    <p class="hint" id="empty-hint"></p>
+    <div class="empty-actions">
+      <button type="button" class="button is-primary" id="empty-firstpass">Run the first pass</button>
+      <button type="button" class="button is-quiet" id="empty-close">Back to projects</button>
+    </div>
+  </section>
+
+  <!-- The assistant's terminal, inside the window. -->
+  <aside class="assistant-pane" id="assistant-pane" hidden>
+    <header class="assistant-head">
+      <div class="assistant-who">
+        <b id="assistant-title">Assistant</b>
+        <span id="assistant-sub"></span>
+      </div>
+      <button type="button" class="insp-mini" id="assistant-stop" hidden>Stop</button>
+      <button type="button" class="insp-mini" id="assistant-again" hidden>Start</button>
+      <button type="button" class="panelbtn" id="assistant-hide" title="Hide the assistant pane" aria-label="Hide the assistant pane">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8"></path></svg>
+      </button>
+    </header>
+    <div class="assistant-term" id="assistant-term"></div>
+  </aside>
+
+  <!-- The masthead project menu. -->
+  <div class="menu" id="project-menu-pop" hidden>
+    <button type="button" class="menu-item" id="menu-rename">Rename project…</button>
+    <button type="button" class="menu-item" id="menu-reveal">Show project folder</button>
+    <button type="button" class="menu-item" id="menu-close">Close project</button>
+    <hr />
+    <button type="button" class="menu-item" id="menu-all">All projects…</button>
+  </div>
+
+  <dialog class="sheet" id="new-project">
+    <form method="dialog" class="sheet-form" id="new-project-form">
+      <header><h2>New project</h2><p>The recording is not copied. Fabula writes what it makes to a folder of its own.</p></header>
+      <label class="field">Recording
+        <div class="field-row">
+          <span class="field-path" id="new-path" data-empty="No recording chosen">No recording chosen</span>
+          <button type="button" class="button is-quiet" id="new-choose">Choose…</button>
+        </div>
+      </label>
+      <label class="field">Name
+        <input type="text" id="new-title" maxlength="80" autocomplete="off" spellcheck="false" />
+      </label>
+      <fieldset class="field choice" id="new-format">
+        <legend>Shape</legend>
+      </fieldset>
+      <p class="field-note" id="new-format-note"></p>
+      <p class="field-note" id="new-note"></p>
+      <footer class="sheet-foot">
+        <span class="projects-status" id="new-status"></span>
+        <button type="button" class="button is-quiet" id="new-cancel">Cancel</button>
+        <button type="submit" class="button is-primary" id="new-create">Create project</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="rename">
+    <form method="dialog" class="sheet-form" id="rename-form">
+      <header><h2>Rename project</h2></header>
+      <label class="field">Name
+        <input type="text" id="rename-title" maxlength="80" autocomplete="off" spellcheck="false" />
+      </label>
+      <footer class="sheet-foot">
+        <span class="projects-status" id="rename-status"></span>
+        <button type="button" class="button is-quiet" id="rename-cancel">Cancel</button>
+        <button type="submit" class="button is-primary">Rename</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="assistant">
+    <form method="dialog" class="sheet-form" id="assistant-form">
+      <header><h2 id="assistant-sheet-title">Start the assistant</h2><p id="assistant-sheet-note">Runs in a pane in this window, on your own subscription. One at a time.</p></header>
+      <fieldset class="field choice">
+        <legend>Assistant</legend>
+        <label class="radio"><input type="radio" name="provider" value="claude" /> <span><b>Claude Code</b><small>Anthropic · Claude subscription</small></span></label>
+        <label class="radio"><input type="radio" name="provider" value="codex" /> <span><b>Codex</b><small>OpenAI · ChatGPT subscription</small></span></label>
+      </fieldset>
+      <label class="field">Model
+        <select id="assistant-model"></select>
+      </label>
+      <label class="field" id="assistant-custom-wrap" hidden>Model ID
+        <input type="text" id="assistant-custom" autocomplete="off" spellcheck="false" placeholder="as the CLI accepts it" />
+      </label>
+      <label class="field">Reasoning effort
+        <select id="assistant-effort"></select>
+      </label>
+      <footer class="sheet-foot">
+        <span class="projects-status" id="assistant-status"></span>
+        <button type="button" class="button is-quiet" id="assistant-cancel">Cancel</button>
+        <button type="submit" class="button is-primary" id="assistant-start">Start</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="projects" id="projects">
+    <header class="projects-head">
+      <h2>Projects</h2>
+      <div class="projects-where">
+        <span class="projects-where-label">Stored in</span>
+        <button type="button" class="projects-where-path" id="projects-root" title="Show this folder"></button>
+        <button type="button" class="linkbtn" id="projects-root-change">Change…</button>
+        <button type="button" class="linkbtn" id="projects-root-default" hidden>Use the default</button>
+      </div>
+    </header>
+    <ul class="projects-list is-full" id="projects-list"></ul>
+    <footer class="projects-foot">
+      <button type="button" class="button" id="projects-new">New project…</button>
+      <button type="button" class="button is-quiet" id="projects-close-project">Close project</button>
+      <span class="projects-status" id="projects-status"></span>
+      <button type="button" class="button is-quiet" id="projects-dismiss">Done</button>
+    </footer>
+  </dialog>
 
   <main class="workspace" id="player" hidden>
     <aside class="rail">
@@ -68,28 +211,34 @@
       </div>
 
       <div id="insp-project">
+        <div class="insp-section insp-cta" id="insp-approve" hidden>
+          <b>Approve the cut</b>
+          <p>Renders the clean cut, then the assistant composes the film.</p>
+          <button type="button" class="button is-primary" id="approve-cut">Approve and compose</button>
+          <span class="insp-status" id="approve-status"></span>
+        </div>
         <div class="insp-section" id="insp-cut-summary" hidden>
-          <div class="insp-kv"><span>Proposed cuts</span><b id="sum-cuts"></b></div>
+          <div class="insp-kv"><span>Cuts</span><b id="sum-cuts"></b></div>
           <div class="insp-kv"><span>Removed</span><b id="sum-removed"></b></div>
           <div class="insp-kv"><span>Punch-ins</span><b id="sum-shots"></b></div>
           <div class="insp-kv"><span>Framing</span><b id="sum-framing"></b></div>
+          <div class="insp-kv"><span>Clean cut</span><b id="sum-clean"></b></div>
         </div>
-        <p class="insp-placeholder" id="insp-empty"></p>
-        <div class="insp-section" id="insp-ask">
-          <label class="insp-field">Ask Claude
-            <textarea id="ask-text" rows="3" placeholder="e.g. turn the price card into a chart of the three stages"></textarea>
-          </label>
+        <div class="insp-section" id="insp-selection" hidden>
+          <div class="insp-kv"><span>Selected</span><b id="sel-summary"></b></div>
+          <p class="insp-selected" id="sel-text"></p>
           <div class="insp-actions">
-            <button type="button" class="insp-mini" id="ask-send">send</button>
-            <span class="insp-status" id="ask-status"></span>
+            <button type="button" class="insp-mini is-strong" id="sel-cut">Cut selection</button>
+            <button type="button" class="insp-mini" id="sel-clear">Clear</button>
           </div>
         </div>
+        <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-keys">
           <span><kbd>space</kbd> play</span>
           <span><kbd>←</kbd><kbd>→</kbd> 2 s · <kbd>shift</kbd> 10 s</span>
           <span><kbd>,</kbd><kbd>.</kbd> one frame</span>
-          <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> back · stop · play, twice for faster</span>
-          <span><kbd>ctrl</kbd> + wheel zooms · drag the ruler to scrub</span>
+          <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> back · stop · forward</span>
+          <span><kbd>ctrl</kbd> + wheel zoom the timeline</span>
           <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut</span>
         </div>
       </div>
@@ -98,14 +247,14 @@
         <p class="insert-why" id="insert-why"></p>
         <div class="insert-options" id="insert-options"></div>
         <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insert-none">use nothing here</button>
+          <button type="button" class="insp-mini" id="insert-none">Use nothing here</button>
         </div>
         <label class="insp-field">Something else
-          <textarea id="insert-note" rows="3" placeholder="Say exactly what should go here. Claude adds it as an option."></textarea>
+          <textarea id="insert-note" rows="3" placeholder="What should go here instead."></textarea>
         </label>
         <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insert-note-send">send to Claude</button>
-          <button type="button" class="insp-mini" id="insert-close">deselect</button>
+          <button type="button" class="insp-mini" id="insert-note-send">Send</button>
+          <button type="button" class="insp-mini" id="insert-close">Deselect</button>
           <span class="insp-status" id="insert-status"></span>
         </div>
       </div>
@@ -117,10 +266,41 @@
         <label class="insp-field" id="insp-label-wrap">Caption
           <input type="text" id="insp-label" placeholder="none" />
         </label>
+        <label class="insp-field" id="insp-subtitle-wrap">Second line
+          <input type="text" id="insp-subtitle" placeholder="none" />
+        </label>
+        <label class="insp-field" id="insp-style-wrap">Style
+          <select id="insp-style"></select>
+        </label>
+        <label class="insp-field" id="insp-value-wrap">Value
+          <span class="insp-accent-row">
+            <input type="text" id="insp-prefix" class="is-tiny" placeholder="$" title="Before the number" />
+            <input type="number" id="insp-value" step="any" />
+            <input type="text" id="insp-suffix" class="is-tiny" placeholder="%" title="After the number" />
+          </span>
+        </label>
+        <label class="insp-field" id="insp-by-wrap">Attributed to
+          <input type="text" id="insp-by" placeholder="none" />
+        </label>
+        <label class="insp-field" id="insp-number-wrap">Chapter mark
+          <input type="text" id="insp-number" maxlength="6" placeholder="01" />
+        </label>
+        <label class="insp-field" id="insp-motion-wrap">Motion
+          <select id="insp-motion"></select>
+        </label>
+        <label class="insp-field" id="insp-picture-wrap">Picture
+          <span class="insp-accent-row">
+            <button type="button" class="insp-mini" id="insp-picture-pick">Choose…</button>
+            <span class="insp-swatch-value" id="insp-picture-name">none</span>
+          </span>
+        </label>
+        <label class="insp-field" id="insp-items-wrap">Rows
+          <textarea id="insp-items" rows="5" spellcheck="false" placeholder="One per line. For a chart: Label = 42"></textarea>
+        </label>
         <label class="insp-field" id="insp-accent-wrap">Accent
           <span class="insp-accent-row">
             <input type="color" id="insp-accent" />
-            <button type="button" class="insp-mini" id="insp-accent-clear">use project accent</button>
+            <button type="button" class="insp-mini" id="insp-accent-clear">Use project accent</button>
           </span>
         </label>
         <label class="insp-field" id="insp-layout-wrap">Layout
@@ -128,7 +308,16 @@
             <option value="focus">focus — large, centred</option>
             <option value="pip">pip — small corner card</option>
             <option value="side">side — head left, content right</option>
+            <option value="cutaway">cutaway — visual only, camera hidden</option>
             <option value="full">full — visuals own the stage, head small</option>
+          </select>
+        </label>
+        <label class="insp-field" id="insp-transition-wrap">Transition
+          <select id="insp-transition">
+            <option value="">the film's</option>
+            <option value="dissolve">dissolve</option>
+            <option value="glide">glide</option>
+            <option value="cut">cut</option>
           </select>
         </label>
         <label class="insp-field" id="insp-corner-wrap">Corner
@@ -140,12 +329,23 @@
           </select>
         </label>
         <label class="insp-field insp-check" id="insp-flair-wrap">
-          <input type="checkbox" id="insp-flair" /> burst flair
+          <input type="checkbox" id="insp-flair" /> Burst flair
         </label>
-        <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insp-close">deselect</button>
-          <span class="insp-status" id="insp-status"></span>
+        <div class="rail-label">Span<small id="insp-span-words"></small></div>
+        <div class="insp-actions is-nudge">
+          <span class="nudge-label">Start</span>
+          <button type="button" class="insp-mini is-nudge" id="insp-start-back" title="One word earlier">−</button>
+          <button type="button" class="insp-mini is-nudge" id="insp-start-fwd" title="One word later">+</button>
+          <span class="nudge-label">End</span>
+          <button type="button" class="insp-mini is-nudge" id="insp-end-back" title="One word earlier">−</button>
+          <button type="button" class="insp-mini is-nudge" id="insp-end-fwd" title="One word later">+</button>
         </div>
+        <div class="insp-actions">
+          <button type="button" class="insp-mini" id="insp-duplicate">Duplicate</button>
+          <button type="button" class="insp-mini is-danger" id="insp-remove">Remove</button>
+          <button type="button" class="insp-mini" id="insp-close">Deselect</button>
+        </div>
+        <span class="insp-status" id="insp-status"></span>
       </div>
     </aside>
   </main>
@@ -153,18 +353,34 @@
   <section class="page" id="look" hidden>
     <div class="page-main">
       <div class="page-head">
-        <h2>The look</h2>
-        <p class="page-lede">One choice for the whole film — and for every film after it, once you save it as a brand.</p>
+        <h2>Look</h2>
+        <p class="page-lede">Applies to the whole film. Every card below is drawn by the same painter that draws the film, so what you see is what renders. Save the result as a brand to start the next film from it.</p>
       </div>
       <div class="rail-label">Presets</div>
       <div class="gallery" id="look-presets"></div>
       <div class="rail-label">Your brands</div>
       <div class="gallery is-brands" id="look-brands"></div>
       <div class="insp-actions">
-        <button type="button" class="button is-small" id="look-save">Save this look as a brand…</button>
-        <button type="button" class="insp-mini" id="look-reset">reset to preset</button>
+        <button type="button" class="button is-small" id="look-save">Save as brand…</button>
+        <button type="button" class="insp-mini" id="look-reset">Reset to preset</button>
         <span class="insp-status" id="look-status"></span>
       </div>
+      <div class="rail-label">Titles<small>How a title arrives</small></div>
+      <div class="gallery is-options" id="look-titles"></div>
+      <div class="rail-label">Callouts<small>The short note beside the speaker</small></div>
+      <div class="gallery is-options" id="look-callouts"></div>
+      <div class="rail-label">Captions<small>The look of burned-in captions</small></div>
+      <div class="gallery is-options" id="look-captions"></div>
+      <div class="rail-label">Transitions<small>How the picture changes when the layout does</small></div>
+      <div class="gallery is-options" id="look-transitions"></div>
+      <label class="insp-field is-wide">Transition speed
+        <span class="slider-row">
+          <input type="range" id="theme-transition-seconds" min="0.3" max="1.8" step="0.1" />
+          <span class="insp-swatch-value" id="theme-transition-seconds-value"></span>
+        </span>
+      </label>
+      <div class="rail-label">Punch-ins<small>The alternating tighter shot that hides a jump cut</small></div>
+      <div class="gallery is-options" id="look-punch"></div>
     </div>
     <aside class="page-side">
       <div class="rail-label">Colours</div>
@@ -174,21 +390,25 @@
       <label class="insp-field">Second accent
         <span class="insp-accent-row"><input type="color" id="theme-accent2" value="#f28a32" /><span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span></span>
       </label>
-      <div class="rail-label">Type and motion</div>
-      <label class="insp-field">Titles
-        <select id="theme-title-style">
-          <option value="rise">rise</option><option value="slam">slam</option><option value="typewriter">typewriter</option><option value="wipe">wipe</option><option value="block">block — lower third</option>
-        </select>
+      <div class="rail-label">Type</div>
+      <label class="insp-field">Display face
+        <select id="theme-font-display"></select>
       </label>
-      <label class="insp-field">Callouts
-        <select id="theme-callout-style">
-          <option value="pill">pill</option><option value="tag">tag</option><option value="stamp">stamp</option><option value="note">note</option>
-        </select>
+      <label class="insp-field">Body face
+        <select id="theme-font-body"></select>
       </label>
-      <label class="insp-field">Punch-ins
-        <select id="theme-punch">
-          <option value="">off</option><option value="1.1">alternating 110%</option><option value="1.15">alternating 115%</option><option value="1.25">alternating 125%</option>
-        </select>
+      <label class="insp-field">Serif face
+        <select id="theme-font-serif"></select>
+      </label>
+      <label class="insp-field">Title case
+        <select id="theme-title-case"><option value="none">As written</option><option value="upper">UPPER CASE</option></select>
+      </label>
+      <div class="rail-label">Field</div>
+      <label class="insp-field">Corner rounding
+        <span class="slider-row"><input type="range" id="theme-radius" min="0" max="2" step="0.1" /><span class="insp-swatch-value" id="theme-radius-value"></span></span>
+      </label>
+      <label class="insp-field">Accent glow
+        <span class="slider-row"><input type="range" id="theme-glow" min="0" max="0.4" step="0.01" /><span class="insp-swatch-value" id="theme-glow-value"></span></span>
       </label>
       <div class="rail-label">Captions</div>
       <div class="segmented" id="theme-captions" role="radiogroup">
@@ -198,18 +418,13 @@
         <button type="button" data-value="both">Both</button>
       </div>
       <p class="field-note" id="captions-note"></p>
-      <label class="insp-field">Caption style
-        <select id="theme-caption-style">
-          <option value="pill">pill</option><option value="band">band</option><option value="karaoke">karaoke</option>
-        </select>
-      </label>
       <details class="insp-details">
-        <summary>Mark and handle (optional)</summary>
+        <summary>Mark and handle</summary>
         <label class="insp-field">Mark
           <span class="insp-accent-row">
-            <button type="button" class="insp-mini" id="theme-logo-pick">choose…</button>
+            <button type="button" class="insp-mini" id="theme-logo-pick">Choose…</button>
             <span class="insp-swatch-value" id="theme-logo-name">none</span>
-            <button type="button" class="insp-mini" id="theme-logo-clear" hidden>remove</button>
+            <button type="button" class="insp-mini" id="theme-logo-clear" hidden>Remove</button>
           </span>
         </label>
         <label class="insp-field" id="theme-logo-corner-wrap" hidden>Corner
@@ -227,21 +442,22 @@
   </section>
 
   <footer class="dock" id="dock" hidden>
+    <div class="dock-grip" id="dock-grip" title="Drag to make the timeline taller" role="separator" aria-label="Resize the timeline"><span></span></div>
     <div class="transport">
       <button id="playpause" type="button" class="playbtn" aria-label="Play">
         <svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>
       </button>
       <span class="time"><b id="time-now">0:00.0</b><span class="time-sep" id="time-sep"> · </span><span id="time-total"></span></span>
-      <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> skip cuts</label>
-      <button type="button" class="insp-mini" id="script-toggle" hidden>script</button>
-      <label class="toggle" id="captions-wrap" hidden>captions
+      <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> Skip cuts</label>
+      <button type="button" class="insp-mini" id="script-toggle" hidden>Script</button>
+      <label class="toggle" id="captions-wrap" hidden>Captions
         <select id="stage-captions"><option value="none">off</option><option value="open">burned in</option><option value="closed">CC file</option><option value="both">both</option></select>
       </label>
       <span class="zoomctl" id="zoomctl">
         <button type="button" class="zoombtn" id="zoom-out" title="Zoom out · ctrl + wheel over the timeline" aria-label="Zoom out">−</button>
         <span class="zoom-level" id="zoom-level" title="How much of the film the timeline shows">all</span>
         <button type="button" class="zoombtn" id="zoom-in" title="Zoom in · ctrl + wheel over the timeline" aria-label="Zoom in">+</button>
-        <button type="button" class="insp-mini" id="zoom-fit" title="Show the whole film">fit</button>
+        <button type="button" class="insp-mini" id="zoom-fit" title="Show the whole film">Fit</button>
       </span>
       <span class="transport-note" id="transport-note"></span>
     </div>
@@ -257,8 +473,10 @@
     </div>
   </footer>
 
-  <div class="dropzone" id="dropzone" hidden><div class="dropzone-card">Drop to open</div></div>
+  <div class="dropzone" id="dropzone" hidden><div class="dropzone-card">Drop to start a project</div></div>
 
+  <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="overlays.js"></script>
   <script src="main.js"></script>
 </body>

@@ -16,7 +16,16 @@ const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(REPO_ROOT, "renderer", "assets", "fonts");
 const CSS = path.join(REPO_ROOT, "renderer", "fonts.css");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36";
-const FAMILIES = ["Inter:wght@400..900", "Space+Grotesk:wght@400..700", "Fraunces:opsz,wght@9..144,400..900"];
+const FAMILIES = [
+  "Inter:wght@400..900",
+  "Space+Grotesk:wght@400..700",
+  "Fraunces:opsz,wght@9..144,400..900",
+  "Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900",
+  "Archivo:wght@400..900",            // grotesque with a wide weight range: broadcast
+  "Playfair+Display:wght@400..900",   // high-contrast serif: editorial titles
+  "DM+Sans:opsz,wght@9..40,400..900", // friendly geometric: explainers
+  "JetBrains+Mono:wght@400..800",     // the mono face: terminal looks, code, figures
+];
 
 fs.mkdirSync(OUT, { recursive: true });
 const faces = [];

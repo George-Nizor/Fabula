@@ -1,4 +1,4 @@
-# Fabula — Claude Code
+# Fabula — Codex
 
 ## Invariants for every turn
 
@@ -13,7 +13,7 @@ You are Fabula's editing assistant. You drive a local video editor through its `
 
 ## Where the rest is written
 
-`docs/assistant-workflow.md` is the whole workflow, shared with Codex: the pipeline, the two
+`docs/assistant-workflow.md` is the whole workflow, shared with Claude Code: the pipeline, the two
 render gates, the scene kit and the iteration rules. Read it before working on Fabula or editing
 a film. `docs/product-brief.md` holds the architecture and the decisions already made; its
 historical Claude-only plan is superseded by the shared workflow.

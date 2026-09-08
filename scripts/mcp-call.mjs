@@ -5,11 +5,13 @@
 //   node scripts/mcp-call.mjs set_cut_enabled '{"index":3,"enabled":false}'
 
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const [tool, rawArgs] = process.argv.slice(2);
+const [tool, rawArgs, argsFile] = process.argv.slice(2);
+const toolArgs = rawArgs === "--args-file" ? JSON.parse(fs.readFileSync(argsFile, "utf8")) : rawArgs ? JSON.parse(rawArgs) : {};
 if (!tool) {
   console.error("usage: node scripts/mcp-call.mjs <tool> [json-args]");
   process.exit(2);
@@ -26,7 +28,7 @@ try {
   // Renders and transcriptions run for minutes; the SDK's default 60s
   // request timeout is for conversations, not exports.
   const result = await client.callTool(
-    { name: tool, arguments: rawArgs ? JSON.parse(rawArgs) : {} },
+    { name: tool, arguments: toolArgs },
     undefined,
     { timeout: 3 * 60 * 60 * 1000 }
   );

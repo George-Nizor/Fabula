@@ -5,31 +5,135 @@ Raw footage in. A told story out.
 Fabula is a transcript-driven talking-head video editor: it transcribes a recording locally
 (WhisperX on CUDA), proposes cuts for dead air, fillers, and false starts, lets you review every
 cut as strikethrough text before anything renders, then plans and composites visuals around the
-speaker — with Claude as the editor in the loop, on the Max subscription.
+speaker — with your choice of Claude Code or Codex as the editor, using your existing subscription.
+
+## Projects
+
+Fabula opens on its home screen: **New project…** and the list of projects you already have.
+A project is a recording where it lives plus what Fabula makes from it (transcripts, cuts,
+scenes, renders) in a folder of its own; nothing is copied, a 19 GB recording included.
+
+**New project…** (Ctrl+N, or drop a recording anywhere on the window) asks for the recording, a
+name, and the shape it is delivered in — **Landscape** (16:9, 1920×1080) or **Vertical**
+(9:16, 1080×1920, for Shorts, Reels and TikTok). The shape is chosen here because the clean cut
+and every layout follow from it; `set_format` changes it later and says what that costs. The name is yours: it shows in the masthead, the window title and the project list, and
+you can change it at any time from the masthead menu or the pencil beside a project. The folder
+on disk is a slug of the name and never has to move, so renaming costs nothing.
+
+Click the project's name in the masthead for its menu: rename, show its folder, close it, or
+open the full list (Ctrl+Shift+O). Ctrl+W closes the open project. From the list you can open
+another project, show its folder, or move one to the recycle bin (the recording is never
+touched). The assistant has the same view through `list_projects`, `open_project`,
+`switch_project`, `rename_project` and `close_project`.
+
+Projects live in `media/` beside the checkout unless you say otherwise. The home screen and the
+list show where, and **Change…** lets you pick any folder, your Windows Videos folder included;
+Fabula offers to move the existing projects and saved themes there. The choice is kept in
+`fabula.settings.json` at the repository root as the path WSL sees (`/mnt/c/Users/…`), because
+the pipeline runs there and the window may run on Windows; both read the same file. A folder on
+the Windows side works, but renders are written to it through WSL, which is slower than the
+checkout's own disk.
+
+## Choose your assistant
+
+Click **Assistant** in Fabula's top bar. A sheet asks which assistant (Claude Code on your
+Claude subscription, or Codex on your ChatGPT subscription), which model, and which reasoning
+effort. The model list is real: Claude Code's aliases (fable, opus, sonnet), and for Codex the
+models your account can use, read from the CLI's own cache; either accepts a custom model ID.
+Your last choices are remembered per assistant. Press **Start** and the session opens in a
+terminal pane inside the window, its header naming exactly what was started. The CLI runs on
+the pipeline host (WSL from a Windows window) inside a real pseudo-terminal
+(`scripts/pty-bridge.py`, standard library only), with the window's choice passed as plain
+arguments to `scripts/assistant-run.sh`; nothing goes through a shell string. Hide the pane and
+the session keeps running; Stop ends it. Nothing opens outside the window.
+
+The same launcher also runs by hand from a WSL/Linux terminal in this folder:
+
+```bash
+npm run assistant                                         # asks provider, model and effort
+npm run assistant -- --saved                              # repeat your last selection
+npm run assistant -- --provider claude --model fable --effort high
+npm run assistant -- --provider codex --dry-run           # inspect without starting or saving
+```
+
+It connects Fabula's MCP tools for that session only, without editing global configuration;
+a Claude session gets only the `fabula` server. Install and sign into each CLI you want to use.
+The media tools run locally in WSL/Linux; the window can remain on Windows.
+
+To switch assistant, exit the old one and start again. Existing cuts, scenes and manual edits
+stay in the project; conversation history is separate. A session lock prevents two of these
+launchers controlling the checkout at once. Preferences live in gitignored
+`.assistant-preferences.json`.
+
+The assistant reads the open project, reports where it stands, and waits for you in its pane.
+Type to it there. It watches the window for insert-point choices only while it is listening,
+which it does after setting insert points or when you tell it to; say "stop listening" to get
+the pane back. Both assistants follow [the same editing workflow](docs/assistant-workflow.md).
+
+Whichever assistant you pick starts with the same brief. `core/assistant-brief.mjs` holds it,
+and it reaches the session four ways: Claude Code takes it as an appended system prompt, Codex
+leads its first message with it, `CLAUDE.md` and `AGENTS.md` carry it for the CLI that reads
+them, and the MCP server hands it to whichever client connects. A test fails if the copies
+drift. On top of that, `set_scenes` reads the plan back and reports what it sees — a run of one
+card kind, one kind dominating, no full-stage moment, a long stretch of nothing but the head —
+so the rule against a repetitive film arrives when the plan is written, not only at the start
+of the session. The look is reported the same way: an unset theme resolves to the default preset
+and looks decided, so `status`, `get_theme` and `set_scenes` all say plainly that nobody has
+chosen it yet, and name the brands you have saved.
+
+## Tall films, and shorts cut out of long ones
+
+A vertical project is not a landscape one rotated. The same layout names answer in both shapes
+and resolve to different rectangles: `focus` puts the head edge to edge, cropped to the tall
+frame; `side` puts it across the top half with the visual owning the bottom; `band` keeps the
+head **whole**, in the recording's own shape, for a wide moment a crop would ruin. Nothing is
+baked — the clean cut is always the head at its own framing, the crop happens when the film is
+composed, and changing your mind about a shot never re-renders anything.
+
+Once a long film is cut, the **Shorts** card in the Export step reads its transcript for the
+moments that could stand on their own: runs of whole sentences with the words in front of you and
+plain notes on each — *opens on a promise*, *opens on "it" — the viewer has to supply what it
+refers to*, *does not end on a full stop*, *no numbers, comparisons or claims in it*. Press
+**Make a vertical short** and that moment becomes a project of its own.
+
+The short references the same recording and inherits the long film's cut list with everything
+outside the span removed, so its clean cut is rendered from the original footage rather than
+cropped out of the finished composition — which is what lets it be framed for a tall frame. The
+look travels; the scene plan does not, because a composition written for a wide frame is the
+wrong composition for a tall one. Refresh its clean cut and compose it like any other project.
+The assistant has the same two tools, `suggest_clips` and `create_short`, and will argue with
+the shortlist rather than making all of it.
 
 Read [`docs/product-brief.md`](docs/product-brief.md) first: it holds the pipeline, the
 architecture, the decisions already made, and what has been proven or disproven.
 
 ## The working loop
 
-Fabula is a two-hander: the window is where you watch and tweak, Claude is who does the work.
+Fabula is a two-hander: the window is where you watch and tweak, the assistant does the work.
 
-1. **Open Fabula and drop a recording on it** (or use *Open a recording…*). The clip is opened
-   as a project where it lives — nothing is copied, a 19 GB recording included — and the window
-   says what to ask for next.
-2. **In a Claude Code session started in this folder** (`.mcp.json` registers the `fabula`
-   tools), say what you want in plain words: *"do a first pass on the open clip"*. Claude
-   transcribes on the GPU, finds where the head sits in the frame (a camera inset over a screen
-   recording, scene switches, pillarboxing), proposes cuts, renders the clean cut, re-transcribes
-   it, plans layouts and scenes, and renders the composition. The window shows each step as it
+1. **Open Fabula and start a project** (New project…, or drop a recording on the window) and
+   give it a name. The clip is referenced where it lives — nothing is copied, a 19 GB recording
+   included — and the window says what to ask for next.
+2. **The first pass runs by itself.** Creating the project starts it: the recording is
+   transcribed on the GPU, the frame is scanned for where the head sits, and cuts are proposed.
+   The window shows each step as it lands. Review the cuts in the Cut step: click a struck word
+   or pause to keep it, drag across words and cut them by hand. When the cut is right, press
+   **Approve the cut and compose** at the top of the inspector: the clean cut renders and the
+   assistant takes over (one is started for you if none is running). It sets the framing where
+   the scan needed a human eye, re-transcribes the clean cut, plans layouts and scenes, and
+   renders a one-minute preview for you to check before the whole film. The window shows each step as it
    runs and every result as it lands. The long steps are background jobs: they keep going if the
    session that started them ends, and the window keeps showing where they are.
 3. **Review in the window.** The top bar is four numbered steps. **Cut**: play with
    skip-preview, click struck words to keep them, watch the framing guides show what the render
    will pull. **Look**: the brand — a gallery of theme presets (Studio, Broadcast, Paper, Neon,
-   Mono), the brands you have saved for the channel, colours, title, callout and caption styles,
-   and the captions mode. **Scenes**: the film on the 1080p stage with the script tucked away in
-   a drawer; click timeline blocks and tweak text, accents and layouts in the inspector.
+   Mono, Ink, Slate, Signal, Dawn, Terminal, Bloom, Pastel), the brands you have saved for the
+   channel, and a gallery for every title, callout and caption style, every transition and every
+   punch-in — each card a live stage playing that option, drawn by the painter that draws the
+   film, so nothing is chosen from a name alone. **Scenes**: the film on the 1080p stage with the
+   script tucked away in a drawer; click a timeline block and the inspector gives you its text,
+   its style, a card's own fields, its word span, and duplicate or remove. Drag the top edge of
+   the transport to make the timeline taller.
    **Export**: render buttons, progress, what is out of date and why, and every file the renders
    wrote. Every change is saved to the project and previews immediately.
 
@@ -39,22 +143,20 @@ Fabula is a two-hander: the window is where you watch and tweak, Claude is who d
    period, Home and End do what they do in every editor.
 4. **Iterate by prompting.** *"Make the intro title punchier", "drop the chart, show the snail
    still longer", "this is for my YouTube channel: red accent, my logo top right, banded
-   captions", "put the Godot and Photopea logos next to where I mention them"* — Claude reads
+   captions", "put the Godot and Photopea logos next to where I mention them"* — the assistant reads
    the current plan and theme first (your tweaks included), changes only what you asked, fetches
    pictures from the web into the project when a logo or a still is wanted, and re-renders
-   behind the gate. Your manual edits and Claude's edits live in the same files, so neither side
+   behind the gate. Your manual edits and the assistant's edits live in the same files, so neither side
    tramples the other.
 
-Captions are a mode, not a switch: burned into the picture in the theme's caption style,
-closed (an SRT and a VTT are written beside every render for the player to offer as CC and the
-viewer to toggle), both, or none. The inspector's Captions select and the `set_captions` tool
-set it.
+Captions have four modes: burned into the picture in the look's caption style, closed (an SRT
+and a VTT beside every render, for the player to offer and the viewer to toggle), both, or none.
+The Look step and the `set_captions` tool set it.
 
-The loop can also be a conversation in the window. Ask Claude to mark the film with insert
-points instead of writing every scene: each one shows in the transcript and the timeline with a
-few ready-made options (a side card, the spoken words, a full-screen cover…). Hover to preview
-one on the stage, click to choose, or type what you want there and send it to Claude, who adds
-it as an option. The Ask Claude box in the inspector takes anything else in plain words.
+Ask the assistant to mark the film with insert points instead of writing every scene: each one
+shows in the transcript and the timeline with a few ready-made options (a side card, the spoken
+words, a full-screen cover). Hover to preview one on the stage, click to choose, or type what you
+want there and send it; the assistant adds it as an option. Anything larger, ask in its pane.
 
 The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `screen.mp4` the recording's
 screen track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4`
@@ -82,7 +184,7 @@ Fabula is a `native-bundle` product: `scripts/bootstrap-windows.ps1` deploys the
 runtime into `dist/windows/` beside a `fabula-bundle.json` that names this checkout as the app,
 and the launcher's Prepare button runs exactly that. Open mirrors the runtime to local disk once
 and launches it with the checkout as its argument, so edits here are live. The pipeline still runs
-in WSL under Claude Code; the launcher only opens the window.
+in WSL under Claude Code or Codex; the Instrumenta launcher only opens the window.
 
 ## Development
 

@@ -73,7 +73,7 @@ function normalise(file, ext, ffmpeg) {
 // a page's share image is found), page (always the share image), icon
 // (the site's icon at 256 px through Google's favicon service). Returns
 // the project-relative path and what was fetched.
-export async function fetchImage({ url, name, kind = "auto", assetsDir, ffmpeg }) {
+export async function fetchImage({ url, name, kind = "auto", attribution, assetsDir, ffmpeg }) {
   fs.mkdirSync(assetsDir, { recursive: true });
   let target = url;
   let via = "direct";
@@ -105,7 +105,9 @@ export async function fetchImage({ url, name, kind = "auto", assetsDir, ffmpeg }
   let file = path.join(assetsDir, `${base}.${ext}`);
   fs.writeFileSync(file, bytes);
   file = normalise(file, ext, ffmpeg);
-  return { file, src: `assets/${path.basename(file)}`, bytes: fs.statSync(file).size, via, source: target, type };
+  const metadata = { source: target, requestedUrl: url, ...(attribution ?? {}) };
+  fs.writeFileSync(`${file}.source.json`, JSON.stringify(metadata, null, 2) + "\n");
+  return { attribution: metadata, file, src: `assets/${path.basename(file)}`, bytes: fs.statSync(file).size, via, source: target, type };
 }
 
 // Wikimedia Commons file search: titles, licences, and PNG thumbnails at
@@ -144,5 +146,10 @@ export function listAssets(assetsDir) {
   if (!fs.existsSync(assetsDir)) return [];
   return fs.readdirSync(assetsDir)
     .filter((name) => /\.(png|jpe?g|webp|gif)$/i.test(name))
-    .map((name) => ({ src: `assets/${name}`, bytes: fs.statSync(path.join(assetsDir, name)).size }));
+    .map((name) => {
+      const sourceFile = path.join(assetsDir, `${name}.source.json`);
+      let attribution = null;
+      try { attribution = JSON.parse(fs.readFileSync(sourceFile, "utf8")); } catch {}
+      return { src: `assets/${name}`, bytes: fs.statSync(path.join(assetsDir, name)).size, attribution };
+    });
 }

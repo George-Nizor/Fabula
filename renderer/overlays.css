@@ -10,6 +10,13 @@
    player and the full-resolution export frame alike. */
 .stage-frame { container-type: size; }
 
+/* Both pages that draw the stage load this file. The window also loads
+   styles.css, which sets border-box globally; the export page does not, so
+   without this a card in the FILM is its rect plus its padding while the same
+   card in the WINDOW is its rect — a divergence between preview and export
+   that no expression test could catch, because it is not in the numbers. */
+.stage-frame, .stage-frame *, .stage-frame *::before, .stage-frame *::after { box-sizing: border-box; }
+
 /* The overlay layer is deliberately NOT a stacking context: its pieces take
    their place among the frame's other layers by z-index. Bottom to top:
    glow 0, screen track 1, cards and the head's shadow 2, the head 3, text 4.
@@ -57,7 +64,7 @@
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }
 
-.theme-paper .stage-shadow, .theme-mono .stage-shadow { box-shadow: 0 14px 40px rgba(31, 30, 29, 0.28); }
+.field-light .stage-shadow { box-shadow: 0 14px 40px rgba(31, 30, 29, 0.28); }
 
 .ov { position: absolute; }
 
@@ -83,12 +90,12 @@
   flex: none;
 }
 
-.ov-title-body { display: flex; flex-direction: column; gap: 0.8cqh; justify-content: center; }
+.ov-title-body { display: flex; flex-direction: column; gap: 0.8cqmin; justify-content: center; }
 
 .ov-title-text {
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 800;
-  font-size: 6cqh;
+  font-size: 6cqmin;
   line-height: 1.15;
   letter-spacing: 0.02em;
   color: var(--ov-text, #f0ede6);
@@ -99,7 +106,7 @@
 .ov-title-sub {
   font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
   font-weight: 500;
-  font-size: 3.2cqh;
+  font-size: 3.2cqmin;
   letter-spacing: 0.04em;
   color: var(--ov-accent, #d97757);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
@@ -109,9 +116,8 @@
 
 /* Light fields: dark type over the footage needs a halo in the paper's own
    colour where a dark theme uses a shadow. */
-.theme-paper .ov-title-text, .theme-mono .ov-title-text, .theme-paper .ov-title-sub, .theme-mono .ov-title-sub,
-.theme-paper .ov-kinetic, .theme-mono .ov-kinetic {
-  text-shadow: 0 0 0.35cqh var(--ov-ink, #ffffff), 0 0 0.35cqh var(--ov-ink, #ffffff), 0 0 1cqh var(--ov-ink, #ffffff), 0 0 2cqh var(--ov-ink, #ffffff);
+.field-light .ov-title-text, .field-light .ov-title-sub, .field-light .ov-kinetic {
+  text-shadow: 0 0 0.35cqmin var(--ov-ink, #ffffff), 0 0 0.35cqmin var(--ov-ink, #ffffff), 0 0 1cqmin var(--ov-ink, #ffffff), 0 0 2cqmin var(--ov-ink, #ffffff);
 }
 
 /* slam: the whole title lands from large; the bar grows up under it. */
@@ -135,15 +141,15 @@
   transform-origin: left center;
   z-index: -1;
 }
-.ov-title.style-block .ov-title-body { padding: 0.2cqh 0; }
+.ov-title.style-block .ov-title-body { padding: 0.2cqmin 0; }
 .ov-title.style-block .ov-title-text { color: var(--ov-on-accent, #ffffff); text-shadow: none; }
 .ov-title.style-block .ov-title-sub {
   color: var(--ov-text, #f0ede6);
   background: var(--ov-ink, #0b0e12);
   display: inline-block;
   align-self: flex-start;
-  padding: 0.5cqh 1.2cqw;
-  margin-top: 1cqh;
+  padding: 0.5cqmin 1.2cqw;
+  margin-top: 1cqmin;
   margin-left: -2cqw;
   border-radius: calc(0.4cqw * var(--ov-radius, 1));
   text-shadow: none;
@@ -155,12 +161,12 @@
   top: 6cqh;
   right: 4cqw;
   max-width: 36cqw;
-  padding: 2.2cqh 2cqw;
+  padding: 2.2cqmin 2cqw;
   border-radius: calc(1.2cqw * var(--ov-radius, 1));
   border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 60%, transparent);
   background: var(--ov-card, rgba(18, 23, 30, 0.82));
   font-family: var(--ov-font-serif, Georgia, serif);
-  font-size: 3.6cqh;
+  font-size: 3.6cqmin;
   line-height: 1.4;
   color: var(--ov-text, #f0ede6);
   transform-origin: center;
@@ -172,9 +178,9 @@
   border: none;
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 700;
-  font-size: 3.4cqh;
+  font-size: 3.4cqmin;
   letter-spacing: 0.02em;
-  padding: 1.6cqh 2cqw 1.6cqh 2.6cqw;
+  padding: 1.6cqmin 2cqw 1.6cqmin 2.6cqw;
   border-radius: calc(0.6cqw * var(--ov-radius, 1));
   transform-origin: right center;
 }
@@ -201,9 +207,9 @@
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 4cqh;
+  font-size: 4cqmin;
   line-height: 1.1;
-  padding: 1.4cqh 1.8cqw;
+  padding: 1.4cqmin 1.8cqw;
   border-radius: calc(0.8cqw * var(--ov-radius, 1));
   text-shadow: none;
   box-shadow: 0 0 0 0.35cqw color-mix(in srgb, var(--ov-accent, #d97757) 18%, transparent);
@@ -214,10 +220,10 @@
   color: #2b2418;
   border: none;
   font-family: var(--ov-font-serif, Georgia, serif);
-  font-size: 3.5cqh;
-  padding: 2.4cqh 2.2cqw 2.8cqh;
+  font-size: 3.5cqmin;
+  padding: 2.4cqmin 2.2cqw 2.8cqmin;
   border-radius: 0.3cqw;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), inset 0 -0.4cqh 0 rgba(0, 0, 0, 0.06);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), inset 0 -0.4cqmin 0 rgba(0, 0, 0, 0.06);
   transform-origin: center top;
 }
 
@@ -227,10 +233,105 @@
   left: 50%;
   top: -1.2cqh;
   width: 8cqw;
-  height: 2.2cqh;
+  height: 2.2cqmin;
   margin-left: -4cqw;
   background: color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
   transform: rotate(-2deg);
+}
+
+/* underline: no bar; a rule grows under the words. Editorial. */
+.ov-title.style-underline { gap: 0; }
+.ov-title.style-underline .ov-title-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: -1.2cqh;
+  width: auto;
+  height: 0.6cqmin;
+  border-radius: 0;
+  transform-origin: left center;
+}
+.ov-title.style-underline .ov-title-text { font-weight: 700; letter-spacing: 0; }
+
+/* boxed: the words sit inside a card of the field's own ink, the accent a
+   thin key line. Reads on any footage without shouting. */
+.ov-title.style-boxed { gap: 0; }
+.ov-title.style-boxed .ov-title-bar {
+  position: absolute;
+  inset: -1.6cqh -2.2cqw;
+  width: auto;
+  background: var(--ov-card, rgba(11, 14, 18, 0.88));
+  border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 70%, transparent);
+  border-radius: calc(1cqw * var(--ov-radius, 1));
+  transform-origin: left center;
+  z-index: -1;
+}
+.ov-title.style-boxed .ov-title-text { font-size: 5.4cqmin; text-shadow: none; }
+.ov-title.style-boxed .ov-title-sub { text-shadow: none; }
+
+/* kicker: the subtitle becomes a small accent label ABOVE the line, the way
+   a magazine sets a standfirst. The bar is a short accent dash beside it. */
+.ov-title.style-kicker { flex-direction: column; align-items: flex-start; gap: 0.9cqmin; }
+.ov-title.style-kicker .ov-title-bar {
+  width: 5cqw;
+  height: 0.5cqmin;
+  border-radius: calc(0.25cqmin * var(--ov-radius, 1));
+  transform-origin: left center;
+}
+.ov-title.style-kicker .ov-title-body { flex-direction: column-reverse; gap: 0.6cqmin; }
+.ov-title.style-kicker .ov-title-sub {
+  font-weight: 700;
+  font-size: 2.4cqmin;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* ---- Callouts, continued ---- */
+
+/* bar: a solid accent rule down the left, text on the field. No card. */
+.ov-callout.style-bar {
+  background: color-mix(in srgb, var(--ov-ink, #0b0e12) 55%, transparent);
+  border: none;
+  border-left: 0.7cqw solid var(--ov-accent, #d97757);
+  border-radius: 0;
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-weight: 600;
+  font-size: 3.4cqmin;
+  padding: 1.8cqmin 2cqw 1.8cqmin 1.8cqw;
+  transform-origin: left center;
+}
+.field-light .ov-callout.style-bar { background: color-mix(in srgb, var(--ov-ink, #ffffff) 82%, transparent); }
+
+/* bubble: a rounded speech bubble with a tail, for a friendly aside. */
+.ov-callout.style-bubble {
+  background: var(--ov-accent, #d97757);
+  color: var(--ov-on-accent, #ffffff);
+  border: none;
+  border-radius: 3cqw;
+  font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
+  font-weight: 600;
+  font-size: 3.4cqmin;
+  padding: 2cqmin 2.4cqw;
+  transform-origin: bottom right;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.ov-callout.style-bubble::after {
+  content: "";
+  position: absolute;
+  right: 3cqw;
+  bottom: -1.6cqh;
+  border: 1cqmin solid transparent;
+  border-top-color: var(--ov-accent, #d97757);
+  border-bottom: 0;
+}
+
+/* plain: no plate at all, just weighted type with a halo. */
+.ov-caption.style-plain {
+  background: none;
+  padding: 0.4cqmin 1cqw;
+  font-weight: 800;
+  text-shadow: 0 0.2cqmin 0.6cqmin rgba(0, 0, 0, 0.95), 0 0 2cqmin rgba(0, 0, 0, 0.8);
+}
+.field-light .ov-caption.style-plain {
+  text-shadow: 0 0 0.35cqmin var(--ov-ink, #ffffff), 0 0 1cqmin var(--ov-ink, #ffffff), 0 0 2cqmin var(--ov-ink, #ffffff);
 }
 
 /* ---- Captions ---- */
@@ -242,10 +343,10 @@
   transform-origin: center bottom;
   font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
   font-weight: 700;
-  font-size: 5cqh;
+  font-size: 5cqmin;
   color: var(--ov-text, #f0ede6);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
-  padding: 0.6cqh 1.6cqw;
+  padding: 0.6cqmin 1.6cqw;
   border-radius: calc(0.8cqw * var(--ov-radius, 1));
   background: color-mix(in srgb, var(--ov-ink, #0b0e12) 58%, transparent);
   white-space: nowrap;
@@ -257,17 +358,17 @@
   bottom: 0;
   transform: none;
   text-align: center;
-  padding: 1.4cqh 4cqw;
+  padding: 1.4cqmin 4cqw;
   border-radius: 0;
   background: color-mix(in srgb, var(--ov-ink, #0b0e12) 84%, transparent);
-  font-size: 4.6cqh;
+  font-size: 4.6cqmin;
   letter-spacing: 0.01em;
 }
 
 .ov-caption.style-karaoke .ov-caption-word { opacity: 0.55; transition: none; }
 .ov-caption.style-karaoke .ov-caption-word.is-on { opacity: 1; color: var(--ov-accent, #d97757); }
 
-.theme-paper .ov-caption, .theme-mono .ov-caption { text-shadow: none; }
+.field-light .ov-caption { text-shadow: none; }
 
 /* ---- Cards ---- */
 
@@ -287,7 +388,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2.4cqh;
+  gap: 2.4cqmin;
 }
 
 .theme-paper .ov-graphic, .theme-mono .ov-graphic { box-shadow: 0 10px 34px rgba(31, 30, 29, 0.14); }
@@ -311,10 +412,10 @@
 }
 
 .ov-stat-rule {
-  height: 0.7cqh;
+  height: 0.7cqmin;
   width: 30%;
   background: var(--ov-accent, #d97757);
-  border-radius: 0.35cqh;
+  border-radius: 0.35cqmin;
   transform-origin: left center;
 }
 
@@ -324,7 +425,7 @@
 }
 
 /* chart: bars grow past their mark and settle; values count beside them. */
-.ov-chart { position: relative; display: flex; flex-direction: column; gap: 2cqh; padding-left: 0.6cqw; }
+.ov-chart { position: relative; display: flex; flex-direction: column; gap: 2cqmin; padding-left: 0.6cqw; }
 
 .ov-chart-base {
   position: absolute;
@@ -348,8 +449,8 @@
 
 .ov-chart-track {
   flex: 1;
-  height: 4.6cqh;
-  border-radius: calc(1cqh * var(--ov-radius, 1));
+  height: 4.6cqmin;
+  border-radius: calc(1cqmin * var(--ov-radius, 1));
   background: color-mix(in srgb, var(--ov-muted, #9aa3ad) 15%, transparent);
   overflow: hidden;
   display: block;
@@ -358,7 +459,7 @@
 .ov-chart-bar {
   display: block;
   height: 100%;
-  border-radius: calc(1cqh * var(--ov-radius, 1));
+  border-radius: calc(1cqmin * var(--ov-radius, 1));
   background: linear-gradient(90deg, var(--ov-accent, #d97757), color-mix(in srgb, var(--ov-accent, #d97757) 70%, var(--ov-accent2, #f28a32)));
 }
 
@@ -412,10 +513,10 @@
   transform: translate(-50%, -50%);
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 800;
-  font-size: 16cqh;
+  font-size: 16cqmin;
   letter-spacing: 0.01em;
   color: var(--ov-text, #f0ede6);
-  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9), 0 0 8cqh color-mix(in srgb, var(--ov-accent, #d97757) 30%, transparent);
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9), 0 0 8cqmin color-mix(in srgb, var(--ov-accent, #d97757) 30%, transparent);
   white-space: nowrap;
 }
 
@@ -436,7 +537,7 @@
   border-color: color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
   box-shadow: 0 14px 50px rgba(0, 0, 0, 0.55);
   justify-content: flex-end;
-  padding: 1.2cqh 1.2cqw;
+  padding: 1.2cqmin 1.2cqw;
 }
 
 .ov-screen-label {
@@ -446,7 +547,7 @@
   letter-spacing: 0.1em;
   color: var(--ov-accent, #d97757);
   text-align: center;
-  padding-top: 1cqh;
+  padding-top: 1cqmin;
 }
 
 /* image: a still presented as evidence — tilted in, popped in, or slowly
@@ -462,7 +563,7 @@
   background: var(--ov-card, #1a2129);
   border: 1px solid color-mix(in srgb, var(--ov-accent, #d97757) 55%, transparent);
   border-radius: calc(1.4cqw * var(--ov-radius, 1));
-  padding: 1.4cqh 1.4cqh 0;
+  padding: 1.4cqmin 1.4cqmin 0;
   box-shadow: 0 14px 50px rgba(0, 0, 0, 0.65);
   max-height: 100%;
   transform-origin: center;
@@ -484,11 +585,11 @@
   letter-spacing: 0.1em;
   color: var(--ov-accent, #d97757);
   text-align: center;
-  padding: 1.2cqh 0;
+  padding: 1.2cqmin 0;
 }
 
 /* quote: a serif pull-quote, the mark lands first, the words follow. */
-.kind-quote { justify-content: center; gap: 1.2cqh; }
+.kind-quote { justify-content: center; gap: 1.2cqmin; }
 
 .ov-quote-mark {
   font-family: var(--ov-font-serif, Georgia, serif);
@@ -523,14 +624,14 @@
   font-weight: 800;
   font-size: min(4.6cqh, 6.5cqi);
   letter-spacing: 0.04em;
-  padding-bottom: 1.2cqh;
-  margin-bottom: 1.6cqh;
-  border-bottom: 0.3cqh solid var(--ov-accent, #d97757);
+  padding-bottom: 1.2cqmin;
+  margin-bottom: 1.6cqmin;
+  border-bottom: 0.3cqmin solid var(--ov-accent, #d97757);
 }
 
 .side-right .ov-compare-head { border-bottom-color: var(--ov-accent2, #f28a32); }
 
-.ov-compare-item { font-size: min(3.9cqh, 5.4cqi); line-height: 1.3; padding: 0.6cqh 0; }
+.ov-compare-item { font-size: min(3.9cqh, 5.4cqi); line-height: 1.3; padding: 0.6cqmin 0; }
 
 .ov-compare-vs {
   position: absolute;
@@ -550,7 +651,7 @@
 }
 
 /* steps: numbered, joined by a line that draws down. */
-.ov-steps { position: relative; display: flex; flex-direction: column; gap: 2.2cqh; padding-left: 0.4cqw; }
+.ov-steps { position: relative; display: flex; flex-direction: column; gap: 2.2cqmin; padding-left: 0.4cqw; }
 
 .ov-steps-line {
   position: absolute;
@@ -620,12 +721,12 @@
   inset: 0;
   background: linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--ov-cover-tint, var(--ov-field-c, #0b0e12)) 88%, transparent) 100%);
 }
-.ov-cover-text { position: absolute; left: 6cqw; right: 6cqw; bottom: 9cqh; display: flex; flex-direction: column; gap: 1.6cqh; }
-.ov-cover-rule { width: 12cqw; height: 0.8cqh; background: var(--ov-accent, #d97757); transform-origin: left center; }
+.ov-cover-text { position: absolute; left: 6cqw; right: 6cqw; bottom: 9cqh; display: flex; flex-direction: column; gap: 1.6cqmin; }
+.ov-cover-rule { width: 12cqw; height: 0.8cqmin; background: var(--ov-accent, #d97757); transform-origin: left center; }
 .ov-cover-title {
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 900;
-  font-size: 10cqh;
+  font-size: 10cqmin;
   line-height: 1.02;
   letter-spacing: 0.01em;
   color: #ffffff;
@@ -637,7 +738,7 @@
 .ov-cover-sub {
   font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
   font-weight: 500;
-  font-size: 3.6cqh;
+  font-size: 3.6cqmin;
   letter-spacing: 0.06em;
   color: var(--ov-accent2, #f28a32);
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
@@ -645,26 +746,26 @@
 
 /* section: a chapter heading on the field, the number first. */
 .kind-section { display: grid; place-items: center; }
-.ov-section { display: flex; flex-direction: column; align-items: center; gap: 2.4cqh; text-align: center; max-width: 80cqw; }
+.ov-section { display: flex; flex-direction: column; align-items: center; gap: 2.4cqmin; text-align: center; max-width: 80cqw; }
 .ov-section-number {
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 900;
-  font-size: 22cqh;
+  font-size: 22cqmin;
   line-height: 0.9;
   color: var(--ov-accent, #d97757);
   transform-origin: center;
 }
-.ov-section-rule { width: 14cqw; height: 0.7cqh; background: var(--ov-accent2, #f28a32); transform-origin: center; }
+.ov-section-rule { width: 14cqw; height: 0.7cqmin; background: var(--ov-accent2, #f28a32); transform-origin: center; }
 .ov-section-title {
   font-family: var(--ov-font-display, "Inter", system-ui, sans-serif);
   font-weight: 800;
-  font-size: 9cqh;
+  font-size: 9cqmin;
   line-height: 1.05;
   color: var(--ov-text, #f0ede6);
   will-change: clip-path;
 }
 .titlecase-upper .ov-section-title { text-transform: uppercase; letter-spacing: 0.04em; }
-.ov-section-sub { font-family: var(--ov-font-body, "Inter", system-ui, sans-serif); font-size: 3.8cqh; color: var(--ov-muted, #9aa3ad); letter-spacing: 0.04em; }
+.ov-section-sub { font-family: var(--ov-font-body, "Inter", system-ui, sans-serif); font-size: 3.8cqmin; color: var(--ov-muted, #9aa3ad); letter-spacing: 0.04em; }
 
 /* custom: whatever was written for the moment, inside its own container. */
 .kind-custom { display: block; }
@@ -673,7 +774,7 @@
 /* logos: a row of pictures, each landing with a little bounce. */
 .kind-logos { justify-content: center; }
 .ov-logos { display: flex; justify-content: center; align-items: center; gap: min(3cqw, 5cqi); flex-wrap: wrap; }
-.ov-logo-tile { display: flex; flex-direction: column; align-items: center; gap: 1.2cqh; transform-origin: center; }
+.ov-logo-tile { display: flex; flex-direction: column; align-items: center; gap: 1.2cqmin; transform-origin: center; }
 .ov-logo-tile-img { height: min(16cqh, 22cqi); max-width: min(24cqw, 36cqi); object-fit: contain; }
 .ov-logo-tile-label { font-size: min(3.2cqh, 4.6cqi); color: var(--ov-muted, #9aa3ad); letter-spacing: 0.04em; }
 
@@ -692,7 +793,7 @@
   position: absolute;
   font-family: var(--ov-font-body, "Inter", system-ui, sans-serif);
   font-weight: 600;
-  font-size: 2.6cqh;
+  font-size: 2.6cqmin;
   letter-spacing: 0.06em;
   color: var(--ov-text, #f0ede6);
   opacity: 0.55;
@@ -711,10 +812,39 @@
 
 .ov-spark {
   position: absolute;
-  width: 1.1cqh;
-  height: 1.1cqh;
+  width: 1.1cqmin;
+  height: 1.1cqmin;
   border-radius: 50%;
   background: var(--ov-accent, #d97757);
 }
 
 .ov-spark.is-pale { background: var(--ov-text, #f0ede6); }
+
+/* ---- A tall frame ----
+ *
+ * Sizes are already tied to the shorter edge (cqmin), so type reads the same
+ * physical size in either shape. What is left is the room: a 1080-wide frame
+ * has half the width of a 1920 one, and three rules that are comfortable
+ * across a wide stage are wrong across a narrow one. Scoped to the container's
+ * own shape, so a landscape film never sees them.
+ */
+@container (max-aspect-ratio: 1 / 1) {
+  /* A caption is one line across a wide stage and two or three down a narrow
+     one. Holding it to one line here would run it off both edges. */
+  .ov-caption {
+    white-space: normal;
+    max-width: 86cqw;
+    text-align: center;
+    text-wrap: balance;
+    line-height: 1.25;
+  }
+
+  /* There is no column beside the head, so a callout is a wide block rather
+     than a narrow card in the corner. */
+  .ov-callout { max-width: 64cqw; left: 5cqw; right: 5cqw; }
+
+  /* Titles have the width of the frame and should use it. */
+  .ov-title-text { max-width: 84cqw; }
+  .ov-title { left: 6cqw; right: 6cqw; }
+  .ov-section { max-width: 88cqw; }
+}

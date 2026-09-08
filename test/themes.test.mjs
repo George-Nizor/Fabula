@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PRESETS, resolveTheme, validateTheme, describePresets } from "../core/themes.mjs";
+import { describeLook } from "../core/themes.mjs";
 
 test("an empty theme is the studio preset with every token present", () => {
   const theme = resolveTheme(null);
@@ -42,4 +43,30 @@ test("every preset resolves and the menu describes each", () => {
     assert.equal(theme.preset, entry.id);
     assert.ok(entry.about.length > 10);
   }
+});
+
+test("an unset look is reported as unchosen, and names the brands this person saved", () => {
+  const brands = [{ id: "apple-man-sam-channel", name: "Apple Man Sam channel" }, { id: "youtube-channel", name: "youtube-channel" }];
+
+  const fresh = describeLook({}, brands);
+  assert.equal(fresh.chosen, false, "nothing set is not a decision");
+  assert.equal(fresh.preset, "studio", "but the film would still render in the default");
+  assert.match(fresh.hint, /No look has been chosen/);
+  assert.match(fresh.hint, /Apple Man Sam channel \(apple-man-sam-channel\)/);
+  assert.match(fresh.hint, /before planning scenes/);
+  assert.deepEqual(describeLook(undefined, brands).chosen, false, "a missing theme key reads the same as an empty one");
+
+  const noBrands = describeLook({}, []);
+  assert.match(noBrands.hint, /Ask what the film is for/);
+  assert.ok(!/saved/.test(noBrands.hint), "no brands, no brand talk");
+
+  const picked = describeLook({ preset: "broadcast", accent: "#e63946" }, brands);
+  assert.equal(picked.chosen, true);
+  assert.equal(picked.preset, "broadcast");
+  assert.equal(picked.accent, "#e63946");
+  assert.equal(picked.hint, undefined, "a chosen look needs no nagging");
+  assert.deepEqual(picked.savedBrands, brands);
+
+  // An accent alone is a choice, even without a preset.
+  assert.equal(describeLook({ accent: "#123456" }, []).chosen, true);
 });

@@ -2,8 +2,8 @@
 // person watches the review UI. State lives in files under media/<project>/ —
 // review.json is the single artifact both this server and the Electron app
 // read, so every tool call the agent makes is visible in the window within a
-// poll tick. Stdio transport; register with `claude mcp add fabula -- node
-// mcp/server.mjs` or the checked-in .mcp.json.
+// poll tick. Stdio transport; `npm run assistant` connects either Codex or
+// Claude Code. Direct Claude Code sessions can also use the checked-in .mcp.json.
 //
 // The long steps — the two transcriptions and the two renders — run as
 // detached jobs (scripts/job.mjs, scripts/export-compose.cjs). A tool that
@@ -13,6 +13,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -45,30 +46,69 @@ import {
   staleness,
   jobSpec,
   launchJob,
+  listProjects, describeProject, PROJECT_NAME_RE, readProjectMeta, writeProjectTitle, writeProjectFormat, projectFormat, slugify, cleanTitle,
 } from "../scripts/project-state.mjs";
+import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
+import { suggestClips, createShort } from "../scripts/shorts.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
-import { LAYOUTS } from "../core/stage-engine.mjs";
+import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
 import { reanchorScenes } from "../core/reanchor.mjs";
-import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describePresets } from "../core/themes.mjs";
+import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describeLook, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
 import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mjs";
+import { configuredProjectsRoot } from "../scripts/settings.cjs";
+import { INVARIANTS } from "../core/assistant-brief.mjs";
 
-const MEDIA_ROOT = path.join(REPO_ROOT, "media");
-const POINTER = path.join(MEDIA_ROOT, "current-project.json");
+// media/ beside the checkout, or the folder fabula.settings.json names; read
+// per call so a change made in the window applies to the next tool call.
+const mediaRoot = () => configuredProjectsRoot() ?? path.join(REPO_ROOT, "media");
+const pointerFile = () => path.join(mediaRoot(), "current-project.json");
 // Jobs are launched from the shared specs (scripts/project-state.mjs), the
 // same ones the window uses, so the two never drift in arguments.
 const RUNNER = { node: process.execPath };
-const DEFAULT_WAIT_SECONDS = 300;
+const DEFAULT_WAIT_SECONDS = 25;
 const MAX_WAIT_SECONDS = 1500;
 
+// One frame, through the export page, in its own short-lived Electron.
+// Electron is the only thing that can paint the overlay, and the render job
+// already runs the same way; this is that path with a frame count of one.
+function runFrame(dir, args) {
+  return new Promise((resolve, reject) => {
+    const spec = jobSpec("final", dir, {});
+    const child = spawn(spec.program === "electron" ? electronBinary() : spec.program,
+      // ozone-platform has to be a real argument: by the time the script can
+      // appendSwitch it, Chromium has already chosen a platform and died.
+      ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", path.join(REPO_ROOT, "scripts", "frame.cjs"), dir, ...args],
+      { env: { ...process.env, ...(spec.env ?? {}) }, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => { out += chunk; });
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const line = out.trim().split("\n").filter((l) => l.startsWith("{")).at(-1);
+      if (code !== 0 || !line) return reject(new Error(`could not draw the frame: ${(err.trim().split("\n").at(-1) || `exit ${code}`)}`));
+      try { resolve(JSON.parse(line)); } catch (error) { reject(new Error(`unreadable frame result: ${error.message}`)); }
+    });
+  });
+}
+
+// The Electron the pipeline runs. The real binary under dist/, not the
+// .bin shim: the shim re-enters node to find it, and a Chromium started
+// that way from a stdio server dies on this host.
+function electronBinary() {
+  const dist = path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
+  return fs.existsSync(dist) ? dist : "electron";
+}
+
 function currentProjectDir() {
-  if (!fs.existsSync(POINTER)) throw new Error("no open project; call open_project first");
-  const pointer = JSON.parse(fs.readFileSync(POINTER, "utf8"));
-  return path.join(MEDIA_ROOT, pointer.dir);
+  if (!fs.existsSync(pointerFile())) throw new Error("no open project; switch_project one from list_projects, or open_project a recording");
+  const pointer = JSON.parse(fs.readFileSync(pointerFile(), "utf8"));
+  return path.join(mediaRoot(), pointer.dir);
 }
 
 function readJson(file) {
@@ -184,35 +224,148 @@ function describeFinished(dir, stage) {
   return { stage, log: logTail(log) };
 }
 
-const server = new McpServer({ name: "fabula", version: "0.2.0" });
+const server = new McpServer({ name: "fabula", version: "0.2.0" }, {
+  instructions: `${INVARIANTS}
+
+The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. Long jobs continue in the background: pass wait_seconds: 25 and call wait_render until done. Only one assistant controls a checkout at a time. Window messages arrive through wait_for_input: listen after setting insert points or when asked, keep listening until told to stop, and do not poll unprompted.`,
+});
 
 server.registerTool("open_project", {
   description:
-    "Open a video as the current Fabula project. The footage is referenced where it lives (never copied); the project folder media/<name>/ holds only derived files, and the review UI is pointed at it. Returns whether a transcript already exists.",
+    "Start a project from a recording and make it the open one. The footage is referenced where it lives (never copied); the project folder <root>/<slug>/ holds only derived files, and the review UI is pointed at it. The title is the person's name for it (ask them; the folder is a slug of it). A recording that already has a project reopens that project. Returns whether a transcript already exists.",
   inputSchema: {
     video_path: z.string().describe("Path to the raw recording (mp4/mov/mkv/webm)"),
-    name: z.string().optional().describe("Project folder name; defaults to the video basename"),
+    title: z.string().optional().describe("The project's name as the person wants it shown; defaults to the recording's file name"),
+    format: z.enum([...FORMAT_IDS]).optional().describe("The shape it is delivered in: landscape (16:9, the default) or vertical (9:16, for Shorts/Reels/TikTok). Ask if the person has not said — it decides the stage and the clean cut's ceiling, and changing it later makes the clean cut stale."),
+    name: z.string().optional().describe("Folder name override; normally derived from the title"),
   },
-}, async ({ video_path, name }) => {
+}, async ({ video_path, title, format, name }) => {
   if (!fs.existsSync(video_path)) throw new Error(`no such file: ${video_path}`);
   const ext = path.extname(video_path).toLowerCase();
   if (!/^\.(mp4|mov|mkv|webm|m4v)$/.test(ext)) throw new Error(`unsupported container: ${ext}`);
-  const projectName = (name ?? path.basename(video_path, ext)).replace(/[^a-z0-9-_]/gi, "_").toLowerCase();
-  const dir = path.join(MEDIA_ROOT, projectName);
+  const shown = cleanTitle(title ?? path.basename(video_path, ext));
+  const projectName = name ? name.replace(/[^a-z0-9-_]/gi, "_").toLowerCase() : slugify(shown);
+  const dir = path.join(mediaRoot(), projectName);
+  const existing = stagedVideo(dir);
+  if (existing && path.resolve(existing) !== path.resolve(video_path)) {
+    throw new Error(`a project called ${shown} (${projectName}) already exists with a different recording; choose another title`);
+  }
   fs.mkdirSync(dir, { recursive: true });
-  if (!stagedVideo(dir)) {
+  if (!existing) {
     const source = { path: path.resolve(video_path), container: ext, bytes: fs.statSync(video_path).size };
     fs.writeFileSync(path.join(dir, "source.json"), JSON.stringify(source, null, 2));
   }
-  fs.writeFileSync(POINTER, JSON.stringify({ dir: projectName }, null, 2));
+  if (!existing || title !== undefined) writeProjectTitle(dir, shown);
+  if (!existing) writeProjectFormat(dir, format ?? DEFAULT_FORMAT);
+  else if (format !== undefined && format !== projectFormat(dir)) {
+    throw new Error(`${projectName} is already a ${projectFormat(dir)} project; set_format changes the shape of an existing one, and says what it costs`);
+  }
+  fs.writeFileSync(pointerFile(), JSON.stringify({ dir: projectName }, null, 2));
   const paths = projectPaths(dir);
   return ok({
     project: projectName,
+    title: readProjectMeta(dir).title ?? projectName,
+    format: projectFormat(dir),
+    reopened: Boolean(existing),
     video: paths.video,
     durationSeconds: Number(probeDuration(paths.video).toFixed(2)),
     transcribed: fs.existsSync(paths.transcript),
     reviewed: fs.existsSync(paths.review),
   });
+});
+
+server.registerTool("list_projects", {
+  description:
+    "Every Fabula project: each folder under media/ that stages a recording, most recently touched first, with the stage it has reached (staged, transcribed, cut, clean, composed, final), whether its recording is still where it was, and which one is open. The same list the window's Projects dialog shows.",
+  inputSchema: {},
+}, async () => {
+  const current = fs.existsSync(pointerFile()) ? readJson(pointerFile()).dir : null;
+  return ok({ root: mediaRoot(), current, projects: listProjects(mediaRoot()).map((project) => ({ ...project, current: project.name === current })) });
+});
+
+server.registerTool("switch_project", {
+  description:
+    "Make an existing project the open one, by name from list_projects. The window follows within a poll tick. Nothing is rendered or changed; open_project is for a recording that has no project yet.",
+  inputSchema: { name: z.string().describe("Project folder name under media/") },
+}, async ({ name }) => {
+  if (!PROJECT_NAME_RE.test(name)) throw new Error("that is not a project name");
+  const project = describeProject(path.join(mediaRoot(), name));
+  if (!project) throw new Error(`no project called ${name}; list_projects shows what exists`);
+  fs.writeFileSync(pointerFile(), JSON.stringify({ dir: name }, null, 2));
+  return ok({ project: name, stage: project.stage, video: project.video, videoPresent: project.videoPresent });
+});
+
+server.registerTool("rename_project", {
+  description: "Give a project a new title. The folder name stays, so nothing moves and nothing goes stale; the window shows the new title within a poll tick.",
+  inputSchema: { name: z.string().describe("Project folder name from list_projects"), title: z.string().describe("The new title") },
+}, async ({ name, title }) => {
+  if (!PROJECT_NAME_RE.test(name)) throw new Error("that is not a project name");
+  const dir = path.join(mediaRoot(), name);
+  if (!describeProject(dir)) throw new Error(`no project called ${name}`);
+  return ok({ project: name, title: writeProjectTitle(dir, title) });
+});
+
+// ---- Shorts out of a long film ----
+
+server.registerTool("suggest_clips", {
+  description:
+    "Read the finished film's transcript and propose the moments that could stand alone as short films, most promising first. Each candidate is a run of whole sentences with its word ids, its length, the words themselves, and plain notes on what is good and bad about it — an opening that promises something, an opening that starts on “it”, an ending that does not land, no claim in it anywhere. These are candidates, not decisions: read the text, disagree where you disagree, and widen or narrow a span with your own word ids. Needs the clean transcript, so it comes after the film is cut.",
+  inputSchema: {
+    format: z.enum([...FORMAT_IDS]).optional().describe("The shape the shorts are for; vertical by default, which is what decides how long is too long"),
+    limit: z.number().int().min(1).max(20).optional().describe("How many candidates, 8 by default"),
+  },
+}, async ({ format, limit }) => {
+  const dir = currentProjectDir();
+  const found = suggestClips(dir, { format: format ?? "vertical", limit: limit ?? 8 });
+  return ok({
+    ...found,
+    hint: "create_short cuts one into its own project. Say what each one is about and why you would or would not make it, then let the person choose — do not make eight shorts because eight were found.",
+  });
+});
+
+server.registerTool("create_short", {
+  description:
+    "Cut a span of the open film into a NEW project of its own, in short-form shape. It references the same recording and inherits this film's cut list with everything outside the span removed, so the short's clean cut is rendered from the original footage and can be framed for a tall frame rather than cropped out of a wide composition. The look travels; the scene plan does not — a composition written for a wide frame is the wrong one for a tall one, so the short starts with the theme, burned-in captions and no visuals, and you compose it after switching to it. Word ids are the OPEN film's clean transcript (suggest_clips reports them). Nothing is rendered here: switch_project to it, then render_clean and retranscribe_clean before composing.",
+  inputSchema: {
+    from_word_id: z.number().int().min(0).describe("First word of the short, on this film's clean transcript"),
+    to_word_id: z.number().int().min(0).describe("Last word of the short"),
+    title: z.string().optional().describe("What to call it; the first words of the clip if you do not say"),
+    format: z.enum([...FORMAT_IDS]).optional().describe("vertical by default"),
+  },
+}, async ({ from_word_id, to_word_id, title, format }) => {
+  const dir = currentProjectDir();
+  const short = createShort(dir, {
+    fromWordId: from_word_id, toWordId: to_word_id, title,
+    format: format ?? "vertical", root: mediaRoot(),
+  });
+  return ok({
+    ...short,
+    next: `switch_project ${short.project}, then render_clean and retranscribe_clean (fast — it is ${short.seconds}s of footage), set_theme if this one wants its own, and compose it for the tall frame: focus crops the head to fill, band keeps the whole recording, and a title has room for three words rather than nine.`,
+  });
+});
+
+server.registerTool("set_format", {
+  description:
+    "Change the shape an existing project is delivered in: landscape (16:9) or vertical (9:16). The scene plan is kept and means the same thing in either shape — the layouts resolve to different rectangles, so `side` puts the visual under the head rather than beside it and `focus` fills a tall frame by cropping the sides. It makes the clean cut stale, because the head track's ceiling moves with the shape: render_clean and retranscribe_clean after it, then look at a preview_frame before rendering the film. For a short cut out of a longer piece, create_short makes a new vertical project instead of reshaping this one.",
+  inputSchema: { format: z.enum([...FORMAT_IDS]) },
+}, async ({ format }) => {
+  const dir = currentProjectDir();
+  const was = projectFormat(dir);
+  writeProjectFormat(dir, format);
+  return ok({
+    format, was,
+    stage: stageOf(format),
+    stale: was === format ? [] : ["clean"],
+    hint: was === format ? "already that shape; nothing changed" : "the clean cut's ceiling moved: render_clean, retranscribe_clean, then preview_frame before render_final",
+  });
+});
+
+server.registerTool("close_project", {
+  description: "Close the open project: the window returns to its start screen with the project list. Files are not touched; switch_project or open_project opens one again.",
+  inputSchema: {},
+}, async () => {
+  fs.rmSync(pointerFile(), { force: true });
+  return ok({ closed: true });
 });
 
 server.registerTool("transcribe", {
@@ -588,7 +741,7 @@ server.registerTool("wait_for_input", {
 
 server.registerTool("set_scenes", {
   description:
-    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them), and three that take the WHOLE stage: cover (a still edge to edge with a big title and subtitle, optional tint), section (a chapter heading: number, title, subtitle), custom (your own html + css for this one moment: scoped, no scripts or external loads, animate with the CSS variables --q (0→1 over the first 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh units measure the stage; pictures as assets/name.png). All motion is a pure function of scene progress. stage scenes place the talking head on the 1080p canvas for their span — layout focus (large, centered), pip (small corner card; optional corner br/bl/tr/tl), side (head left, content right), or full (the visuals own the stage, the head a small corner card; pair it with cover/section/custom) — easing between layouts at each boundary; anywhere undeclared, the head holds focus. The engine bridges returns to focus shorter than 3 s and absorbs placed segments shorter than that, so do not plan flights closer together than a breath. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them), and three that take the WHOLE stage: cover (a still edge to edge with a big title and subtitle, optional tint), section (a chapter heading: number, title, subtitle), custom (your own html + css for this one moment: scoped, no scripts or external loads, animate with the CSS variables --q (0→1 over the first 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh units measure the stage; pictures as assets/name.png). All motion is a pure function of scene progress. stage scenes place the talking head on the canvas for their span — layout focus (the head is the picture: large and centred in a wide frame, edge to edge and cropped in a tall one), pip (small corner card; optional corner br/bl/tr/tl), side (the visual beside the head: a right-hand column in a wide frame, the bottom half in a tall one), band (the head WHOLE in the recording's own shape across the width, the visual under it — the shot for a wide moment a vertical crop would ruin), cutaway (camera completely hidden, narration continues; use for B-roll and explanatory diagrams — it gets full's content rect), or full (the visuals own the stage, the head a small corner card; pair it with cover/section/custom) — anywhere undeclared, the head holds focus. describe_kit says which shape this project is and what each layout means in it. How each boundary is crossed is the look's transition (set_theme): dissolve fades the head out and back without moving it, glide flies it between rectangles, cut changes everything on one frame; a stage scene may name its own to override the film's for that one boundary. The engine bridges returns to focus shorter than 3 s and absorbs placed segments shorter than that, so do not plan flights closer together than a breath. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
@@ -602,6 +755,7 @@ server.registerTool("set_scenes", {
       insert_id: z.string().optional().describe("the insert point this scene was chosen for (carried from get_scenes; do not invent)"),
       layout: z.enum([...LAYOUTS]).optional().describe("stage scenes only"),
       corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage pip/full only"),
+    transition: z.enum([...TRANSITIONS]).optional().describe("stage scenes only: how this one boundary is crossed, overriding the theme's transition for it"),
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
         title: z.string().optional(),
@@ -649,6 +803,7 @@ server.registerTool("set_scenes", {
     flair: scene.flair,
     layout: scene.layout,
     corner: scene.corner,
+    transition: scene.transition,
     graphic: scene.graphic,
     ...(scene.insert_id ? { insertId: scene.insert_id } : {}),
   }));
@@ -670,15 +825,230 @@ server.registerTool("set_scenes", {
   if (!config.inserts) delete config.inserts;
   if (!config.cutIdentity) delete config.cutIdentity;
   writeComposeConfig(dir, config);
-  // Screen scenes outside a screen span play a dark card: worth saying.
+  // What the plan looks like as a sequence, read from the plan itself. The
+  // rule against a repetitive film is worth nothing if it only lives in a
+  // document read at the start of the session.
+  const { warnings, variety } = readBackPlan(dir, shaped, words, config.theme);
+  const look = describeLook(config.theme, listSavedThemes(mediaRoot()));
+  if (!look.chosen && shaped.length > 0) warnings.push(look.hint);
+  return ok({
+    scenes: shaped.length, captions: config.captions, theme: config.theme ?? null, punch: config.punch ?? null,
+    warnings, variety,
+    ...(variety.length ? { varietyHint: "These are observations about the plan you just wrote, not errors. Fix the ones you agree with with update_scenes — it changes the scenes you name and leaves the rest alone — then tell the person what you changed." } : {}),
+  });
+});
+
+// ---- Changing part of a plan ----
+//
+// set_scenes replaces the whole thing, which is right when the plan is
+// being written and wasteful for every change after that: a twelve-minute
+// film's plan is thousands of tokens to resend because one title was dull.
+// These three touch what they name and carry the rest through untouched,
+// which is also what makes them safe against the person's own edits in the
+// window between turns.
+
+// What the plan looks like once it is written: the observations about its
+// shape, and the faults that are worth stopping for. Shared by set_scenes
+// and the three that edit part of a plan, so a patch is read as carefully
+// as a rewrite.
+function readBackPlan(dir, scenes, words, themeConfig) {
+  const resolved = resolveScenes(scenes, words);
+  const duration = words.at(-1)?.end ?? 0;
+  const theme = resolveTheme(themeConfig ?? {});
   const warnings = [];
   const spans = readCleanMap(dir)?.screenSpans ?? [];
-  resolveScenes(shaped, words).forEach((scene, index) => {
+  resolved.forEach((scene, index) => {
     if (scene.graphic?.kind !== "screen") return;
     const covered = spans.some((span) => span.start <= scene.start + 0.05 && scene.end - 0.05 <= span.end);
     if (!covered) warnings.push(`scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span ${JSON.stringify(spans)}`);
   });
-  return ok({ scenes: shaped.length, captions: config.captions, theme: config.theme ?? null, punch: config.punch ?? null, warnings });
+  const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
+  for (const hole of holes) {
+    warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
+  }
+  return { resolved, warnings, holes, variety: describeVariety(resolved, duration) };
+}
+
+const sceneEdits = (dir, mutate) => {
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const scenes = config.scenes ?? [];
+  const result = mutate(scenes);
+  validateScenes(scenes, words);
+  config.scenes = scenes;
+  config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
+  if (!config.cutIdentity) delete config.cutIdentity;
+  writeComposeConfig(dir, config);
+  const read = readBackPlan(dir, scenes, words, config.theme);
+  return ok({
+    ...result,
+    scenes: scenes.length,
+    warnings: read.warnings,
+    variety: read.variety,
+  });
+};
+
+// One patch's worth of fields. Everything optional; whatever is absent is
+// left exactly as it was, and null clears an optional field.
+const scenePatchShape = {
+  index: z.number().int().min(0).describe("Which scene, by the index get_scenes reports"),
+  from_word_id: z.number().int().min(0).optional().describe("Move the scene's first word"),
+  to_word_id: z.number().int().min(0).optional().describe("Move the scene's last word"),
+  text: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
+  style: z.string().nullable().optional().describe("null returns it to the theme's style"),
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  flair: z.boolean().nullable().optional(),
+  layout: z.enum([...LAYOUTS]).nullable().optional(),
+  corner: z.enum(["br", "bl", "tr", "tl"]).nullable().optional(),
+  transition: z.enum([...TRANSITIONS]).nullable().optional(),
+  graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. To change a card's kind, give the whole graphic including kind."),
+};
+
+const applyPatch = (scene, patch) => {
+  const { index, from_word_id, to_word_id, graphic, ...fields } = patch;
+  if (from_word_id !== undefined) scene.fromWordId = from_word_id;
+  if (to_word_id !== undefined) scene.toWordId = to_word_id;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null) delete scene[key];
+    else if (value !== undefined) scene[key] = value;
+  }
+  if (graphic) {
+    scene.graphic = { ...(scene.graphic ?? {}) };
+    for (const [key, value] of Object.entries(graphic)) {
+      if (value === null) delete scene.graphic[key];
+      else scene.graphic[key] = value;
+    }
+  }
+};
+
+server.registerTool("update_scenes", {
+  description:
+    "Change named fields on named scenes and leave every other scene, and every other field, exactly as it is. This is how to act on a note about the film — a punchier title, a different layout for one passage, a chart's numbers — without resending the plan. Indices come from get_scenes; read it first, because the person edits scenes in the window between your turns. Returns the fresh variety read of the whole plan.",
+  inputSchema: { patches: z.array(z.object(scenePatchShape)).min(1).max(60) },
+}, async ({ patches }) => {
+  const dir = currentProjectDir();
+  return sceneEdits(dir, (scenes) => {
+    const touched = [];
+    for (const patch of patches) {
+      const scene = scenes[patch.index];
+      if (!scene) throw new Error(`no scene ${patch.index}; get_scenes lists ${scenes.length}`);
+      applyPatch(scene, patch);
+      touched.push(patch.index);
+    }
+    return { updated: touched };
+  });
+});
+
+server.registerTool("add_scenes", {
+  description:
+    "Add scenes to the plan without touching what is already there. They are inserted in word order, so the plan stays readable. Use it for a beat the film is missing; update_scenes changes one that exists, remove_scenes drops one.",
+  inputSchema: { scenes: z.array(optionSceneShape).min(1).max(40) },
+}, async ({ scenes: added }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const byId = new Map(words.map((word) => [word.id, word]));
+  return sceneEdits(dir, (scenes) => {
+    const shaped = added.map(shapeScene);
+    scenes.push(...shaped);
+    scenes.sort((a, b) => (byId.get(a.fromWordId)?.start ?? 0) - (byId.get(b.fromWordId)?.start ?? 0));
+    return { added: shaped.length };
+  });
+});
+
+server.registerTool("remove_scenes", {
+  description:
+    "Drop scenes by index, leaving the rest of the plan alone. Indices are from get_scenes and are resolved together, so they do not shift under each other.",
+  inputSchema: { indices: z.array(z.number().int().min(0)).min(1).max(60) },
+}, async ({ indices }) => {
+  const dir = currentProjectDir();
+  return sceneEdits(dir, (scenes) => {
+    const drop = new Set(indices);
+    for (const index of drop) if (!scenes[index]) throw new Error(`no scene ${index}; get_scenes lists ${scenes.length}`);
+    const kept = scenes.filter((_, index) => !drop.has(index));
+    scenes.length = 0;
+    scenes.push(...kept);
+    return { removed: drop.size };
+  });
+});
+
+server.registerTool("describe_kit", {
+  description:
+    "Everything the composition can be made of, in one call: the project's delivery shape and what each layout means in it, transitions, graphic kinds and the fields each one needs, title/callout/caption styles, image motions, caption modes, the theme presets and the vendored fonts. Read it once at the start of a composing session instead of guessing at a name — a wrong `kind` or `style` is a rejected set_scenes and a wasted round trip.",
+  inputSchema: {},
+}, async () => {
+  const format = projectFormatSafe();
+  return ok({
+  // A layout name means one thing and resolves to two geometries. Read the
+  // second half of each line only when the project is vertical.
+  format: describeFormats().find((f) => f.id === format),
+  formats: describeFormats(),
+  layouts: {
+    focus: "the head is the picture; the default anywhere no layout is declared. Landscape: large and centred. Vertical: edge to edge, cropped to the tall frame, with anything shown over it in the lower third.",
+    pip: "a small corner card; takes a corner (br/bl/tr/tl). Uncropped in both shapes.",
+    side: "the visual beside the head. Landscape: head left, content column right. Vertical: head across the top half, cropped, the visual owning the bottom.",
+    band: "the head WHOLE, in the recording's own shape, across the width, with the visual under it. In a tall frame this is the shot for a moment a crop would ruin — a wide gesture, a screen, two people. In a landscape film it is close to focus and rarely worth naming.",
+    full: "the visuals own the stage, the head a small corner card; takes a corner",
+    cutaway: "no camera at all — the visual carries the narration. Cover its whole span with a graphic.",
+  },
+  cropping: "A vertical film is cut from a landscape recording, so focus and side crop the sides away at compose time. Nothing is baked: band shows the whole frame again, and changing your mind never re-renders the clean cut. preview_frame is how you see what the crop actually took.",
+  transitions: Object.fromEntries([...TRANSITIONS].map((name) => [name, {
+    glide: "the head travels between layouts; it fades instead where a cutaway leaves nothing to fly to",
+    dissolve: "the head fades out, the arrangement changes, it fades back; nothing slides",
+    cut: "everything changes on one frame",
+  }[name]])),
+  transitionSeconds: { default: TRANSITION_SECONDS, range: [0.3, 1.8], note: "set_theme transitionSeconds; the style's own pace unless given" },
+  dwell: { minSeconds: 3, minCutawaySeconds: 1.2, note: "a placed segment shorter than this is absorbed into the one before it, so do not plan two boundaries closer than a breath" },
+  graphics: {
+    chart: "items[{label, value}] — bars grow in",
+    stat: "value, label, optional prefix/suffix — one big count-up number",
+    list: "items[{label}] — revealed with checks",
+    steps: "items[{label}], up to 5 — numbered, joined by a line",
+    ring: "value 0–100, label — an arc",
+    quote: "text, optional by",
+    compare: "left{title, items[]}, right{title, items[]} — two columns and a VS badge",
+    image: `src (assets/…), optional label and motion (${[...IMAGE_MOTIONS].join("/")})`,
+    logos: "items[{src, label?}] — pictures in a row",
+    screen: "the recording's own screen track, in sync; only inside get_framing's screenSpans",
+    cover: "WHOLE STAGE: a still edge to edge with title, subtitle, optional tint",
+    section: "WHOLE STAGE: a chapter heading — number, title, subtitle",
+    custom: "WHOLE STAGE: your own html + css for one moment; scoped, no scripts or external loads. Animate from --q (0→1 over 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh measure the stage; pictures as assets/name.png",
+  },
+  sceneTypes: [...SCENE_TYPES],
+  titleStyles: [...TITLE_STYLES],
+  calloutStyles: [...CALLOUT_STYLES],
+  captionStyles: [...CAPTION_STYLES],
+  captionModes: [...CAPTION_MODES],
+  imageMotions: [...IMAGE_MOTIONS],
+  corners: [...CORNERS],
+  presets: describePresets(),
+  fonts: VENDORED_FONTS,
+  editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
+  });
+});
+
+// describe_kit is legitimate with no project open — it is what to read before
+// there is one — so the shape it describes falls back to the default.
+function projectFormatSafe() {
+  try { return projectFormat(currentProjectDir()); } catch { return DEFAULT_FORMAT; }
+}
+
+server.registerTool("preview_frame", {
+  description:
+    "Render ONE frame of the composed film to a PNG and return its path, in a couple of seconds and without a render gate. Look at it. This is the only way to see what a composition actually looks like — the numbers in a scene plan do not tell you that a title is unreadable over that footage, that a card is crowded, or that a picture is the wrong one. Give a word id (the frame lands a beat after that word, so entrances have played) or a time. Costs nothing but seconds; use it freely before asking anyone to render.",
+  inputSchema: {
+    word_id: z.number().int().min(0).optional().describe("Land on the word this id names, a beat in"),
+    at_seconds: z.number().min(0).optional().describe("Or an exact time on the clean timeline"),
+    width: z.number().int().min(320).max(1920).optional().describe("Picture width, 1280 by default"),
+  },
+}, async ({ word_id, at_seconds, width }) => {
+  const dir = currentProjectDir();
+  if (word_id === undefined && at_seconds === undefined) throw new Error("give a word_id or an at_seconds");
+  const args = [`--width=${width ?? 1280}`];
+  if (word_id !== undefined) args.push(`--word=${word_id}`);
+  else args.push(`--at=${at_seconds}`);
+  const result = await runFrame(dir, args);
+  return ok(result);
 });
 
 server.registerTool("set_captions", {
@@ -706,6 +1076,8 @@ const themeShape = {
   callout_style: z.enum([...CALLOUT_STYLES]).optional(),
   caption_style: z.enum([...CAPTION_STYLES]).optional().describe("pill, band (broadcast strip), karaoke (spoken word lit), none"),
   title_case: z.enum(["none", "upper"]).optional(),
+  transition: z.enum([...TRANSITIONS]).optional()
+    .describe(`How the picture changes at every layout boundary: dissolve (${TRANSITION_SECONDS.dissolve}s — the head fades out, the arrangement changes, it fades back; nothing slides), glide (${TRANSITION_SECONDS.glide}s — the head travels between rectangles), cut (one frame). A boundary a cutaway touches always dissolves: there is nothing to fly to.`),
   glow: z.number().min(0).max(0.4).optional().describe("Strength of the accent light on the field, 0 off"),
   radius: z.number().min(0).max(2).optional().describe("Corner rounding multiplier, 0 square"),
   logo: z.object({
@@ -730,14 +1102,17 @@ const themeFromArgs = (args) => {
 server.registerTool("list_themes", {
   description: "The theme presets — each a complete look (field, type, title and callout styles, caption style, glow) — the themes saved for reuse across videos (set_theme save_as / use), and the vendored fonts. Pick one with set_theme and override what the brand needs.",
   inputSchema: {},
-}, async () => ok({ presets: describePresets(), saved: listSavedThemes(MEDIA_ROOT).map((s) => ({ id: s.id, name: s.name, theme: s.theme, savedAt: s.savedAt })), fonts: VENDORED_FONTS, titleStyles: [...TITLE_STYLES], calloutStyles: [...CALLOUT_STYLES], captionStyles: [...CAPTION_STYLES] }));
+}, async () => ok({ presets: describePresets(), saved: listSavedThemes(mediaRoot()).map((s) => ({ id: s.id, name: s.name, theme: s.theme, savedAt: s.savedAt })), fonts: VENDORED_FONTS, titleStyles: [...TITLE_STYLES], calloutStyles: [...CALLOUT_STYLES], captionStyles: [...CAPTION_STYLES], transitions: [...TRANSITIONS] }));
 
 server.registerTool("get_theme", {
-  description: "The project's theme as written (preset plus overrides) and as resolved (every token the stage uses). Read before set_theme: the person may have changed it in the inspector.",
+  description: "The project's theme as written (preset plus overrides), as resolved (every token the stage uses), and whether anyone actually chose it — an unset theme resolves to the studio preset and is easy to mistake for a decision. Also lists the brands this person has saved. Read before set_theme: the person may have changed it in the window.",
   inputSchema: {},
 }, async () => {
   const config = readComposeConfig(currentProjectDir()).theme ?? {};
-  return ok({ config, resolved: resolveTheme(config), assets: listAssets(path.join(currentProjectDir(), "assets")) });
+  return ok({
+    config, resolved: resolveTheme(config), look: describeLook(config, listSavedThemes(mediaRoot())),
+    assets: listAssets(path.join(currentProjectDir(), "assets")),
+  });
 });
 
 server.registerTool("set_theme", {
@@ -753,7 +1128,7 @@ server.registerTool("set_theme", {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
   const patch = themeFromArgs(args);
-  let theme = use ? { ...loadTheme(MEDIA_ROOT, use) } : reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
+  let theme = use ? { ...loadTheme(mediaRoot(), use) } : reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete theme[key];
     else if (key === "fonts") theme.fonts = { ...(theme.fonts ?? {}), ...value };
@@ -765,7 +1140,7 @@ server.registerTool("set_theme", {
   writeComposeConfig(dir, config);
   // A saved theme is the look without the project's pictures: a logo lives
   // in one project's assets and would not travel.
-  const saved = save_as ? saveTheme(MEDIA_ROOT, save_as, (({ logo, ...rest }) => rest)(theme)) : null;
+  const saved = save_as ? saveTheme(mediaRoot(), save_as, (({ logo, ...rest }) => rest)(theme)) : null;
   return ok({ theme, resolved: resolveTheme(theme), saved: saved ? { id: saved.id, name: saved.name } : undefined });
 });
 
@@ -786,10 +1161,11 @@ server.registerTool("fetch_image", {
     url: z.string().min(3).describe("Image URL, page URL, or a domain for kind icon"),
     name: z.string().max(60).optional().describe("File name to give it (slugified)"),
     kind: z.enum(["auto", "page", "icon"]).optional().describe("auto: image or page; page: always the share image; icon: the site's icon"),
+    attribution: z.object({ pageUrl: z.string().url().optional(), author: z.string().optional(), license: z.string().optional() }).optional().describe("Source credit; saved alongside the asset and returned by list_assets"),
   },
-}, async ({ url, name, kind }) => {
+}, async ({ url, name, kind, attribution }) => {
   const dir = currentProjectDir();
-  const result = await fetchImage({ url, name, kind: kind ?? "auto", assetsDir: path.join(dir, "assets"), ffmpeg: FFMPEG });
+  const result = await fetchImage({ url, name, attribution, kind: kind ?? "auto", assetsDir: path.join(dir, "assets"), ffmpeg: FFMPEG });
   const { file, ...rest } = result;
   return ok(rest);
 });
@@ -888,17 +1264,21 @@ server.registerTool("wait_render", {
 });
 
 server.registerTool("status", {
-  description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics, the running background job if any, what is stale and which tool fixes it. Read it before repeating a step.",
+  description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics, whether a look has been chosen (and the brands this person has saved), the running background job if any, what is stale and which tool fixes it. Read it before repeating a step.",
   inputSchema: {},
 }, async () => {
-  if (!fs.existsSync(POINTER)) return ok({ project: null, hint: "call open_project" });
-  const pointer = readJson(POINTER);
-  const dir = path.join(MEDIA_ROOT, pointer.dir);
+  if (!fs.existsSync(pointerFile())) return ok({ project: null, root: mediaRoot(), hint: "no project is open: list_projects shows what exists, switch_project opens one, open_project starts one from a recording" });
+  const pointer = readJson(pointerFile());
+  const dir = path.join(mediaRoot(), pointer.dir);
   const paths = projectPaths(dir);
   const running = runningJob(dir);
   const progress = readProgress(dir);
   const state = {
     project: pointer.dir,
+    title: readProjectMeta(dir).title ?? pointer.dir,
+    format: describeFormats().find((f) => f.id === projectFormat(dir)),
+    derivedFrom: readProjectMeta(dir).derivedFrom ?? null,
+    root: mediaRoot(),
     video: paths.video,
     transcribed: fs.existsSync(paths.transcript),
     reviewed: fs.existsSync(paths.review),
@@ -916,6 +1296,7 @@ server.registerTool("status", {
   };
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   state.punch = readPunch(dir);
+  state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
   state.clean = cleanSummary(dir);
   state.stale = staleness(dir);
   return ok(state);
