@@ -22,6 +22,7 @@ import {
   REPO_ROOT,
   probeDimensions,
   probeDuration,
+  measureLoudness,
   scanFraming,
   computeReview,
   transcribe,
@@ -93,6 +94,16 @@ const steps = {
       onProgress: (detail) => { report(detail); },
     });
     say(`wrote ${result.path} (${(result.bytes / 1e6).toFixed(1)} MB, ${result.pieces} pieces from ${result.keeps} keeps) in ${result.seconds}s; identity ${result.map.identity}`);
+    // The voice's loudness, once, beside the map: status carries it, and a
+    // voice thirty units under where platforms play is worth knowing before
+    // anyone composes a frame.
+    try {
+      const loudness = measureLoudness(result.path);
+      if (typeof loudness === "number") {
+        fs.writeFileSync(path.join(dir, "out", "clean-audio.json"), JSON.stringify({ identity: result.map.identity, voiceLoudness: loudness }, null, 2));
+        say(`voice measures ${loudness} LUFS`);
+      }
+    } catch (error) { say(`voice not measured: ${error.message}`); }
     return result;
   },
 

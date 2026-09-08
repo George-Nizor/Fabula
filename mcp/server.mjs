@@ -1231,6 +1231,23 @@ const applyPatch = (scene, patch) => {
   }
 };
 
+server.registerTool("check_scenes", {
+  description:
+    "set_scenes without the write: validates a whole plan (templates expanded), and returns the warnings, variety and pacing reads it would get — for a plan you want judged before it replaces the person's edits, or for trying two versions of a passage. Takes exactly what set_scenes takes.",
+  inputSchema: {
+    scenes: z.array(optionSceneShape).describe("The plan to judge, in set_scenes' shape"),
+    captions: z.union([z.boolean(), z.enum([...CAPTION_MODES])]).optional(),
+  },
+}, async ({ scenes, captions }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const shaped = expandTemplates(scenes.map(shapeScene), { format: projectFormat(dir) });
+  validateScenes(shaped, words);
+  const config = readComposeConfig(dir);
+  const read = readBackPlan(dir, shaped, words, config.theme, captions ?? config.captions);
+  return ok({ scenes: shaped.length, valid: true, warnings: read.warnings, variety: read.variety, pacing: read.pacing, hint: "nothing was written; set_scenes writes it" });
+});
+
 server.registerTool("update_scenes", {
   description:
     "Change named fields on named scenes and leave every other scene, and every other field, exactly as it is. This is how to act on a note about the film — a punchier title, a different layout for one passage, a chart's numbers — without resending the plan. Indices come from get_scenes; read it first, because the person edits scenes in the window between your turns. Returns the fresh variety read of the whole plan.",

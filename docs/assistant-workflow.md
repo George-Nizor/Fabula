@@ -310,6 +310,9 @@ the stitch and therefore in seconds, never re-rendering a chunk:
   nearly always wants a bed; a long film wants one under its opening, its section marks and
   its ending, and often nothing under the argument: `spans` confines the bed to named word
   spans, faded at each edge, and an empty list lifts the confinement.
+- **The voice as recorded**: the clean render measures its integrated loudness once and
+  `status` reports it under `clean.voiceLoudness`, with a note when it is far under where
+  platforms play. A short is created with a -14 target already set.
 - **Voice loudness** (`voice_loudness`): an integrated LUFS target for the voice, -16 for a
   film, -14 for a short, null to leave it as recorded. Platforms normalise on upload; this
   makes the film sound the same everywhere before they do.

@@ -223,6 +223,7 @@ test("a short is its own project on the same recording, with the cut inherited a
     assert.deepEqual(compose.theme, { preset: "broadcast", accent: "#e63946" });
     assert.deepEqual(compose.scenes, [], "a wide film's scenes are the wrong scenes for a tall one");
     assert.equal(compose.captions, "open", "a short is watched without sound");
+    assert.equal(compose.audio?.voice?.loudness, -14, "and its voice is set where a feed plays it");
 
     // And it is a project like any other, with where it came from recorded.
     assert.equal(projectFormat(dir), "vertical");
