@@ -309,7 +309,7 @@ export function numberIn(text) {
       length += unit === "percent" && after === "per" ? 2 : 1;
     }
     const short = unit ? (UNIT_SHORT[unit] ?? unit) : null;
-    const asRead = unit === "%" || short === "%" ? `${shown}%` : short === "$" ? (shown.startsWith("$") ? shown : `$${shown}`) : short ? `${shown} ${short}` : shown;
+    const asRead = unit === "%" || short === "%" ? `${shown}%` : short === "$" ? (shown.startsWith("$") ? shown : `$${shown}`) : short === "×" ? `${shown}×` : short ? `${shown} ${short}` : shown;
     // A bare small number with no unit is a count of something in the
     // sentence, not a figure worth a card.
     if (!unit && value < 10) continue;
