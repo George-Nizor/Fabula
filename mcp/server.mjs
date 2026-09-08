@@ -50,6 +50,7 @@ import {
 } from "../scripts/project-state.mjs";
 import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
 import { suggestClips, createShort } from "../scripts/shorts.mjs";
+import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templates.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
@@ -667,7 +668,7 @@ server.registerTool("set_inserts", {
   const earlier = new Map((previous.inserts ?? []).map((insert) => [insert.id, insert]));
   const shaped = inserts.map((insert) => ({
     id: insert.id, fromWordId: insert.from_word_id, toWordId: insert.to_word_id, why: insert.why,
-    options: insert.options.map((option) => ({ id: option.id, label: option.label, scenes: option.scenes.map(shapeScene) })),
+    options: insert.options.map((option) => ({ id: option.id, label: option.label, scenes: expandTemplates(option.scenes.map(shapeScene), { format: projectFormat(dir) }) })),
     chosen: earlier.get(insert.id)?.chosen ?? null,
     note: earlier.get(insert.id)?.note ?? null,
   }));
@@ -773,6 +774,8 @@ server.registerTool("set_scenes", {
         html: z.string().max(20000).optional().describe("custom only: the markup"),
         css: z.string().max(10000).optional().describe("custom only: styles, scoped to the card"),
         full: z.boolean().optional().describe("custom only: false keeps it inside the layout's content rect instead of the whole stage"),
+        template: z.enum([...TEMPLATE_IDS]).optional().describe("custom only: a named graphic from describe_templates, filled in from params; html and css are generated"),
+        params: z.record(z.any()).optional().describe("custom only: the template's fields"),
         left: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         right: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         items: z.array(z.object({
@@ -792,7 +795,7 @@ server.registerTool("set_scenes", {
 }, async ({ scenes, captions, theme, punch_zoom }) => {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
-  const shaped = scenes.map((scene) => ({
+  const shaped = expandTemplates(scenes.map((scene) => ({
     type: scene.type,
     fromWordId: scene.from_word_id,
     toWordId: scene.to_word_id,
@@ -806,7 +809,7 @@ server.registerTool("set_scenes", {
     transition: scene.transition,
     graphic: scene.graphic,
     ...(scene.insert_id ? { insertId: scene.insert_id } : {}),
-  }));
+  })), { format: projectFormat(dir) });
   validateScenes(shaped, words);
   const previous = readComposeConfig(dir);
   const mergedTheme = theme ? { ...(previous.theme ?? {}), ...theme } : previous.theme;
@@ -872,8 +875,11 @@ function readBackPlan(dir, scenes, words, themeConfig) {
 const sceneEdits = (dir, mutate) => {
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
-  const scenes = config.scenes ?? [];
-  const result = mutate(scenes);
+  const edited = config.scenes ?? [];
+  const result = mutate(edited);
+  // A template named in a patch or an added scene is rendered here, so what
+  // is written is always a complete custom graphic.
+  const scenes = expandTemplates(edited, { format: projectFormat(dir) });
   validateScenes(scenes, words);
   config.scenes = scenes;
   config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
@@ -1023,7 +1029,23 @@ server.registerTool("describe_kit", {
   corners: [...CORNERS],
   presets: describePresets(),
   fonts: VENDORED_FONTS,
+  templates: `${TEMPLATE_IDS.length} named graphics the kit has no fixed shape for — ${TEMPLATE_IDS.join(", ")} — each filled in from a few fields and laid out for this shape. describe_templates lists the fields; write one as graphic: { kind: "custom", template: "<id>", params: { … } }. Reach for a template before writing html by hand.`,
   editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
+  });
+});
+
+server.registerTool("describe_templates", {
+  description:
+    "The named graphics: a timeline, a flow of arrows, before/after, myth and fact, a definition, a code window, keycaps, a progress bar, a ladder, the scales, an alert, a headline, a call to action, a teaser, a receipt, a ranking, a post, a share bar, a phone, the question, the hook line, the big word, the big number, three numbers. Each is a custom graphic already written and laid out for this film's shape, with its moving parts exposed as fields. Use one by writing graphic: { kind: \"custom\", template: \"<id>\", params: { … } } in set_scenes, add_scenes or update_scenes; the html and css are generated and the template id and params stay beside them in get_scenes. Read this before writing a custom graphic by hand — the hand-written one is for a moment none of these fit.",
+  inputSchema: {
+    persona: z.enum(["editor", "farmer"]).optional().describe("Narrow to the ones an editor or a short-form farmer reaches for; omit for all"),
+  },
+}, async ({ persona }) => {
+  const format = projectFormatSafe();
+  return ok({
+    format,
+    note: "full: true takes the whole stage (pair it with a cutaway or full layout; over focus it covers the face); full: false sits in the layout's content rect beside the head. A template's own default is the right one unless you have a reason. The example on each is a complete params object.",
+    templates: describeTemplates({ persona }),
   });
 });
 
