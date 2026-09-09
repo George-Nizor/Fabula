@@ -81,6 +81,7 @@ const els = {
   inspValue: $("insp-value"), inspValueWrap: $("insp-value-wrap"), inspPrefix: $("insp-prefix"), inspSuffix: $("insp-suffix"),
   inspBy: $("insp-by"), inspByWrap: $("insp-by-wrap"), inspNumber: $("insp-number"), inspNumberWrap: $("insp-number-wrap"),
   inspMotion: $("insp-motion"), inspMotionWrap: $("insp-motion-wrap"),
+  inspClipIn: $("insp-clip-in"), inspClipInWrap: $("insp-clip-in-wrap"), inspClipFit: $("insp-clip-fit"), inspClipFitWrap: $("insp-clip-fit-wrap"),
   inspPicturePick: $("insp-picture-pick"), inspPictureName: $("insp-picture-name"), inspPictureWrap: $("insp-picture-wrap"),
   inspItems: $("insp-items"), inspItemsWrap: $("insp-items-wrap"), inspSpanWords: $("insp-span-words"),
   inspDuplicate: $("insp-duplicate"), inspRemove: $("insp-remove"),
@@ -1325,6 +1326,7 @@ const KIND_FIELDS = {
   by: ["quote"],
   number: ["section"],
   motion: ["image"],
+  clip: ["clip"],
   picture: ["image", "cover"],
   items: ["chart", "list", "steps"],
   text: ["quote"],
@@ -1476,6 +1478,11 @@ function openInspector(index) {
   els.inspNumber.value = scene.graphic?.number ?? "";
   els.inspMotionWrap.hidden = !kindHas(scene, "motion");
   if (kindHas(scene, "motion")) fillSelect(els.inspMotion, look()?.imageMotions ?? [], scene.graphic.motion, "tilt (default)");
+  els.inspClipInWrap.hidden = els.inspClipFitWrap.hidden = !kindHas(scene, "clip");
+  if (kindHas(scene, "clip")) {
+    els.inspClipIn.value = String(scene.graphic.in ?? 0);
+    els.inspClipFit.value = scene.graphic.fit ?? "cover";
+  }
   els.inspPictureWrap.hidden = !kindHas(scene, "picture");
   els.inspPictureName.textContent = scene.graphic?.src?.replace(/^assets\//, "") ?? "none";
   els.inspItemsWrap.hidden = !kindHas(scene, "items");
@@ -1918,6 +1925,8 @@ commit(els.inspSubtitle, () => {
 });
 els.inspStyle.addEventListener("change", () => patchScene({ style: els.inspStyle.value || null }));
 els.inspMotion.addEventListener("change", () => patchScene({ graphic: { motion: els.inspMotion.value || null } }));
+els.inspClipIn.addEventListener("change", () => { const v = Number(els.inspClipIn.value); patchScene({ graphic: { in: Number.isFinite(v) && v > 0 ? v : null } }); });
+els.inspClipFit.addEventListener("change", () => patchScene({ graphic: { fit: els.inspClipFit.value === "cover" ? null : els.inspClipFit.value } }));
 commit(els.inspLabel, () => patchScene({ label: els.inspLabel.value }));
 commit(els.inspBy, () => patchScene({ graphic: { by: els.inspBy.value || null } }));
 commit(els.inspNumber, () => patchScene({ graphic: { number: els.inspNumber.value || null } }));

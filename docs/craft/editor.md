@@ -45,9 +45,11 @@ listening alone? The answers, in order of how often they are right:
 1. **Nothing.** The person, speaking. Most of a good talking-head film is the head. A film
    where something is always happening on the stage is exhausting, and the moments that matter
    stop standing out. The head alone is a choice, not a gap.
-2. **The thing itself.** A photograph, the screen recording, a logo. If the speaker names a
-   product, a place, a person, a tool — a picture of it beside the words, with the source
-   credited (`search_images`, `fetch_image`).
+2. **The thing itself.** Footage of it, a photograph, the screen recording, a logo. If the
+   speaker names a product, a place, a person, a tool — a picture of it beside the words, with
+   the source credited (`search_images`, `fetch_image`); if they describe something that
+   happened or that moves, and they have it on film, the film (`import_clip`, a `clip` card).
+   B-roll is the picture before the card: three seconds of the thing beats a card about it.
 3. **The mechanism.** When the speaker explains how something works, draw the working: a
    `flow`, a `timeline`, a `before-after`, a `custom` diagram. Let it develop as the
    explanation does, not all at once.
@@ -95,7 +97,10 @@ heard. A bed sits far below the voice, comes up only where the person stops talk
 opening, the section marks, the end — and never carries a melody the viewer will hum instead
 of listening. `set_audio` ducks it from the words themselves, so the only decisions left are
 which piece, how low, and whether this film wants one at all. Many do not. Normalise the voice
-to -16 LUFS for a film so it lands at the same level on every platform.
+to -16 LUFS for a film so it lands at the same level on every platform, and take the room out
+of it first (`set_audio` `voice_clean`): light for most recordings, strong only for a poor
+microphone in a live room — a floor taken too far down sounds like a booth, which is worse
+than a room.
 
 ## Looking
 

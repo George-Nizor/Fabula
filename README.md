@@ -117,14 +117,17 @@ architecture, the decisions already made, and what has been proven or disproven.
 Fabula is a two-hander: the window is where you watch and tweak, the assistant does the work.
 What the assistant works with: `docs/craft/` (the editor's craft, the short-form farmer's, a
 visual grammar of what goes with what is said, and reference styles described as methods), a
-`read_story` tool that marks the transcript up before composing, twenty-five named graphic
-templates (a timeline, a flow, before/after, myth and fact, a code window, a phone, a call to
-action…) filled in from fields, a pacing read on every plan write beside the variety read, and
-`preview_sheet`, which tiles the whole film into one picture so it can be looked at before it
-is rendered. It also finishes the job: a music bed under the voice, ducked from the transcript's
-own words (`set_audio`), captions that lean on the word a phrase turns on, a thumbnail
-(`render_thumbnail`), the chapter list for the description (`export_chapters`) and the image
-credits, all listed in the Export step with the film.
+`read_story` tool that marks the transcript up before composing, twenty-seven named graphic
+templates (a timeline, a flow, before/after, myth and fact, a code window, a phone, a lower
+third, an end screen, a call to action…) filled in from fields, B-roll the person has
+(`import_clip`, played in a card while they talk), a pacing read on every plan write beside the
+variety read, and `preview_sheet`, which tiles the whole film into one picture so it can be
+looked at before it is rendered. It also finishes the job: a grade on the footage and a
+clean-up of the voice (`set_theme grade`, `set_audio voice_clean`), a music bed under the
+voice, ducked from the transcript's own words (`set_audio`), captions that lean on the word a
+phrase turns on, a thumbnail or several to choose between (`render_thumbnail`), the chapter
+list for the description (`export_chapters`) and the image credits, all listed in the Export
+step with the film.
 
 1. **Open Fabula and start a project** (New project…, or drop a recording on the window) and
    give it a name. The clip is referenced where it lives — nothing is copied, a 19 GB recording
