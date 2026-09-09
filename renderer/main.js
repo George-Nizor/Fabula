@@ -91,6 +91,11 @@ let mode = "cut"; // cut | look | scenes | export
 let wordSpans = [];
 let highlighted = null;
 let selectedScene = null; // index into compose.scenes
+let selectedSceneSig = null; // what that scene was when the inspector opened
+let ownSceneEdit = false; // an inspector write is in flight; its change is expected
+// A scene has no id: the plan is rewritten whole. What identifies one across
+// polls is what it is and where its words are.
+const sceneSig = (scene) => JSON.stringify([scene.type, scene.fromWordId, scene.toWordId, scene.text ?? scene.graphic?.text ?? "", scene.graphic?.kind ?? scene.style ?? "", scene.graphic?.template ?? "", scene.layout ?? ""]);
 let selectedInsert = null; // insert id
 let previewOption = null; // option id being hovered in the picker
 let paintCache = null; // { key, compose } the merged compose a preview paints
@@ -132,11 +137,13 @@ function composeForPaint() {
   const insert = selectedInsert ? insertById(selectedInsert) : null;
   const option = insert && previewOption ? insert.options.find((o) => o.id === previewOption) : null;
   if (!c || !insert || !option || option.id === insert.chosen) return c;
-  const key = `${state?.project}:${insert.id}:${option.id}:${c.scenes.length}`;
-  if (paintCache?.key === key) return paintCache.compose;
+  // Keyed on the compose object itself: every state push is a new one, so a
+  // theme or a scene the assistant changed mid-hover is painted, not the
+  // merge made from the compose before it.
+  if (paintCache?.source === c && paintCache.insert === insert.id && paintCache.option === option.id) return paintCache.compose;
   const scenes = [...c.scenes.filter((scene) => scene.insertId !== insert.id), ...option.scenes].sort((a, b) => a.start - b.start);
   const layoutTimeline = window.FabulaStageEngine ? window.FabulaStageEngine.resolveLayoutTimeline(scenes, composeDuration(), { transition: c.theme?.transition, transitionSeconds: c.theme?.transitionSeconds }) : c.layoutTimeline;
-  paintCache = { key, compose: { ...c, scenes, layoutTimeline } };
+  paintCache = { source: c, insert: insert.id, option: option.id, compose: { ...c, scenes, layoutTimeline } };
   return paintCache.compose;
 }
 
@@ -260,7 +267,9 @@ function renderMinimap() {
 
 function composeDuration() {
   const c = compose();
-  return (Number.isFinite(els.video.duration) && els.video.duration) || c?.words.at(-1)?.end || 1;
+  // The main process measured the film; the video element and the last word
+  // are the fallbacks for the moments before it did.
+  return c?.duration || (Number.isFinite(els.video.duration) && els.video.duration) || c?.words.at(-1)?.end || 1;
 }
 
 // ---- Header ----
@@ -395,7 +404,10 @@ els.transcript.addEventListener("pointerdown", (event) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     els.transcript.classList.remove("is-selecting");
-    if (dragging) { suppressClick = true; renderSelection(); }
+    // The click that follows this pointerup is the drag's, not a word pick;
+    // if the pointer was released off the transcript no click comes at all,
+    // so the flag is dropped once the event queue has had its turn.
+    if (dragging) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); renderSelection(); }
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -964,12 +976,15 @@ function renderLookPage() {
     fillOptions(el, l.fonts, theme.fonts[key]);
   }
   els.themeTitleCase.value = theme.titleCase;
-  els.themeRadius.value = String(theme.radius);
+  // A slider under the pointer keeps its thumb: the push that follows each
+  // write carries the value before the one the hand has moved on to.
+  const held = (el) => document.activeElement === el;
+  if (!held(els.themeRadius)) els.themeRadius.value = String(theme.radius);
   els.themeRadiusValue.textContent = theme.radius === 0 ? "square" : `${theme.radius.toFixed(1)}×`;
-  els.themeGlow.value = String(theme.glow);
+  if (!held(els.themeGlow)) els.themeGlow.value = String(theme.glow);
   els.themeGlowValue.textContent = theme.glow === 0 ? "none" : `${Math.round(theme.glow * 100)}%`;
   const seconds = theme.transitionSeconds ?? theme.transitionSecondsDefault ?? 0;
-  els.themeTransitionSeconds.value = String(seconds);
+  if (!held(els.themeTransitionSeconds)) els.themeTransitionSeconds.value = String(seconds);
   els.themeTransitionSecondsValue.textContent = theme.transition === "cut" ? "n/a" : `${seconds.toFixed(1)} s`;
   els.themeTransitionSeconds.disabled = theme.transition === "cut";
   for (const button of els.themeCaptions.querySelectorAll("button")) button.classList.toggle("is-on", button.dataset.value === l.captionMode);
@@ -1413,6 +1428,7 @@ function openInspector(index) {
   const scene = compose()?.scenes[index];
   if (!scene) return;
   selectedScene = index;
+  selectedSceneSig = sceneSig(scene);
   selectedInsert = null;
   previewOption = null;
   els.inspInsert.hidden = true;
@@ -1478,8 +1494,47 @@ function openInspector(index) {
   renderSceneTimeline();
 }
 
+// The inspector addresses a scene by index, and the assistant may rewrite
+// the plan between polls. Each push is checked against what the scene was
+// when it was opened: the same scene is refreshed in place (the nudges move
+// its words, so the panel must follow), a scene that moved is found again,
+// and one that is gone closes the panel rather than leaving it pointed at
+// whatever slid into its slot. The inspector's own writes are expected
+// changes and adopted.
+function followSelectedScene() {
+  const scenes = compose()?.scenes ?? [];
+  const same = (scene) => scene && sceneSig(scene) === selectedSceneSig;
+  let index = selectedScene;
+  if (!same(scenes[index])) {
+    if (ownSceneEdit && scenes[index]) { ownSceneEdit = false; }
+    else {
+      index = scenes.findIndex(same);
+      if (index < 0) { closeInspector(); return; }
+    }
+  }
+  refreshInspector(index);
+}
+
+// Re-reads the scene into the panel. While a field is being typed in, only
+// the parts that cannot be mid-edit are touched.
+function refreshInspector(index) {
+  const scene = compose()?.scenes[index];
+  if (!scene) { closeInspector(); return; }
+  const active = document.activeElement;
+  const typing = active && els.inspBody.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) && !["checkbox", "radio"].includes(active.type);
+  if (!typing) { openInspector(index); return; }
+  selectedScene = index;
+  selectedSceneSig = sceneSig(scene);
+  const kind = scene.type === "graphic" ? `${scene.type} · ${scene.graphic?.template ? `${scene.graphic.template} (template)` : scene.graphic?.kind}` : scene.type;
+  els.inspTitle.textContent = `${kind} · ${fmt(scene.start)}–${fmt(scene.end)}`;
+  const words = compose()?.words ?? [];
+  els.inspSpanWords.textContent = `words ${scene.fromWordId}–${scene.toWordId} of ${Math.max(words.length - 1, 0)} · ${(scene.end - scene.start).toFixed(1)} s`;
+}
+
 function closeInspector() {
   selectedScene = null;
+  selectedSceneSig = null;
+  ownSceneEdit = false;
   selectedInsert = null;
   previewOption = null;
   els.inspProject.hidden = false;
@@ -1491,7 +1546,10 @@ function closeInspector() {
 
 async function patchScene(patch) {
   if (selectedScene === null) return;
+  // The state push that carries the edit arrives before the reply does.
+  ownSceneEdit = true;
   const result = await window.fabula.updateScene(selectedScene, patch);
+  ownSceneEdit = false;
   flashStatus(result.ok ? "saved" : result.error, !result.ok);
 }
 
@@ -1567,6 +1625,7 @@ function render() {
   if (!state?.project) els.projectMenuPop.hidden = true;
   if (els.projects.open) renderProjectsDialog();
   if (!review()) {
+    runPreviews(false); // the Look gallery is off screen; its loop stops with it
     els.session.hidden = true;
     els.stages.hidden = true;
     els.player.hidden = true;
@@ -1657,7 +1716,7 @@ function render() {
     els.timeTotal.textContent = fmt(composeDuration(), false);
     els.transportNote.textContent = "";
     els.stageCaptions.value = compose().captionMode ?? "none";
-    if (selectedScene !== null && !compose().scenes[selectedScene]) closeInspector();
+    if (selectedScene !== null) followSelectedScene();
     renderSceneTimeline();
     renderSceneTranscript();
   }
@@ -1887,8 +1946,11 @@ els.inspEndFwd.addEventListener("click", nudge("toWordId", 1));
 
 els.inspDuplicate.addEventListener("click", async () => {
   if (selectedScene === null) return;
-  const result = await window.fabula.duplicateScene(selectedScene);
-  flashStatus(result.ok ? "duplicated" : result.error, !result.ok);
+  const at = selectedScene;
+  const result = await window.fabula.duplicateScene(at);
+  // The copy sits after the original and is the one to edit next.
+  if (result.ok) openInspector(at + 1);
+  flashStatus(result.ok ? "duplicated · editing the copy" : result.error, !result.ok);
 });
 els.inspRemove.addEventListener("click", async () => {
   if (selectedScene === null) return;
@@ -1954,10 +2016,17 @@ els.themeAccent2.addEventListener("input", () => { els.themeAccent2Value.textCon
 els.themeAccent2.addEventListener("change", () => setTheme({ accent2: els.themeAccent2.value }));
 // A slider applies live; the number beside it follows without waiting for
 // the round trip so dragging feels attached to something.
-const themeNumber = (el, key, show) => el.addEventListener("input", () => {
-  if (show) show(Number(el.value));
-  setTheme({ [key]: Number(el.value) });
-});
+// The write is throttled: every push rebuilds the Look gallery, and a drag
+// fires dozens of input events a second. The last value always lands.
+const themeNumber = (el, key, show) => {
+  let pending = null;
+  const apply = () => { pending = null; setTheme({ [key]: Number(el.value) }); };
+  el.addEventListener("input", () => {
+    if (show) show(Number(el.value));
+    if (pending === null) pending = setTimeout(apply, 120);
+  });
+  el.addEventListener("change", () => { clearTimeout(pending); apply(); });
+};
 themeNumber(els.themeRadius, "radius", (v) => { els.themeRadiusValue.textContent = v === 0 ? "square" : `${v.toFixed(1)}×`; });
 themeNumber(els.themeGlow, "glow", (v) => { els.themeGlowValue.textContent = v === 0 ? "none" : `${Math.round(v * 100)}%`; });
 themeNumber(els.themeTransitionSeconds, "transitionSeconds", (v) => { els.themeTransitionSecondsValue.textContent = `${v.toFixed(1)} s`; });

@@ -199,3 +199,21 @@ test("a portrait band keeps tall footage on the canvas", () => {
   assert.ok(rects.content.y + rects.content.h <= stage.height, "the content rect is on the canvas");
   assert.ok(Math.abs(rects.video.w / rects.video.h - 9 / 16) < 0.01, "the footage keeps its shape");
 });
+
+test("a sliver of head at either end folds into the placed segment beside it", () => {
+  // The word pad puts a few frames of focus before a card on the first word
+  // and after one on the last; the window (transcript length) and the film
+  // (clean.mp4 length) must settle the same closing scene the same way.
+  const closing = { type: "stage", layout: "cutaway", start: 27.5, end: 29.96 };
+  const fromWords = resolveLayoutTimeline([closing], 29.96);
+  const fromFilm = resolveLayoutTimeline([closing], 30.04);
+  assert.equal(fromWords.at(-1).layout, "cutaway");
+  assert.equal(fromFilm.at(-1).layout, "cutaway", "the 0.08 s tail did not turn the closing card into a middle segment");
+  assert.equal(fromFilm.at(-1).end, 30.04);
+  const opening = resolveLayoutTimeline([{ type: "stage", layout: "cutaway", start: 0.04, end: 5 }], 30);
+  assert.equal(opening[0].layout, "cutaway");
+  assert.equal(opening[0].start, 0);
+  // A real opening shot of the head is a shot, and stays.
+  const shot = resolveLayoutTimeline([{ type: "stage", layout: "cutaway", start: 2, end: 8 }], 30);
+  assert.equal(shot[0].layout, "focus");
+});

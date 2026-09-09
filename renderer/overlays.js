@@ -205,8 +205,8 @@ function graphicSignature(graphic, p, t, scene) {
       return graphic.motion === "kenburns"
         ? { alpha, zoom: r3(1 + 0.09 * easeOut(p)), pan: r3(p) }
         : graphic.motion === "pop"
-          ? { alpha, pop: r3(easeOutBack(window01(p, 0, 0.12))) }
-          : { alpha, settle: r3(easeOut(p / 0.18)) };
+          ? { alpha, pop: r3(easeOutBack(window01(q, 0, 0.5))) }
+          : { alpha, settle: r3(easeOut(q / 0.6)) };
     case "quote": {
       const count = words(graphic.text).length;
       const at = stagger(count, 0.08, 0.04, 0.2, 0.75);
@@ -734,7 +734,10 @@ function animateGraphic(card, part) {
 
 function placeInColumn(node, column, stage, maxShare) {
   if (!column || !stage) return;
-  if (column.bottom !== undefined) node.style.bottom = pct(column.bottom, stage.height);
+  // The band is placed from the bottom; the stylesheet's `top` (a callout
+  // has one) must go, or the box is stretched between the two.
+  if (column.bottom !== undefined) { node.style.bottom = pct(column.bottom, stage.height); node.style.top = "auto"; }
+  else { node.style.bottom = ""; node.style.top = ""; }
   const pad = stage.width * 0.03;
   node.style.left = pct(column.x + pad, stage.width);
   node.style.right = "auto";
@@ -831,7 +834,10 @@ window.FabulaStage = {
     const cardShowing = (compose.scenes ?? []).some((scene) =>
       scene.type === "graphic" && scene.start <= t && t < scene.end
       && !(FULL_STAGE_KINDS.has(scene.graphic?.kind) && scene.graphic.full !== false));
-    const band = !columns?.wide && cardShowing && contentRect && stage
+    // The band is only a place when there is room in it: in a tall frame the
+    // content rect starts halfway down, in a wide focus it starts near the
+    // top, and a callout pinned above it there is off the frame.
+    const band = !columns?.wide && cardShowing && contentRect && stage && contentRect.y >= stage.height * 0.16
       ? { x: contentRect.x, w: contentRect.w, side: "band", bottom: stage.height - contentRect.y + stage.height * 0.025 }
       : null;
     const parts = [];
@@ -846,11 +852,12 @@ window.FabulaStage = {
     let screen = null;
     const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
     let captionEaten = false;
-    for (const scene of compose.scenes ?? []) {
+    for (const [index, scene] of (compose.scenes ?? []).entries()) {
       if (scene.type === "stage" || scene.start > t || t >= scene.end) continue;
       const p = clamp01((t - scene.start) / (scene.end - scene.start));
-      // An over-the-head card and an under one may share a word; the layer keeps their keys apart.
-      const key = `${scene.type}:${scene.start}:${scene.fromWordId ?? ""}${scene.type === "graphic" && scene.graphic?.over ? ":over" : ""}`;
+      // The scene's index keeps two identical scenes (a duplicate) on two
+      // nodes; without it the second is rebuilt every frame.
+      const key = `${index}:${scene.type}:${scene.start}:${scene.fromWordId ?? ""}${scene.type === "graphic" && scene.graphic?.over ? ":over" : ""}`;
       if (scene.type === "graphic") {
         const sig = graphicSignature(scene.graphic, p, t, scene);
         const full = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;

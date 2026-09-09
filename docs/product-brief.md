@@ -21,6 +21,17 @@ processes write review.json and compose.json beside and rename, so the other sid
 reads a truncated file. The lesson recorded for next time: after any large burst of authoring,
 the readings come before the claim of done.
 
+A sixth reader, over the painter and the window the belt was built on, found twelve more the
+next morning. The one that changed an engine: the window built its layout timeline from the
+last word's end and the export from the film's length, so a closing card on the last words
+was the last segment in one and an absorbed middle segment in the other. Both now use the
+film's length, and the timeline folds a sliver of the head under half a second at either end
+into the placed segment beside it — a few frames of face before the first card or after the
+last is a flash, not a shot. The rest were the window's: a callout placed in the band was
+stretched between the stylesheet's top and the painter's bottom, the inspector addressed a
+scene by index against a plan the assistant rewrites, the Look sliders snapped back under the
+hand, duplicate scenes shared a paint key.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

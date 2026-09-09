@@ -58,13 +58,22 @@ export function pageImageUrl(html, baseUrl) {
   return best?.href ?? null;
 }
 
-// ico and svg become png so the stage and the export treat every asset the
-// same way; anything else keeps its container.
+// A name the assets folder does not already hold: a second fetch of the
+// same slug must not overwrite the first picture and its credit.
+function freePath(dir, base, ext) {
+  let file = path.join(dir, `${base}.${ext}`);
+  for (let n = 2; fs.existsSync(file); n += 1) file = path.join(dir, `${base}-${n}.${ext}`);
+  return file;
+}
+
+// ico and gif become png (the first frame) so the stage and the export
+// treat every asset the same way; png, jpg and webp keep their container.
+const RASTERISE = new Set(["ico", "gif"]);
 function normalise(file, ext, ffmpeg) {
-  if (ext !== "ico") return file;
-  const png = file.replace(/\.ico$/, ".png");
+  if (!RASTERISE.has(ext)) return file;
+  const png = freePath(path.dirname(file), path.basename(file, `.${ext}`), "png");
   const result = spawnSync(ffmpeg, ["-y", "-v", "error", "-i", file, "-frames:v", "1", png], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`could not convert the icon: ${result.stderr.slice(-300)}`);
+  if (result.status !== 0) throw new Error(`could not convert the ${ext}: ${result.stderr.slice(-300)}`);
   fs.rmSync(file, { force: true });
   return png;
 }
@@ -102,7 +111,7 @@ export async function fetchImage({ url, name, kind = "auto", attribution, assets
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length > MAX_BYTES) throw new Error("image exceeds 25 MB");
   const base = slug(name ?? path.basename(new URL(target).pathname).replace(/\.[a-z0-9]+$/i, "") ?? "image");
-  let file = path.join(assetsDir, `${base}.${ext}`);
+  let file = freePath(assetsDir, base, ext);
   fs.writeFileSync(file, bytes);
   file = normalise(file, ext, ffmpeg);
   const metadata = { source: target, requestedUrl: url, ...(attribution ?? {}) };

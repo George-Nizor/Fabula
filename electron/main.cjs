@@ -147,6 +147,25 @@ function readReview(dir) {
 // The compose stage exists once the clean render and its transcript do.
 // Scenes resolve to seconds here, so the window and the export capture read
 // the same numbers from the same engine.
+// The film's own length, as the export measures it. The layout timeline is
+// built from this number in the window and in the render; built from the
+// last word's end instead, a closing stage scene settled differently in
+// each. Probed once per clean.mp4 and remembered by its stamp.
+const durationCache = new Map();
+function cleanDuration(cleanVideo, words) {
+  try {
+    const stat = fs.statSync(cleanVideo);
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    const hit = durationCache.get(cleanVideo);
+    if (hit?.stamp === stamp) return hit.duration;
+    const duration = core.pipeline.probeDuration(cleanVideo);
+    durationCache.set(cleanVideo, { stamp, duration });
+    return duration;
+  } catch {
+    return words.at(-1)?.end ?? 0;
+  }
+}
+
 function readCompose(dir) {
   if (!core) return null;
   try {
@@ -182,9 +201,10 @@ function readCompose(dir) {
         }
       }
     }
-    const duration = words.at(-1)?.end ?? 0;
+    const duration = cleanDuration(cleanVideo, words);
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
+      duration,
       screenUrl: fileUrl(path.join(dir, "out", "screen.mp4")),
       screenSpans: map?.screenSpans ?? [],
       words,

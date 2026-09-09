@@ -22,3 +22,31 @@ test('downloaded images retain source credits without breaking older assets', as
     fs.rmSync(assetsDir, { recursive: true, force: true });
   }
 });
+
+test('a gif is filed as a png and a repeated name never overwrites the first picture', async () => {
+  const assetsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabula-images-'));
+  const originalFetch = globalThis.fetch;
+  const { spawnSync } = await import('node:child_process');
+  const { FFMPEG } = await import('../scripts/pipeline.mjs');
+  const gifFile = path.join(assetsDir, 'probe.gif');
+  const made = spawnSync(FFMPEG, ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=8x8:d=0.1', '-frames:v', '1', gifFile], { encoding: 'utf8' });
+  const gifBytes = made.status === 0 ? fs.readFileSync(gifFile) : null;
+  fs.rmSync(gifFile, { force: true });
+  try {
+    globalThis.fetch = async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } });
+    const first = await fetchImage({ url: 'https://example.org/a.png', name: 'logo', assetsDir });
+    const second = await fetchImage({ url: 'https://example.org/b.png', name: 'logo', assetsDir });
+    assert.equal(first.src, 'assets/logo.png');
+    assert.equal(second.src, 'assets/logo-2.png');
+    assert.equal(fs.readdirSync(assetsDir).filter((f) => f.endsWith('.source.json')).length, 2, 'both credits kept');
+    if (gifBytes) {
+      globalThis.fetch = async () => new Response(gifBytes, { headers: { 'content-type': 'image/gif' } });
+      const gif = await fetchImage({ url: 'https://example.org/anim.gif', name: 'anim', assetsDir, ffmpeg: FFMPEG });
+      assert.equal(gif.src, 'assets/anim.png', 'the plan takes png, jpg and webp only');
+      assert.ok(!fs.existsSync(path.join(assetsDir, 'anim.gif')));
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(assetsDir, { recursive: true, force: true });
+  }
+});

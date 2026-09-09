@@ -1113,7 +1113,7 @@ server.registerTool("review_film", {
   const config = readComposeConfig(dir);
   const scenes = resolveScenes(config.scenes ?? [], words);
   const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
-  const duration = words.at(-1)?.end ?? 0;
+  const duration = filmDuration(dir, words);
   const chapters = chapterList({ scenes, words, title: readProjectMeta(dir).title ?? "Introduction", duration });
   const out = {
     format: projectFormat(dir), seconds: Number(duration.toFixed(1)), scenes: (config.scenes ?? []).length,
@@ -1164,13 +1164,33 @@ server.registerTool("read_story", {
 // which is also what makes them safe against the person's own edits in the
 // window between turns.
 
+// The film's length as the render measures it — the clean cut's, when it
+// exists — so every read of a plan settles the layout timeline the way the
+// export and the window will. The last word's end is the length before the
+// clean cut is rendered.
+const durationCache = new Map();
+function filmDuration(dir, words) {
+  const clean = projectPaths(dir).clean;
+  try {
+    const stat = fs.statSync(clean);
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    const hit = durationCache.get(clean);
+    if (hit?.stamp === stamp) return hit.duration;
+    const duration = probeDuration(clean);
+    durationCache.set(clean, { stamp, duration });
+    return duration;
+  } catch {
+    return words.at(-1)?.end ?? 0;
+  }
+}
+
 // What the plan looks like once it is written: the observations about its
 // shape, and the faults that are worth stopping for. Shared by set_scenes
 // and the three that edit part of a plan, so a patch is read as carefully
 // as a rewrite.
 function readBackPlan(dir, scenes, words, themeConfig, captions) {
   const resolved = resolveScenes(scenes, words);
-  const duration = words.at(-1)?.end ?? 0;
+  const duration = filmDuration(dir, words);
   const theme = resolveTheme(themeConfig ?? {});
   const shape = resolveFormat(projectFormat(dir));
   const pacing = describePacing(resolved, {

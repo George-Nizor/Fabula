@@ -56,6 +56,11 @@ export const MIN_DWELL_SECONDS = 3;
 // A cutaway is a cut, not a flight — nothing travels, so a brief one is a
 // legitimate edit rather than a dart. Below this it is a blink and goes.
 export const MIN_CUT_SECONDS = 1.2;
+// A sliver of the head at either end of the film is a flash, not a shot.
+// The word pad puts a few frames of focus before a card anchored on the
+// first word and after one anchored on the last; the placed segment takes
+// them. Kept well under a second so a real opening shot is never eaten.
+export const EDGE_SLIVER_SECONDS = 0.5;
 
 // Whether the camera is on the stage at all during a layout.
 const layoutAlpha = (layout) => (layout === "cutaway" ? 0 : 1);
@@ -112,6 +117,22 @@ export function settleTimeline(segments, durationSeconds) {
   let out = segments.map((s) => ({ ...s }));
   for (let pass = 0; pass < 4; pass += 1) {
     let changed = false;
+    // Head slivers at the ends: the neighbouring placed segment takes them.
+    // Without this a closing card that ends on the last word is the last
+    // segment in a timeline built from the transcript and a middle one in a
+    // timeline built from the film, whose tail outlasts the last word — and
+    // the middle one is absorbed. The window and the export must agree.
+    if (out.length > 1 && out[0].layout === "focus" && out[1].layout !== "focus" && out[0].end - out[0].start < EDGE_SLIVER_SECONDS) {
+      out[1] = { ...out[1], start: out[0].start };
+      out.splice(0, 1);
+      changed = true;
+    }
+    const last = out.length - 1;
+    if (last > 0 && out[last].layout === "focus" && out[last - 1].layout !== "focus" && out[last].end - out[last].start < EDGE_SLIVER_SECONDS) {
+      out[last - 1] = { ...out[last - 1], end: out[last].end };
+      out.splice(last, 1);
+      changed = true;
+    }
     // Short focus gaps between two placed layouts: extend the earlier one.
     for (let i = 1; i + 1 < out.length; i += 1) {
       const gap = out[i];
