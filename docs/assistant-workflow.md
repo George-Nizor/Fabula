@@ -267,7 +267,10 @@ and before handing the film over.
 
 `review_film` is the whole film in one call: the plan's reads, the chapter list it would
 export, the sound, the captions, and a contact sheet across it. Use it before a render and
-after the person has been editing.
+after the person has been editing. Once a film or a draft exists it also measures it —
+integrated loudness, loudness range, true peak, noise floor — under `sound.measured`, with
+notes when the film misses its target, peaks over -1 dBFS, or carries an audible room: the
+one sense the sheet cannot give.
 
 ## Templates: the graphics the kit has no fixed shape for
 

@@ -24,6 +24,7 @@ import {
   measureLoudness,
   probeDimensions,
   probeHasAudio,
+  measureSound,
   computeReview,
   reviewStats,
   scanFraming,
@@ -1207,6 +1208,20 @@ server.registerTool("review_film", {
     sound: describeAudio(config.audio, words, duration),
     captions: { mode: captionMode(config.captions), emphasis: config.captionEmphasis ?? "none" },
   };
+  // The film as it sounds, measured — the one sense the sheet cannot give.
+  const heard = ["final.mp4", "draft.mp4"].map((name) => path.join(dir, "out", name)).find((file) => fs.existsSync(file));
+  if (heard) {
+    const measured = measureSound(heard);
+    const notes = [];
+    const target = config.audio?.voice?.loudness ?? null;
+    if (typeof measured.integrated === "number") {
+      if (target !== null && Math.abs(measured.integrated - target) > 1) notes.push(`the film measures ${measured.integrated} LUFS against a ${target} target; render_final again (the stitch re-measures and trims)`);
+      if (target === null && measured.integrated < -20) notes.push(`the film measures ${measured.integrated} LUFS with no target set; platforms sit near -14 to -16 — set_audio voice_loudness`);
+    }
+    if (typeof measured.truePeak === "number" && measured.truePeak > -1) notes.push(`true peak ${measured.truePeak} dBFS is over the -1 dBFS platforms want; a lower voice target or the limiter's ceiling`);
+    if (typeof measured.noiseFloor === "number" && measured.noiseFloor > -55 && (config.audio?.voice?.clean ?? "off") === "off") notes.push(`the noise floor is ${measured.noiseFloor} dB — a room is audible under the words; set_audio voice_clean light`);
+    out.sound.measured = { file: path.basename(heard), ...measured, notes };
+  }
   if (sheet !== false && fs.existsSync(projectPaths(dir).clean) && duration > 0) {
     const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
     out.sheet = await runFrame(dir, [`--every=${every}`, `--width=${projectFormat(dir) === "vertical" ? 360 : 480}`]);

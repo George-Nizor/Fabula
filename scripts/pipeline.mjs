@@ -51,6 +51,24 @@ export function measureLoudness(file) {
   return match ? Number(match[1]) : null;
 }
 
+// The film's sound in numbers — the assistant's ears: integrated loudness,
+// loudness range, true peak (ebur128) and the noise floor (astats).
+export function parseSoundSummary(ebur, stats) {
+  const grab = (text, re) => { const m = String(text ?? "").match(re); return m ? Number(m[1]) : null; };
+  return {
+    integrated: grab(ebur, /\bI:\s+(-?\d+(?:\.\d+)?)\s+LUFS/),
+    range: grab(ebur, /\bLRA:\s+(-?\d+(?:\.\d+)?)\s+LU/),
+    truePeak: grab(ebur, /\bPeak:\s+(-?\d+(?:\.\d+)?)\s+dBFS/),
+    noiseFloor: grab(stats, /Noise floor dB:\s+(-?\d+(?:\.\d+)?)/),
+  };
+}
+
+export function measureSound(file) {
+  const ebur = spawnSync(FFMPEG, ["-hide_banner", "-nostats", "-i", file, "-map", "0:a:0", "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"], { encoding: "utf8" });
+  const stats = spawnSync(FFMPEG, ["-hide_banner", "-nostats", "-i", file, "-map", "0:a:0", "-af", "astats=measure_perchannel=0", "-f", "null", "-"], { encoding: "utf8" });
+  return parseSoundSummary(ebur.stderr, stats.stderr);
+}
+
 export function probeDuration(file) {
   const result = spawnSync(FFPROBE, [
     "-v", "error",

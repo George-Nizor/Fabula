@@ -105,3 +105,11 @@ test("the inbox is taken by moving it aside, so nothing appended meanwhile is lo
     assert.ok(!fs.readdirSync(dir).some((name) => name.endsWith(".taking")), "no taking file is left behind");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("the sound summary reads loudness, range, true peak and the floor out of ffmpeg's reports", async () => {
+  const { parseSoundSummary } = await import("../scripts/pipeline.mjs");
+  const ebur = "  Integrated loudness:\n    I:         -14.3 LUFS\n    Threshold: -24.6 LUFS\n\n  Loudness range:\n    LRA:         6.1 LU\n\n  True peak:\n    Peak:       -0.8 dBFS\n";
+  const stats = "[Parsed_astats_0 @ 0x1] RMS level dB: -18.3\n[Parsed_astats_0 @ 0x1] Noise floor dB: -62.9\n";
+  assert.deepEqual(parseSoundSummary(ebur, stats), { integrated: -14.3, range: 6.1, truePeak: -0.8, noiseFloor: -62.9 });
+  assert.deepEqual(parseSoundSummary("", ""), { integrated: null, range: null, truePeak: null, noiseFloor: null });
+});
