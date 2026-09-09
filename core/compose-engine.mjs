@@ -15,7 +15,8 @@ import { LAYOUTS, PIP_CORNERS, TRANSITIONS, FULL_STAGE_KINDS, resolveLayoutTimel
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen", "quote", "compare", "steps", "ring", "logos", "cover", "section", "custom"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "clip", "screen", "quote", "compare", "steps", "ring", "logos", "cover", "section", "custom"]);
+export const CLIP_FITS = new Set(["cover", "contain"]);
 // What a custom graphic may not carry: anything that runs, loads, or
 // navigates. Motion comes from the --p and --t variables the painter sets.
 const CUSTOM_FORBIDDEN = [/<\s*script/i, /<\s*iframe/i, /<\s*object/i, /<\s*embed/i, /<\s*link/i, /@import/i, /javascript:/i, /\bon[a-z]+\s*=/i, /https?:\/\//i, /expression\s*\(/i];
@@ -55,6 +56,17 @@ function validateGraphic(graphic, at) {
   // to declare beyond an optional label. Whether a screen exists at that
   // moment is the render map's business, reported as a warning upstream.
   if (graphic.kind === "screen") return;
+  // clip: B-roll — a video the project holds under assets/, played muted in
+  // the card from `in` seconds into it while the voice carries on.
+  if (graphic.kind === "clip") {
+    if (typeof graphic.src !== "string" || !/^assets\/[^/]+\.(mp4|webm|m4v|mov)$/i.test(graphic.src)) {
+      throw new Error(`${at}: clip needs an assets/… mp4, webm, m4v or mov src (import_clip brings one in)`);
+    }
+    if (graphic.in !== undefined && !(typeof graphic.in === "number" && graphic.in >= 0)) throw new Error(`${at}: clip \`in\` is seconds into the clip, 0 or more`);
+    if (graphic.fit !== undefined && !CLIP_FITS.has(graphic.fit)) throw new Error(`${at}: clip fit must be cover or contain`);
+    if (graphic.label !== undefined && typeof graphic.label !== "string") throw new Error(`${at}: clip label must be text`);
+    return;
+  }
   if (graphic.kind === "image") {
     assertImageSrc(graphic.src, `${at}: image`);
     if (graphic.motion !== undefined && !IMAGE_MOTIONS.has(graphic.motion)) {

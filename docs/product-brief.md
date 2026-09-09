@@ -44,6 +44,20 @@ a font nobody vendored was accepted, and the draft shipped tags reading "Earth" 
 off with an ellipsis. The two worked plans are checked in under `docs/craft/plans` so the
 reference films can be put back from the repository.
 
+## B-roll (2026-09-10)
+
+The belt's largest gap after the readings was the editor's most ordinary tool: footage that
+is not the head. `import_clip` brings a video the person has — a phone clip, a screen
+capture, stock they own — into `assets/` as a muted H.264 mp4 cut to the seconds wanted, and
+a `clip` graphic plays it in the card from `in` seconds in, beside the head in a `side`
+layout or as the whole picture in a `cutaway`. It rides the screen track's mechanism: the
+painter draws the card's chrome and reports the rect, the window and the export page place
+one `<video>` in it, and the export overlays the file through ffmpeg — read from its own
+offset, held transparent until its scene begins, cover-cropped or letterboxed — so the
+export never captures the clip's frames as plates. One clip at a time; the read-back says
+when a scene outruns its clip or two clips overlap. Verified on a rendered span: the clip's
+counter reads the offset asked for.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

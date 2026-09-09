@@ -320,3 +320,15 @@ test("the first and last stage segments are never reported as absorbed", () => {
   const short = absorbedStages(scenes, 60);
   assert.deepEqual(short.map((s) => s.index), [1]);
 });
+
+test("a clip is B-roll the project holds, read from an offset, one at a time in the plan's eyes", () => {
+  const words = [0, 1, 2, 3, 4].map((id) => ({ id, text: "w", start: id, end: id + 0.9 }));
+  const ok = (graphic) => validateScenes([{ type: "graphic", fromWordId: 0, toWordId: 4, graphic }], words);
+  const bad = (graphic, re) => assert.throws(() => ok(graphic), re);
+  ok({ kind: "clip", src: "assets/b-roll.mp4" });
+  ok({ kind: "clip", src: "assets/b-roll.webm", in: 2.5, fit: "contain", label: "the launch" });
+  bad({ kind: "clip", src: "b-roll.mp4" }, /assets\/… mp4/);
+  bad({ kind: "clip", src: "assets/still.png" }, /import_clip/);
+  bad({ kind: "clip", src: "assets/b-roll.mp4", in: -1 }, /seconds into the clip/);
+  bad({ kind: "clip", src: "assets/b-roll.mp4", fit: "stretch" }, /cover or contain/);
+});

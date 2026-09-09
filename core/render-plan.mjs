@@ -267,6 +267,26 @@ export function screenPlacements(screenScenes, chunk) {
     });
 }
 
+// Clip (B-roll) scenes as ffmpeg sees them: like a screen placement, plus
+// the file, where to start reading it (`in`, further along when the scene
+// began before the chunk) and how long to hold the card empty before the
+// clip's first frame (a scene that begins inside the chunk).
+export function clipPlacements(clipScenes, chunk) {
+  return clipScenes
+    .filter((scene) => overlaps(scene.start, scene.end, chunk.start, chunk.end))
+    .map((scene) => {
+      const span = scene.end - scene.start;
+      const fade = Math.max(span * 0.07, 0.05);
+      const start = scene.start - chunk.start;
+      return {
+        rect: scene.rect, start, end: scene.end - chunk.start, fade,
+        src: scene.src, fit: scene.fit ?? "cover",
+        offset: Number(((scene.in ?? 0) + Math.max(0, -start)).toFixed(3)),
+        delay: Number(Math.max(0, start).toFixed(3)),
+      };
+    });
+}
+
 // One chunk's ffmpeg graph. Inputs, in order: 0 field, 1 glow, 2 head track,
 // 3 head mask (at the track's own size), 4 under states, 5 over states, then
 // a screen track and mask pair per screen placement. The caller only adds
@@ -336,17 +356,22 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     const mask = 7 + k * 2;
     const { rect } = screen;
     const fadeOutAt = Math.max(screen.end - screen.fade, screen.start);
-    lines.push(
-      `[${video}:v]scale=${rect.w}:${rect.h}:force_original_aspect_ratio=decrease:flags=bicubic,` +
-      `pad=${rect.w}:${rect.h}:-1:-1:color=0x0b0e12,format=rgba[sc${k}]`,
-    );
+    // A clip fills its card (cover) unless asked to fit inside it; the
+    // screen track always fits, letterboxed on the field.
+    const fill = screen.fit === "cover"
+      ? `scale=${rect.w}:${rect.h}:force_original_aspect_ratio=increase:flags=bicubic,crop=${rect.w}:${rect.h}`
+      : `scale=${rect.w}:${rect.h}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${rect.w}:${rect.h}:-1:-1:color=0x0b0e12`;
+    lines.push(`[${video}:v]${fill},format=rgba[sc${k}]`);
     lines.push(`[${mask}:v]format=gray[sm${k}]`);
     // A scene already in progress when the chunk starts has faded in
     // already; fading it in again at the boundary would replay the fade
     // every two minutes of a long screen scene.
     const fadeIn = screen.start >= 0 ? `fade=t=in:st=${num(screen.start)}:d=${num(screen.fade)}:alpha=1,` : "";
+    // A clip whose scene begins inside the chunk waits, transparent, until
+    // it does: its input was read from the clip's own start.
+    const delay = screen.delay > 0 ? `tpad=start_duration=${num(screen.delay)}:color=black@0,` : "";
     lines.push(
-      `[sc${k}][sm${k}]alphamerge,${fadeIn}` +
+      `[sc${k}][sm${k}]alphamerge,${delay}${fadeIn}` +
       `fade=t=out:st=${num(fadeOutAt)}:d=${num(screen.fade)}:alpha=1[scr${k}]`,
     );
     lines.push(`[${base}][scr${k}]overlay=x=${rect.x}:y=${rect.y}:enable='between(t,${num(screen.start)},${num(screen.end)})':format=auto[bs${k}]`);

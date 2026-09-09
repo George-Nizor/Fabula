@@ -117,3 +117,36 @@ test("status remembers the adopted persona and wait_render says when nothing is 
     });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("import_clip files B-roll as a muted mp4, list_assets says how long it is, and a plan is held to it", async () => {
+  const root = makeRoot();
+  const { execFileSync } = await import("node:child_process");
+  const { FFMPEG } = await import("../scripts/pipeline.mjs");
+  const source = path.join(root, "phone.mov");
+  execFileSync(FFMPEG, ["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", source]);
+  try {
+    await withServer(root, async (client) => {
+      const imported = await call(client, "import_clip", { path: source, name: "launch", from: 1 });
+      assert.equal(errorOf(imported), null, errorOf(imported));
+      const clip = text(imported);
+      assert.equal(clip.src, "assets/launch.mp4");
+      assert.ok(Math.abs(clip.seconds - 2) < 0.3, `two seconds kept, got ${clip.seconds}`);
+      const listed = text(await call(client, "list_assets")).assets.find((a) => a.src === "assets/launch.mp4");
+      assert.equal(listed.kind, "clip");
+      assert.ok(listed.seconds > 1.5);
+      // Five words at 0.4 s is two seconds of card: within the clip.
+      const fits = text(await call(client, "check_scenes", { scenes: [
+        { type: "stage", from_word_id: 0, to_word_id: 4, layout: "side" },
+        { type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "clip", src: "assets/launch.mp4", label: "the launch" } },
+      ] }));
+      assert.ok(!fits.warnings.some((w) => /holds its last frame/.test(w)), JSON.stringify(fits.warnings));
+      // Ten words is four seconds: the clip runs out and the read-back says so.
+      const long = text(await call(client, "check_scenes", { scenes: [
+        { type: "stage", from_word_id: 0, to_word_id: 9, layout: "side" },
+        { type: "graphic", from_word_id: 0, to_word_id: 9, graphic: { kind: "clip", src: "assets/launch.mp4" } },
+      ] }));
+      assert.ok(long.warnings.some((w) => /holds its last frame/.test(w)), JSON.stringify(long.warnings));
+      assert.match(errorOf(await call(client, "check_scenes", { scenes: [{ type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "clip", src: "assets/nope.mp4" } }] })) ?? "", /no such asset assets\/nope.mp4/);
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

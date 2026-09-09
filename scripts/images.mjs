@@ -156,11 +156,12 @@ export async function searchCommons({ query, count = 6, width = 1024 }) {
 export function listAssets(assetsDir) {
   if (!fs.existsSync(assetsDir)) return [];
   return fs.readdirSync(assetsDir)
-    .filter((name) => /\.(png|jpe?g|webp|gif)$/i.test(name))
+    .filter((name) => /\.(png|jpe?g|webp|gif|mp4|webm|m4v|mov)$/i.test(name))
     .map((name) => {
       const sourceFile = path.join(assetsDir, `${name}.source.json`);
       let attribution = null;
       try { attribution = JSON.parse(fs.readFileSync(sourceFile, "utf8")); } catch {}
-      return { src: `assets/${name}`, bytes: fs.statSync(path.join(assetsDir, name)).size, attribution };
+      const kind = /\.(mp4|webm|m4v|mov)$/i.test(name) ? "clip" : "image";
+      return { src: `assets/${name}`, kind, bytes: fs.statSync(path.join(assetsDir, name)).size, attribution };
     });
 }

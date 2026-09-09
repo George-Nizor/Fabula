@@ -39,7 +39,7 @@ test("the craft guides only name templates and tools that exist", () => {
   const templates = new Set(describeTemplates().map((t) => t.id));
   const server = fs.readFileSync(path.join(ROOT, "mcp/server.mjs"), "utf8");
   const tools = new Set([...server.matchAll(/registerTool\("([a-z_]+)"/g)].map((m) => m[1]));
-  const kit = new Set(["stat", "chart", "list", "steps", "ring", "quote", "compare", "image", "logos", "screen", "cover", "section", "custom", "kinetic", "callout", "title",
+  const kit = new Set(["stat", "chart", "list", "steps", "ring", "quote", "compare", "image", "clip", "logos", "screen", "cover", "section", "custom", "kinetic", "callout", "title",
     "focus", "side", "pip", "band", "full", "cutaway", "glide", "dissolve", "cut", "karaoke", "block", "bar", "pop", "tilt", "kenburns", "open",
     "studio", "broadcast", "paper", "neon", "mono", "ink", "slate", "signal", "dawn", "terminal", "bloom", "pastel"]);
   for (const doc of Object.values(CRAFT_DOCS)) {

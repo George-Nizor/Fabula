@@ -12,6 +12,7 @@ const frame = document.getElementById("frame");
 const headCard = document.getElementById("head");
 const head = document.getElementById("head-video");
 const screen = document.getElementById("screen");
+const clip = document.getElementById("clip");
 const stage = document.getElementById("stage");
 
 const painted = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -59,8 +60,14 @@ window.__renderAt = async (t, layout) => {
   const seeks = [seekTo(head, t)];
   const useScreen = Boolean(compose.screenUrl) && screenActiveAt(t);
   if (useScreen) seeks.push(seekTo(screen, t));
+  // B-roll at t: the clip the plan places, loaded and seeked to its own time.
+  const placed = window.FabulaStage.plan(compose, t, layout).clip;
+  if (placed) {
+    if (clip.dataset.src !== placed.url) { clip.dataset.src = placed.url; clip.src = placed.url; await loaded(clip); }
+    seeks.push(seekTo(clip, Math.max(0, t - placed.start + placed.in)));
+  }
   await Promise.all(seeks);
-  window.FabulaStage.update(stage, headCard, compose, t, layout, compose.screenUrl ? screen : null);
+  window.FabulaStage.update(stage, headCard, compose, t, layout, compose.screenUrl ? screen : null, clip);
   await painted();
   return true;
 };
@@ -71,6 +78,7 @@ window.__fieldOnly = async () => {
   frame.classList.add("stage-field");
   headCard.hidden = true;
   screen.hidden = true;
+  clip.hidden = true;
   stage.replaceChildren();
   delete stage.dataset.state;
   await painted();
@@ -81,7 +89,7 @@ window.__fieldOnly = async () => {
 window.__keysRange = (ts, layouts) => ts.map((t, i) => {
   const plan = window.FabulaStage.plan(compose, t, layouts[i]);
   const keys = window.FabulaStage.keys(plan);
-  return { under: keys.under, over: keys.over, screen: plan.screen };
+  return { under: keys.under, over: keys.over, screen: plan.screen, clip: plan.clip };
 });
 
 // One layer at t on a transparent frame, nothing else visible.
@@ -90,6 +98,7 @@ window.__renderLayer = async (t, layout, layer) => {
   frame.classList.remove("stage-field");
   headCard.hidden = true;
   screen.hidden = true;
+  clip.hidden = true;
   const plan = window.FabulaStage.plan(compose, t, layout);
   window.FabulaStage.paint(stage, plan, layer);
   await painted();

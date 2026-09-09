@@ -19,13 +19,14 @@ visible too. Landscape and vertical differ in what fits, so both are given.
 | reads out what someone said | `quote` | `post`, `phone` | side | side | `post` for a comment or message; `phone` for an exchange. Say whose it is. |
 | makes an absolute claim | `word` | `myth-fact`, `kinetic`, `hook` | cutaway / full | cutaway | The big word is a beat, not a title. Once or twice a film. |
 | warns | `alert` | `callout`, `myth-fact` | side | side | The level says how serious. |
-| names a product, tool, person, place | `image` | `logos`, `cover` | side / pip | side / band | Fetch the real thing (`search_images`, `fetch_image`) and credit it. Do not draw a logo. |
+| names a product, tool, person, place | `image` | `logos`, `cover`, `clip` | side / pip | side / band | Fetch the real thing (`search_images`, `fetch_image`) and credit it. Do not draw a logo. |
+| describes something that happened, or that moves | `clip` | `image`, head alone | side / cutaway | side / cutaway | B-roll the person has (`import_clip`): the thing itself, muted, while they tell it. A cutaway when the footage is the picture; beside the head when they are the subject. |
 | shows something typed | `code` | `keys`, `screen` | cutaway / side | cutaway | The screen track if the recording has one; otherwise the lines themselves. |
 | changes subject | `section` | `cover`, `headline`, head alone | full / cutaway | cutaway | A mark the viewer can feel. |
 | opens the film | `hook` | `title`, `cover`, `teaser` | focus + title | cutaway | The promise, then what is coming. |
 | closes the film | head alone | `kinetic`, `word` | focus | focus | The last line is the viewer's. |
 | asks the viewer to do something | `cta` | `callout` | — | cutaway | Shorts only. |
-| tells a story | head alone | `image`, `cover` | focus | focus | A story wants the face. Put the picture where the story names a thing. |
+| tells a story | head alone | `image`, `clip`, `cover` | focus | focus | A story wants the face. Put the picture where the story names a thing. |
 | says nothing visual for a while | head alone | punch-in, `callout` | focus | focus | The head is a choice. Mark the passage with a punch-in or one callout, not a card per sentence. |
 
 ## The layouts, as an editor uses them

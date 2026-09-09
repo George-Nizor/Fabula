@@ -38,7 +38,7 @@ const els = {
   look: $("look"), lookPresets: $("look-presets"), lookBrands: $("look-brands"), lookSave: $("look-save"), lookReset: $("look-reset"), lookStatus: $("look-status"),
   exportPage: $("export"), exportMain: $("export-main"),
   toggleRail: $("toggle-rail"), toggleInsp: $("toggle-insp"),
-  video: $("video"), head: $("head"), screen: $("screen"), overlay: $("overlay"), guides: $("guides"),
+  video: $("video"), head: $("head"), screen: $("screen"), clip: $("clip"), overlay: $("overlay"), guides: $("guides"),
   playpause: $("playpause"), skipwrap: $("skipwrap"), skipcuts: $("skipcuts"),
   scriptToggle: $("script-toggle"), captionsWrap: $("captions-wrap"), stageCaptions: $("stage-captions"),
   timeNow: $("time-now"), timeSep: $("time-sep"), timeTotal: $("time-total"), transportNote: $("transport-note"),
@@ -1310,7 +1310,7 @@ function flashInsert(text, isError = false) {
 // Which card kinds carry which field. The inspector shows a control only
 // where the engine would accept it, so nothing on screen is a dead end.
 const KIND_FIELDS = {
-  label: ["image", "screen", "stat", "ring"],
+  label: ["image", "clip", "screen", "stat", "ring"],
   value: ["stat", "ring"],
   by: ["quote"],
   number: ["section"],
@@ -1693,6 +1693,8 @@ function render() {
     els.video.style.transform = "";
     els.screen.hidden = true;
     els.screen.pause();
+    els.clip.hidden = true;
+    els.clip.pause();
     els.trackCuts.hidden = false;
     els.trackLayout.hidden = els.trackScreen.hidden = els.trackScenes.hidden = els.trackInserts.hidden = true;
     els.timeTotal.textContent = `${fmt(review().duration, false)} raw`;
@@ -2235,7 +2237,15 @@ function tick() {
       if (!els.video.paused && els.screen.paused) els.screen.play().catch(() => {});
       if (els.video.paused && !els.screen.paused) els.screen.pause();
     }
-    window.FabulaStage.update(els.overlay, els.head, composeForPaint(), now, null, c.screenUrl ? els.screen : null);
+    const plan = window.FabulaStage.update(els.overlay, els.head, composeForPaint(), now, null, c.screenUrl ? els.screen : null, els.clip);
+    // B-roll runs with the film: seeked to its own time, played and paused
+    // with the head.
+    if (plan?.clip) {
+      const want = now - plan.clip.start + plan.clip.in;
+      if (Math.abs(els.clip.currentTime - want) > 0.12) els.clip.currentTime = want;
+      if (!els.video.paused && els.clip.paused) els.clip.play().catch(() => {});
+      if (els.video.paused && !els.clip.paused) els.clip.pause();
+    } else if (!els.clip.paused) els.clip.pause();
   }
 
   if ((!els.video.paused || shuttle < 0) && !scrub && !panning) followTime(now);

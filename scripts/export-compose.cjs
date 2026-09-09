@@ -186,7 +186,8 @@ async function main() {
   for (const entry of fs.readdirSync(cacheDir)) {
     if (entry.endsWith(".work")) fs.rmSync(path.join(cacheDir, entry), { recursive: true, force: true });
   }
-  const media = { clean: stamp(cleanVideo), screen: hasScreen ? stamp(screenVideo) : null };
+  const clipFiles = [...new Set(scenes.filter((s) => s.graphic?.kind === "clip").map((s) => s.graphic.src))];
+  const media = { clean: stamp(cleanVideo), screen: hasScreen ? stamp(screenVideo) : null, clips: Object.fromEntries(clipFiles.map((src) => [src, stamp(path.join(projectDir, src))])) };
   const encoder = pipeline.videoEncoderArgs(draft ? "draft" : "film", FPS);
   // The painter's own files are part of every chunk's identity: a change to
   // a stylesheet or the overlay script is a new picture, and a cached chunk
@@ -317,7 +318,14 @@ async function main() {
         const known = screenScenes.find((x) => x.start === s.start && x.end === s.end);
         if (!known) screenScenes.push({ start: s.start, end: s.end, rect: s.rect });
       }
-      const screens = hasScreen ? plan.screenPlacements(screenScenes, chunk) : [];
+      // Clip (B-roll) scenes likewise, each with its file and offset.
+      const clipScenes = [];
+      for (let i = 0; i < chunk.frames; i += 1) {
+        const c = keys[i].clip;
+        if (!c) continue;
+        if (!clipScenes.find((x) => x.start === c.start && x.end === c.end && x.src === c.src)) clipScenes.push({ start: c.start, end: c.end, rect: c.rect, src: c.src, in: c.in, fit: c.fit });
+      }
+      const screens = [...(hasScreen ? plan.screenPlacements(screenScenes, chunk) : []), ...plan.clipPlacements(clipScenes, chunk)];
       const captured = states.under.length + states.over.length;
       say(`${tag}: ${captured} states captured in ${((Date.now() - captureStart) / 1000).toFixed(1)}s (under ${states.under.length}, over ${states.over.length}, screens ${screens.length}); ${encoded} of ${todo.length} encoded`);
       return screens;
@@ -338,7 +346,10 @@ async function main() {
         "-f", "concat", "-safe", "0", "-i", path.join(work, "over.txt"),
       ];
       for (const screen of screens) {
-        args.push(...seek, "-t", D, "-i", screenVideo);
+        // The screen track is read at the chunk's own time; a clip from its
+        // own offset, for as long as its card is on.
+        if (screen.src) args.push("-ss", String(screen.offset), "-t", String(Math.max(0.1, screen.end - Math.max(0, screen.start))), "-i", path.join(projectDir, screen.src));
+        else args.push(...seek, "-t", D, "-i", screenVideo);
         args.push("-loop", "1", "-framerate", String(FPS), "-t", D, "-i", screenMask(screen.rect.w, screen.rect.h));
       }
       args.push(

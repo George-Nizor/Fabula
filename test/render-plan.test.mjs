@@ -9,6 +9,7 @@ import {
   chunkPlan,
   chunkIdentity,
   screenPlacements,
+  clipPlacements,
   chunkGraph,
   headRectAt,
   punchScaleAtTime,
@@ -304,4 +305,19 @@ test("a screen scene already in progress at a chunk's start does not fade in aga
   const fresh = screenPlacements([{ start: 130, end: 200, rect: { x: 0, y: 0, w: 960, h: 540 } }], { start: 120, end: 240, frames: 3600 });
   const graph2 = chunkGraph({ chunk: { start: 120, end: 240, frames: 3600 }, timeline: resolveLayoutTimeline([], 300), videoAspect: aspect, stage, glowSize: 1728, screens: fresh });
   assert.ok(graph2.includes("fade=t=in:st=10"), "a scene starting inside the chunk fades in where it starts");
+});
+
+test("a clip placement reads the file from its own offset and waits, transparent, for its scene", () => {
+  const scene = { start: 100, end: 110, rect: { x: 10, y: 20, w: 400, h: 300 }, src: "assets/b.mp4", in: 3, fit: "cover" };
+  const inside = clipPlacements([scene], { start: 96, end: 120 })[0];
+  assert.equal(inside.start, 4);
+  assert.equal(inside.delay, 4, "the card is on the stage before the clip's first frame; the clip waits");
+  assert.equal(inside.offset, 3, "read from `in`");
+  const straddling = clipPlacements([scene], { start: 105, end: 130 })[0];
+  assert.equal(straddling.delay, 0);
+  assert.equal(straddling.offset, 8, "in plus the five seconds already played");
+  const graph = chunkGraph({ chunk: { start: 96, end: 120, frames: 720 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [inside] });
+  inOrder(graph, ["[6:v]scale=400:300:force_original_aspect_ratio=increase", "crop=400:300", "alphamerge,tpad=start_duration=4:color=black@0,fade=t=in", "enable='between(t,4,14)'"]);
+  const contained = chunkGraph({ chunk: { start: 105, end: 130, frames: 750 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [clipPlacements([{ ...scene, fit: "contain" }], { start: 105, end: 130 })[0]] });
+  assert.ok(contained.includes("force_original_aspect_ratio=decrease") && !contained.includes("tpad"), "contain letterboxes; a scene already running does not wait");
 });

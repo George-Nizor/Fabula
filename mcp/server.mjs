@@ -1276,6 +1276,17 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   for (const over of overFullStage(resolved)) {
     warnings.push(`scene ${over.index}: the ${over.type} sits over the full-stage ${over.card} for ${over.seconds}s and lands on its text. Put the words in the card, or move the ${over.type} to a moment the head holds.`);
   }
+  const clips = resolved.map((scene, index) => ({ scene, index })).filter(({ scene }) => scene.graphic?.kind === "clip");
+  for (const { scene, index } of clips) {
+    let length = null;
+    try { length = probeDuration(path.join(dir, scene.graphic.src)); } catch { length = null; }
+    const needed = (scene.graphic.in ?? 0) + (scene.end - scene.start);
+    if (length !== null && needed > length + 0.05) {
+      warnings.push(`scene ${index}: the clip ${scene.graphic.src} is ${length.toFixed(1)}s and the card asks for ${needed.toFixed(1)}s from ${(scene.graphic.in ?? 0).toFixed(1)}s in; it holds its last frame for the rest. Shorten the scene, or start it earlier in the clip.`);
+    }
+    const other = clips.find((c) => c.index > index && c.scene.start < scene.end && scene.start < c.scene.end);
+    if (other) warnings.push(`scene ${index} and scene ${other.index}: two clips at once; only the first is drawn. Give them different words.`);
+  }
   resolved.forEach((scene, index) => {
     const graphic = scene.graphic;
     if (!graphic) return;
@@ -1472,6 +1483,7 @@ server.registerTool("describe_kit", {
     quote: "text, optional by",
     compare: "left{title, items[]}, right{title, items[]} — two columns and a VS badge",
     image: `src (assets/…), optional label and motion (${[...IMAGE_MOTIONS].join("/")})`,
+    clip: "B-roll: src (assets/….mp4 from import_clip), optional in (seconds into the clip), fit (cover/contain), label — plays muted in the card while the voice carries on; one at a time",
     logos: "items[{src, label?}] — pictures in a row",
     screen: "the recording's own screen track, in sync; only inside get_framing's screenSpans",
     cover: "WHOLE STAGE: a still edge to edge with title, subtitle, optional tint",
@@ -1862,10 +1874,47 @@ server.registerTool("import_image", {
   return ok({ src: `assets/${leaf}`, width: dims.width, height: dims.height, bytes: fs.statSync(target).size, attribution: metadata });
 });
 
+server.registerTool("import_clip", {
+  description:
+    "B-roll: bring a video clip the person has — a phone clip, a screen capture, footage they own — into the project's assets/ as a muted, browser-playable mp4 for a `clip` graphic, which plays it in the card while the voice carries on (a side layout beside the head, or a cutaway when the clip is the picture). Re-encoded to H.264 no wider than 1920 with the sound dropped; a long file takes a while, so cut it to the part that is wanted with `from` and `seconds`. Returns the src and the clip's length; a scene longer than the clip holds its last frame, and the read-back says so.",
+  inputSchema: {
+    path: z.string().describe("Path to the video on the pipeline host (mp4/mov/mkv/webm/m4v)"),
+    name: z.string().optional().describe("File name under assets/; the source's own name by default"),
+    from: z.number().min(0).optional().describe("Seconds into the file to start keeping from (0)"),
+    seconds: z.number().min(0.5).max(120).optional().describe("How many seconds to keep (the rest of the file, up to 120)"),
+    attribution: z.object({ author: z.string().optional(), license: z.string().optional(), note: z.string().optional() }).optional().describe("Who shot it, if not the person; saved beside the asset and written into the credits"),
+  },
+}, async ({ path: given, name, from, seconds, attribution }) => {
+  const dir = currentProjectDir();
+  const source = hostPath(given);
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
+  if (!/\.(mp4|mov|mkv|webm|m4v)$/i.test(source)) throw new Error("import_clip takes mp4, mov, mkv, webm or m4v");
+  const leaf = `${(name ?? path.basename(source, path.extname(source))).replace(/\.(mp4|mov|mkv|webm|m4v)$/i, "").replace(/[^a-z0-9._-]/gi, "_")}.mp4`;
+  const assets = path.join(dir, "assets");
+  fs.mkdirSync(assets, { recursive: true });
+  const target = path.join(assets, leaf);
+  const { execFileSync } = await import("node:child_process");
+  const cut = [...(from ? ["-ss", String(from)] : []), ...(seconds ? ["-t", String(seconds)] : [])];
+  execFileSync(FFMPEG, ["-y", "-v", "error", ...cut, "-i", source, "-an", "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", target], { stdio: ["ignore", "ignore", "pipe"] });
+  const metadata = { source: `file:${source}`, requestedUrl: null, from: from ?? 0, ...(attribution ?? {}) };
+  fs.writeFileSync(`${target}.source.json`, JSON.stringify(metadata, null, 2) + "\n");
+  const dims = probeDimensions(target);
+  const length = probeDuration(target);
+  return ok({ src: `assets/${leaf}`, seconds: Number(length.toFixed(2)), width: dims.width, height: dims.height, bytes: fs.statSync(target).size, attribution: metadata, hint: `a clip graphic: { kind: "clip", src: "assets/${leaf}", in: 0, fit: "cover" } over up to ${length.toFixed(1)}s of words, with a side or cutaway stage scene` });
+});
+
 server.registerTool("list_assets", {
   description: "Pictures already in the project's assets/ (fetched, or chosen in the inspector), as project-relative srcs.",
   inputSchema: {},
-}, async () => ok({ assets: listAssets(path.join(currentProjectDir(), "assets")) }));
+}, async () => {
+  const dir = currentProjectDir();
+  // A clip is listed with its length, which is what a scene over it needs.
+  const assets = listAssets(path.join(dir, "assets")).map((asset) => {
+    if (asset.kind !== "clip") return asset;
+    try { return { ...asset, seconds: Number(probeDuration(path.join(dir, asset.src)).toFixed(2)) }; } catch { return asset; }
+  });
+  return ok({ assets });
+});
 
 server.registerTool("reanchor_scenes", {
   description:

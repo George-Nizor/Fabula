@@ -213,6 +213,8 @@ function graphicSignature(graphic, p, t, scene) {
     }
     case "section":
       return { alpha, number: r3(easeOutBack(window01(q, 0, 0.35))), rule: r3(easeOut(window01(q, 0.2, 0.4))), title: r3(easeOut(window01(q, 0.3, 0.45))), sub: r3(easeOut(window01(q, 0.6, 0.35))) };
+    case "clip":
+      return { alpha }; // the picture is the clip itself, placed as media
     case "custom":
       return { alpha, p: r2(p), q: r2(q) };
     case "image":
@@ -400,7 +402,7 @@ function buildGraphic(part) {
     if (graphic.label) wrap.append(el("div", "ov-image-label", graphic.label));
     card.append(wrap);
   }
-  if (graphic.kind === "screen") {
+  if (graphic.kind === "screen" || graphic.kind === "clip") {
     card.classList.add("ov-screen-card");
     if (graphic.label) card.append(el("div", "ov-screen-label", graphic.label));
   }
@@ -864,6 +866,7 @@ window.FabulaStage = {
       parts.push({ key: "shadow", kind: "shadow", layer: "under", rect: roundRect(layout.video), alpha: Math.round(alpha * 20) / 20 });
     }
     let screen = null;
+    let clip = null;
     const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
     let captionEaten = false;
     for (const [index, raw] of (compose.scenes ?? []).entries()) {
@@ -882,6 +885,12 @@ window.FabulaStage = {
         parts.push({ key, kind: "graphic", layer: scene.graphic.over ? "over" : "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
         if (scene.graphic.kind === "screen" && rect && stage) {
           screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end };
+        }
+        // B-roll: one clip at a time is placed as media in the card's rect,
+        // the way the screen track is; a second one showing at once is the
+        // plan's fault and the read-back says so.
+        if (scene.graphic.kind === "clip" && rect && stage && !clip) {
+          clip = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, src: scene.graphic.src, url: scene.graphic.url ?? scene.graphic.src, in: scene.graphic.in ?? 0, fit: scene.graphic.fit ?? "cover" };
         }
       } else if (scene.type === "kinetic") {
         // Giant word-by-word type, riding the per-word spans; the caption
@@ -941,7 +950,7 @@ window.FabulaStage = {
       parts.push({ key: "brand", kind: "brand", layer: "over", logo: theme.logo ? { ...theme.logo, url: theme.logoUrl ?? theme.logo.src } : null, watermark: theme.watermark, watermarkCorner: watermarkCorner(theme, layout, stage) });
     }
     for (const part of parts) part.sigText = JSON.stringify(part);
-    return { t, stage, layout, parts, screen, theme };
+    return { t, stage, layout, parts, screen, clip, theme };
   },
 
   // Signature of one layer at a moment: identical strings mean identical
@@ -996,8 +1005,22 @@ window.FabulaStage = {
   // one) as layers on the stage from a plan. The card takes the layout's
   // rect; the video inside it takes the punch-in, zooming within the card
   // exactly as the export zooms the track within its mask.
-  placeMedia(plan, headEl, screenEl) {
-    const { stage, layout, screen, theme } = plan;
+  placeMedia(plan, headEl, screenEl, clipEl) {
+    const { stage, layout, screen, clip, theme } = plan;
+    if (clipEl) {
+      if (!clip || !stage) clipEl.hidden = true;
+      else {
+        if (clipEl.dataset.src !== clip.url) { clipEl.dataset.src = clip.url; clipEl.src = clip.url; }
+        clipEl.hidden = false;
+        clipEl.style.left = pct(clip.rect.x, stage.width);
+        clipEl.style.top = pct(clip.rect.y, stage.height);
+        clipEl.style.width = pct(clip.rect.w, stage.width);
+        clipEl.style.height = pct(clip.rect.h, stage.height);
+        clipEl.style.borderRadius = `${(clip.rect.w * SCREEN_RADIUS * theme.radius / stage.width) * 100}cqw`;
+        clipEl.style.objectFit = clip.fit;
+        clipEl.style.opacity = String(clip.alpha);
+      }
+    }
     if (layout && stage && headEl) {
       const rect = layout.video;
       // The export drives the head's mask with the same number from the same
@@ -1031,7 +1054,7 @@ window.FabulaStage = {
   // layoutOverride: a {video, content} rect pair computed by the caller from
   // the same core engine — the export driver's path. Without it, the preview
   // asks the engine bridged in by the preload.
-  update(overlayEl, headEl, compose, t, layoutOverride, screenEl) {
+  update(overlayEl, headEl, compose, t, layoutOverride, screenEl, clipEl) {
     let layout = layoutOverride ?? null;
     const stage = compose.stage ?? null;
     const videoEl = headEl?.querySelector("video") ?? null;
@@ -1042,8 +1065,9 @@ window.FabulaStage = {
     const plan = this.plan(compose, t, layout);
     plan.punch = punchAt(compose, t);
     if (overlayEl.parentElement) applyTheme(overlayEl.parentElement, plan.theme);
-    this.placeMedia(plan, headEl, screenEl);
+    this.placeMedia(plan, headEl, screenEl, clipEl);
     this.paint(overlayEl, plan);
     if (stage) driftGlow(overlayEl, t);
+    return plan;
   },
 };
