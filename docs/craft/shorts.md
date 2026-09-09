@@ -111,8 +111,9 @@ Make two or three, not eight. Name what each one is for. Let the person choose.
 - Never invent a hook the speaker did not say. A `hook` template quotes or compresses the
   speaker's own words; a written line that misrepresents the video is the fastest way to be
   distrusted by the exact people the funnel is for.
-- Never put a card over the face in `focus`. A tall frame has the lower third for text; the
-  layouts and the templates respect it.
+- Never put a card over the face in `focus` unless it was made for it: the `thumbnail` and the
+  `cta` with a `shade`, `over: true`, keep their words in the lower third, off the eyes. Every
+  other card goes beside the head or in a cutaway.
 - Never render the film to check a short. `preview_frame` and `preview_sheet` first, a
   minute of `render_final` second, the whole thing only when the person says.
 - Never make the short the person did not ask for. Suggest, describe, wait.
