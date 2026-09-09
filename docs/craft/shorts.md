@@ -66,8 +66,11 @@ A short nearly always has a bed. It is part of the energy, it covers the room, a
 platform expects it. Keep it low enough that the captions are still the audio for the silent
 majority and the voice wins for everyone else — `set_audio`'s defaults, `level` -18 LU under the
 voice and `duck` -12 below that, are the usual place — and let it swell in the run-in and after the last
-word, where the cta sits. Normalise the voice to -14 LUFS. Use only music the person owns or
-has licensed; `import_audio` brings it in and Fabula fetches none.
+word, where the cta sits. Normalise the voice to -14 LUFS, and take the room out of it first
+(`voice_clean` light — a phone in a kitchen wants it more than a studio does). Use only music
+the person owns or has licensed; `import_audio` brings it in and Fabula fetches none. B-roll
+with its own sound — a demo's clicks, a street — plays under the voice with `sound: true` on
+the clip, ducked like the bed; it is the cheapest energy a short can add, and it is real.
 
 ## The ending
 
