@@ -341,8 +341,12 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
       `pad=${rect.w}:${rect.h}:-1:-1:color=0x0b0e12,format=rgba[sc${k}]`,
     );
     lines.push(`[${mask}:v]format=gray[sm${k}]`);
+    // A scene already in progress when the chunk starts has faded in
+    // already; fading it in again at the boundary would replay the fade
+    // every two minutes of a long screen scene.
+    const fadeIn = screen.start >= 0 ? `fade=t=in:st=${num(screen.start)}:d=${num(screen.fade)}:alpha=1,` : "";
     lines.push(
-      `[sc${k}][sm${k}]alphamerge,fade=t=in:st=${num(Math.max(screen.start, 0))}:d=${num(screen.fade)}:alpha=1,` +
+      `[sc${k}][sm${k}]alphamerge,${fadeIn}` +
       `fade=t=out:st=${num(fadeOutAt)}:d=${num(screen.fade)}:alpha=1[scr${k}]`,
     );
     lines.push(`[${base}][scr${k}]overlay=x=${rect.x}:y=${rect.y}:enable='between(t,${num(screen.start)},${num(screen.end)})':format=auto[bs${k}]`);

@@ -121,3 +121,8 @@ test("a glide into a cropped layout starts uncropped", () => {
     previous = draw;
   }
 });
+
+test("an inherited object key is not a format", () => {
+  assert.equal(resolveFormat("constructor").id, "landscape");
+  assert.equal(resolveFormat({ format: "toString" }).id, "landscape");
+});

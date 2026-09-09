@@ -161,12 +161,12 @@ function assetPath(p) {
 export function validateTheme(theme) {
   if (theme === undefined || theme === null) return;
   if (typeof theme !== "object") throw new Error("theme must be an object");
-  if (theme.preset !== undefined && !PRESETS[theme.preset]) throw new Error(`unknown theme preset "${theme.preset}"; one of ${Object.keys(PRESETS).join(", ")}`);
+  if (theme.preset !== undefined && !Object.hasOwn(PRESETS, theme.preset)) throw new Error(`unknown theme preset "${theme.preset}"; one of ${Object.keys(PRESETS).join(", ")}`);
   for (const key of ["accent", "accent2", "text"]) {
     if (theme[key] !== undefined && !COLOR.test(theme[key])) throw new Error(`theme ${key} must be #rrggbb, got "${theme[key]}"`);
   }
   if (theme.fonts !== undefined) {
-    if (typeof theme.fonts !== "object") throw new Error("theme fonts must be { display?, body? }");
+    if (typeof theme.fonts !== "object" || theme.fonts === null || Array.isArray(theme.fonts)) throw new Error("theme fonts must be { display?, body? }");
     for (const key of ["display", "body", "serif"]) {
       if (theme.fonts[key] !== undefined && (typeof theme.fonts[key] !== "string" || theme.fonts[key].length === 0)) throw new Error(`theme fonts.${key} must be a font family name`);
     }
@@ -197,7 +197,7 @@ export function validateTheme(theme) {
 // and the cache key consume.
 export function resolveTheme(theme) {
   validateTheme(theme);
-  const preset = PRESETS[theme?.preset ?? "studio"];
+  const preset = Object.hasOwn(PRESETS, theme?.preset ?? "studio") ? PRESETS[theme?.preset ?? "studio"] : PRESETS.studio;
   const resolved = {
     preset: theme?.preset ?? "studio",
     accent: theme?.accent ?? preset.accent,
@@ -220,7 +220,11 @@ export function resolveTheme(theme) {
     transition: theme?.transition ?? preset.transition,
     // Null is a real answer here — "the style's own pace" — so the token is
     // always present and the resolved theme never hides the difference.
-    transitionSeconds: theme?.transitionSeconds ?? preset.transitionSeconds ?? TRANSITION_SECONDS[theme?.transition ?? preset.transition] ?? 0,
+    // Explicit when someone set it; null means every boundary takes its own
+    // style's pace — which is what lets a scene's dissolve run at dissolve's
+    // pace inside a glide film. transitionSecondsDefault is for showing.
+    transitionSeconds: theme?.transitionSeconds ?? preset.transitionSeconds ?? null,
+    transitionSecondsDefault: TRANSITION_SECONDS[theme?.transition ?? preset.transition] ?? 0,
     logo: theme?.logo ? { src: theme.logo.src, corner: theme.logo.corner ?? "tr", size: theme.logo.size ?? 0.09, opacity: theme.logo.opacity ?? 0.9 } : null,
     watermark: theme?.watermark ?? null,
   };

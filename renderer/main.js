@@ -968,8 +968,9 @@ function renderLookPage() {
   els.themeRadiusValue.textContent = theme.radius === 0 ? "square" : `${theme.radius.toFixed(1)}×`;
   els.themeGlow.value = String(theme.glow);
   els.themeGlowValue.textContent = theme.glow === 0 ? "none" : `${Math.round(theme.glow * 100)}%`;
-  els.themeTransitionSeconds.value = String(theme.transitionSeconds);
-  els.themeTransitionSecondsValue.textContent = theme.transition === "cut" ? "n/a" : `${theme.transitionSeconds.toFixed(1)} s`;
+  const seconds = theme.transitionSeconds ?? theme.transitionSecondsDefault ?? 0;
+  els.themeTransitionSeconds.value = String(seconds);
+  els.themeTransitionSecondsValue.textContent = theme.transition === "cut" ? "n/a" : `${seconds.toFixed(1)} s`;
   els.themeTransitionSeconds.disabled = theme.transition === "cut";
   for (const button of els.themeCaptions.querySelectorAll("button")) button.classList.toggle("is-on", button.dataset.value === l.captionMode);
   els.captionsNote.textContent = CAPTION_NOTES[l.captionMode] ?? "";

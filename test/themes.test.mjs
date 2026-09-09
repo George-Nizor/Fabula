@@ -70,3 +70,14 @@ test("an unset look is reported as unchosen, and names the brands this person sa
   // An accent alone is a choice, even without a preset.
   assert.equal(describeLook({ accent: "#123456" }, []).chosen, true);
 });
+
+test("an inherited object key is not a preset, null fonts are refused, and the pace is explicit or the style's own", () => {
+  assert.throws(() => validateTheme({ preset: "constructor" }), /unknown theme preset/);
+  assert.throws(() => validateTheme({ fonts: null }), /theme fonts must be/);
+  assert.throws(() => validateTheme({ fonts: ["Inter"] }), /theme fonts must be/);
+  assert.throws(() => resolveTheme({ preset: "toString" }), /unknown theme preset/, "an inherited key is refused, not resolved to Object's own");
+  const plain = resolveTheme({ preset: "broadcast" });
+  assert.equal(plain.transitionSeconds, null, "nothing explicit: every boundary takes its style's pace");
+  assert.equal(plain.transitionSecondsDefault, 0, "cut has no pace to show");
+  assert.equal(resolveTheme({ preset: "studio", transitionSeconds: 1.2 }).transitionSeconds, 1.2);
+});

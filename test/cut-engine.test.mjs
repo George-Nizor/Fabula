@@ -112,3 +112,11 @@ test("a cut drawn over words spans them exactly, merges with neighbours, and sta
   assert.ok(cuts[0].sources.some((source) => source.reason === "manual" && source.wordIds.join() === "0,1"));
   assert.throws(() => addWordCut([], words, [99]), /no words/);
 });
+
+test("keepSegments never emits a keep that ends before it starts", () => {
+  const keeps = keepSegments(normalizeCuts([
+    { start: 9.98, end: 10.5, enabled: true, sources: [{ start: 9.98, end: 10.5, reason: "pause", enabled: true }] },
+    { start: 10.6, end: 11, enabled: true, sources: [{ start: 10.6, end: 11, reason: "pause", enabled: true }] },
+  ]), 10);
+  for (const keep of keeps) assert.ok(keep.end >= keep.start, JSON.stringify(keeps));
+});

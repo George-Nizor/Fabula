@@ -54,7 +54,7 @@ export const isPortrait = (stage) => Boolean(stage) && stage.height > stage.widt
 // formats existed actually is.
 export function resolveFormat(value) {
   const id = typeof value === "string" ? value : value?.format;
-  return FORMATS[id] ?? FORMATS[DEFAULT_FORMAT];
+  return Object.hasOwn(FORMATS, id) ? FORMATS[id] : FORMATS[DEFAULT_FORMAT];
 }
 
 export function validateFormat(id) {

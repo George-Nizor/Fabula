@@ -293,3 +293,15 @@ test("a tall film composites through the canvas, and says which mask each moment
   assert.equal(evaluateExpression(at, { t: 10 }), 0, "the band does not");
   assert.equal(evaluateExpression(at, { t: 25 }), 1);
 });
+
+test("a screen scene already in progress at a chunk's start does not fade in again", () => {
+  const placed = screenPlacements([{ start: 100, end: 250, rect: { x: 0, y: 0, w: 960, h: 540 } }], { start: 120, end: 240, frames: 3600 });
+  assert.equal(placed.length, 1);
+  assert.ok(placed[0].start < 0, "chunk-local start is negative for a scene in progress");
+  const graph = chunkGraph({ chunk: { start: 120, end: 240, frames: 3600 }, timeline: resolveLayoutTimeline([], 300), videoAspect: aspect, stage, glowSize: 1728, screens: placed });
+  assert.ok(!graph.includes("fade=t=in"), "no fade-in at the boundary");
+  assert.ok(graph.includes("fade=t=out"));
+  const fresh = screenPlacements([{ start: 130, end: 200, rect: { x: 0, y: 0, w: 960, h: 540 } }], { start: 120, end: 240, frames: 3600 });
+  const graph2 = chunkGraph({ chunk: { start: 120, end: 240, frames: 3600 }, timeline: resolveLayoutTimeline([], 300), videoAspect: aspect, stage, glowSize: 1728, screens: fresh });
+  assert.ok(graph2.includes("fade=t=in:st=10"), "a scene starting inside the chunk fades in where it starts");
+});

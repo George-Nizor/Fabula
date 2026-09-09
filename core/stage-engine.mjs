@@ -168,7 +168,12 @@ export function transitionAt(timeline, index) {
   const base = style === "cut" ? 0 : (transitionSecondsOf(segment.transitionSeconds) ?? TRANSITION_SECONDS[style] ?? 0);
   if (!(base > 0)) return none;
   const span = (s) => s.end - s.start;
-  if (style === "glide") return { style, enter: 0, leave: 0, glide: Math.min(base, span(segment) * TRANSITION_SHARE * 2) };
+  if (style === "glide") {
+    // The glide has to land before the next boundary starts fading this
+    // segment out, or the preview settles where the export is still moving.
+    const nextLeave = index + 1 < timeline.length ? transitionAt(timeline, index + 1).leave : 0;
+    return { style, enter: 0, leave: 0, glide: Math.max(0, Math.min(base, span(segment) * TRANSITION_SHARE * 2, span(segment) - nextLeave)) };
+  }
   const from = layoutAlpha(previous.layout);
   const to = layoutAlpha(segment.layout);
   return {
@@ -343,8 +348,11 @@ function portraitRects(layout, corner, videoAspect, stage) {
   if (layout === "band") {
     // The head whole, in its own aspect, across the width — the shot for a
     // wide moment a crop would ruin, with the visual under it.
-    const w = W * 0.94;
-    const h = w / videoAspect;
+    // Tall footage would run off the canvas at full width: the height is
+    // capped and the width follows the footage's shape.
+    let w = W * 0.94;
+    let h = w / videoAspect;
+    if (h > H * 0.6) { h = H * 0.6; w = h * videoAspect; }
     const top = H * 0.1;
     const below = top + h + H * 0.03;
     return {

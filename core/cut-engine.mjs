@@ -148,7 +148,7 @@ export function keepSegments(cuts, durationSeconds) {
   let cursor = 0;
   for (const cut of active) {
     if (cut.start - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: Math.min(cut.start, durationSeconds) });
-    cursor = Math.max(cursor, cut.end);
+    cursor = Math.min(Math.max(cursor, cut.end), durationSeconds);
   }
   if (durationSeconds - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: durationSeconds });
   return keeps;

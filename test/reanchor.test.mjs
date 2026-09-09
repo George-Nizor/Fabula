@@ -48,3 +48,11 @@ test("reanchorScenes keeps order and indices", () => {
   assert.equal(report[0].ok, true);
   assert.equal(report[1].ok, false); // "So today we" lost "So"; only two tokens exist and one is gone... 
 });
+
+test("a scene on the transcript's first or last word re-anchors against an identical transcript", () => {
+  const words = ["thanks", "for", "watching", "and", "see", "you", "soon"].map((text, id) => ({ id, text, start: id * 0.4, end: id * 0.4 + 0.35 }));
+  const first = reanchorScene({ type: "title", fromWordId: 0, toWordId: 0, text: "x" }, words, words);
+  const last = reanchorScene({ type: "title", fromWordId: 6, toWordId: 6, text: "x" }, words, words);
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(last.ok, true, JSON.stringify(last));
+});

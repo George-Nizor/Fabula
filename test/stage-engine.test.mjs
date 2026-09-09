@@ -177,3 +177,25 @@ test("the dwell rule bridges a flash of camera between two cutaways", () => {
   tl = resolveLayoutTimeline([{ type: "stage", start: 10, end: 20, layout: "side" }, cutaway(20, 20.6), { type: "stage", start: 20.6, end: 30, layout: "side" }], 60);
   assert.deepEqual(tl.map((s) => [s.start, s.end, s.layout]), [[0, 10, "focus"], [10, 30, "side"], [30, 60, "focus"]]);
 });
+
+test("a scene's own transition runs at its own style's pace inside a film that uses another", () => {
+  const tl = resolveLayoutTimeline([{ type: "stage", layout: "side", start: 10, end: 20, transition: "dissolve" }], 40, { transition: "glide", transitionSeconds: null });
+  const crossing = transitionAt(tl, 1);
+  assert.equal(crossing.style, "dissolve");
+  assert.ok(Math.abs(crossing.leave + crossing.enter - 0.5) < 0.01, `dissolve's own 0.5 s, got ${crossing.leave + crossing.enter}`);
+});
+
+test("a glide lands before the next boundary starts fading the segment out", () => {
+  const tl = resolveLayoutTimeline([{ type: "stage", layout: "pip", start: 10, end: 13 }, { type: "stage", layout: "cutaway", start: 13, end: 20 }], 40, { transition: "glide", transitionSeconds: 1.8 });
+  const glide = transitionAt(tl, 1).glide;
+  const leave = transitionAt(tl, 2).leave;
+  assert.ok(glide + leave <= 3.001, `glide ${glide} + leave ${leave} inside a 3 s segment`);
+});
+
+test("a portrait band keeps tall footage on the canvas", () => {
+  const stage = { width: 1080, height: 1920 };
+  const rects = layoutRects("band", null, 9 / 16, stage);
+  assert.ok(rects.video.y + rects.video.h <= stage.height * 0.75, `head bottom at ${rects.video.y + rects.video.h}`);
+  assert.ok(rects.content.y + rects.content.h <= stage.height, "the content rect is on the canvas");
+  assert.ok(Math.abs(rects.video.w / rects.video.h - 9 / 16) < 0.01, "the footage keeps its shape");
+});

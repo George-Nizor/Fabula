@@ -26,7 +26,9 @@ function bestMatch(words, tokens, nearSeconds, direction) {
     const total = score - drift * TIME_PENALTY_PER_SECOND;
     if (!best || total > best.total) best = { index: i, score, drift, total };
   }
-  return best && best.score >= MIN_SCORE ? best : null;
+  // A scene on the transcript's first or last word has fewer than three
+  // context tokens; it still has to be findable.
+  return best && best.score >= Math.min(MIN_SCORE, tokens.filter(Boolean).length) ? best : null;
 }
 
 // One scene's old anchors (word ids into `oldWords`) → new anchors into
