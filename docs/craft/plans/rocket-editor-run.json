@@ -1,0 +1,315 @@
+{
+  "scenes": [
+    {
+      "type": "stage",
+      "fromWordId": 0,
+      "toWordId": 12,
+      "layout": "cutaway",
+      "text": "Rocket, the editor cut"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 0,
+      "toWordId": 12,
+      "graphic": {
+        "kind": "custom",
+        "template": "hook",
+        "params": {
+          "kicker": "Rockets",
+          "line": "Throw stuff down so violently that it goes up.",
+          "sub": "One very difficult thing."
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 24,
+      "toWordId": 42,
+      "layout": "side"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 24,
+      "toWordId": 42,
+      "graphic": {
+        "kind": "custom",
+        "template": "definition",
+        "params": {
+          "term": "Third law",
+          "kind": "Newton · motion",
+          "meaning": "For every action there is an equal and opposite reaction."
+        },
+        "full": false
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 43,
+      "toWordId": 77,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 43,
+      "toWordId": 77,
+      "graphic": {
+        "kind": "custom",
+        "template": "flow",
+        "params": {
+          "title": "Inside the engine",
+          "items": [
+            {
+              "label": "fuel + oxidizer burn"
+            },
+            {
+              "label": "hot, high-pressure gas"
+            },
+            {
+              "label": "a shaped nozzle"
+            },
+            {
+              "label": "fired downward"
+            }
+          ],
+          "pace": "span"
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 78,
+      "toWordId": 93,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 78,
+      "toWordId": 93,
+      "graphic": {
+        "kind": "custom",
+        "template": "word",
+        "params": {
+          "words": "Thrust.",
+          "note": "gas down, rocket up"
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 94,
+      "toWordId": 113,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 94,
+      "toWordId": 113,
+      "graphic": {
+        "kind": "custom",
+        "template": "scale",
+        "params": {
+          "left": "thrust",
+          "right": "weight + the atmosphere",
+          "tilt": -45,
+          "title": "At launch"
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "callout",
+      "fromWordId": 119,
+      "toWordId": 126,
+      "text": "lighter, faster",
+      "style": "tag"
+    },
+    {
+      "type": "stage",
+      "fromWordId": 127,
+      "toWordId": 148,
+      "layout": "full",
+      "corner": "br"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 127,
+      "toWordId": 148,
+      "graphic": {
+        "kind": "section",
+        "title": "Getting to orbit",
+        "subtitle": "only part of the challenge",
+        "number": "02"
+      }
+    },
+    {
+      "type": "kinetic",
+      "fromWordId": 149,
+      "toWordId": 155
+    },
+    {
+      "type": "stage",
+      "fromWordId": 159,
+      "toWordId": 167,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 159,
+      "toWordId": 167,
+      "graphic": {
+        "kind": "custom",
+        "template": "word",
+        "params": {
+          "words": "Sideways.",
+          "note": "as it climbs"
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 168,
+      "toWordId": 200,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 168,
+      "toWordId": 200,
+      "graphic": {
+        "kind": "custom",
+        "template": "before-after",
+        "params": {
+          "before": "Gravity pulls it back down",
+          "after": "The ground curves away beneath it",
+          "beforeLabel": "Straight up",
+          "afterLabel": "Sideways, fast",
+          "pace": "entrance"
+        },
+        "full": true
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 201,
+      "toWordId": 212,
+      "layout": "side"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 201,
+      "toWordId": 212,
+      "graphic": {
+        "kind": "custom",
+        "template": "definition",
+        "params": {
+          "term": "orbit",
+          "kind": "noun",
+          "meaning": "Falling around the planet, and missing."
+        },
+        "full": false
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 213,
+      "toWordId": 226,
+      "layout": "full",
+      "corner": "br"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 213,
+      "toWordId": 226,
+      "graphic": {
+        "kind": "section",
+        "title": "Staging",
+        "number": "03"
+      }
+    },
+    {
+      "type": "stage",
+      "fromWordId": 227,
+      "toWordId": 243,
+      "layout": "side"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 227,
+      "toWordId": 243,
+      "graphic": {
+        "kind": "steps",
+        "title": "A stage's life",
+        "items": [
+          {
+            "label": "burn it"
+          },
+          {
+            "label": "drop it"
+          },
+          {
+            "label": "go further on less"
+          }
+        ]
+      }
+    },
+    {
+      "type": "kinetic",
+      "fromWordId": 248,
+      "toWordId": 255
+    },
+    {
+      "type": "stage",
+      "fromWordId": 256,
+      "toWordId": 275,
+      "layout": "cutaway"
+    },
+    {
+      "type": "graphic",
+      "fromWordId": 256,
+      "toWordId": 275,
+      "graphic": {
+        "kind": "custom",
+        "template": "ladder",
+        "params": {
+          "title": "Three ideas",
+          "items": [
+            {
+              "label": "build sideways speed"
+            },
+            {
+              "label": "discard weight"
+            },
+            {
+              "label": "accelerate gas downward"
+            }
+          ],
+          "pace": "span"
+        },
+        "full": true
+      }
+    }
+  ],
+  "captions": "closed",
+  "theme": {
+    "preset": "mono",
+    "accent": "#49c9ed",
+    "accent2": "#ffad52",
+    "fonts": {
+      "display": "Space Grotesk",
+      "body": "Inter"
+    },
+    "glow": 0.1,
+    "radius": 0.5
+  },
+  "punch": null,
+  "audio": {
+    "voice": {
+      "loudness": -16,
+      "measured": -44.5
+    }
+  }
+}

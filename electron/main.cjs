@@ -46,8 +46,9 @@ Promise.all([
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "project-state.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "shorts.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "core", "personas.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas]) => {
-  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas };
+  import(pathToFileURL(path.join(__dirname, "..", "core", "templates.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates]) => {
+  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates };
 })
   .catch((error) => console.error("core engines failed to load:", error));
 
@@ -180,7 +181,9 @@ function readCompose(dir) {
     const words = core.cut.flattenWords(readJson(cleanTranscript));
     const config = readJson(path.join(dir, "compose.json")) ?? { scenes: [] };
     const punch = readPunch(dir, readJson(path.join(dir, "review.json")));
-    const scenes = core.compose.resolveScenes(config.scenes ?? [], words);
+    const meta = core.projectState.readProjectMeta(dir);
+    const format = core.formats.resolveFormat(meta).id;
+    const scenes = core.compose.resolveScenes(core.templates.refreshTemplates(config.scenes ?? [], { format }), words);
     const assetUrl = (src) => pathToFileURL(path.join(dir, src)).href;
     for (const scene of scenes) {
       if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
@@ -192,7 +195,7 @@ function readCompose(dir) {
     }
     const theme = core.themes.resolveTheme(config.theme ?? null);
     if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
-    const inserts = core.compose.resolveInserts(config.inserts ?? [], words);
+    const inserts = core.compose.resolveInserts((config.inserts ?? []).map((insert) => ({ ...insert, options: (insert.options ?? []).map((option) => ({ ...option, scenes: core.templates.refreshTemplates(option.scenes ?? [], { format }) })) })), words);
     for (const insert of inserts) {
       for (const option of insert.options) {
         for (const scene of option.scenes) {
@@ -213,7 +216,7 @@ function readCompose(dir) {
       wordSpans: core.compose.resolveCaptions(words),
       captionsOn: core.compose.captionsBurnedIn(config.captions),
       captionMode: core.compose.captionMode(config.captions),
-      stage: core.formats.stageOf(core.projectState.readProjectMeta(dir)),
+      stage: core.formats.stageOf(meta),
       layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds }),
       theme,
       themeConfig: config.theme ?? {},

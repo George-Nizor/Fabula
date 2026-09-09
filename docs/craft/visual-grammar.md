@@ -50,7 +50,9 @@ Full-stage (pair with `cutaway` or `full`): `hook`, `word`, `trio`, `timeline`, 
 `ranking`, `phone`.
 
 Column (sit in `side`, `pip` or `full`'s content rect beside the head): `big-number`,
-`definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`.
+`definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`. In a tall
+film "beside the head" is the strip under it, about a quarter as tall as it is wide, and a
+column template sizes itself for that strip; a `question` there is a line, not a poster.
 
 Any template takes `full: true|false` to override its default, but a full-stage design
 squeezed into a column or a column card blown up to the stage rarely reads well. `over: true`

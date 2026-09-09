@@ -34,9 +34,23 @@ function presenceAt(t, start, end, inDur, outDur) {
   const span = Math.max(end - start, 0.05);
   const i = Math.min(inDur, span * 0.45);
   const o = Math.min(outDur, span * 0.35);
-  const enter = easeOut((t - start) / i);
-  const leave = 1 - easeIn((t - (end - o)) / o);
+  const enter = i > 0 ? easeOut((t - start) / i) : 1;
+  const leave = o > 0 ? 1 - easeIn((t - (end - o)) / o) : 1;
   return r2(Math.min(enter, leave));
+}
+
+// A card anchored on the film's first words starts a few frames in (the
+// word pad) and would fade in over half a second: the first frame of a short
+// whose opening IS the card would be bare. A card that reaches the film's
+// edge is there at the edge, whole. The same half second the stage engine
+// gives a sliver of head at either end (EDGE_SLIVER_SECONDS).
+const EDGE_SECONDS = 0.5;
+function edged(scene, duration) {
+  if (scene.type !== "graphic") return scene;
+  const edgeIn = scene.start <= EDGE_SECONDS;
+  const edgeOut = duration > 0 && scene.end >= duration - EDGE_SECONDS;
+  if (!edgeIn && !edgeOut) return scene;
+  return { ...scene, start: edgeIn ? 0 : scene.start, end: edgeOut ? duration : scene.end, edgeIn, edgeOut };
 }
 
 // The head card's corner radius and the screen's, as a share of their own
@@ -176,7 +190,7 @@ const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
 let customSerial = 0;
 
 function graphicSignature(graphic, p, t, scene) {
-  const alpha = presenceAt(t, scene.start, scene.end, 0.45, 0.35);
+  const alpha = presenceAt(t, scene.start, scene.end, scene.edgeIn ? 0 : 0.45, scene.edgeOut ? 0 : 0.35);
   const span = scene.end - scene.start;
   const q = clamp01((t - scene.start) / Math.min(BUILD_SECONDS, span * 0.5));
   switch (graphic.kind) {
@@ -852,7 +866,8 @@ window.FabulaStage = {
     let screen = null;
     const captionAt = (compose.captions ?? []).find((span) => span.start <= t && t < span.end);
     let captionEaten = false;
-    for (const [index, scene] of (compose.scenes ?? []).entries()) {
+    for (const [index, raw] of (compose.scenes ?? []).entries()) {
+      const scene = edged(raw, compose.duration ?? 0);
       if (scene.type === "stage" || scene.start > t || t >= scene.end) continue;
       const p = clamp01((t - scene.start) / (scene.end - scene.start));
       // The scene's index keeps two identical scenes (a duplicate) on two

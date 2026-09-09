@@ -44,6 +44,7 @@ async function main() {
   const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
   const themes = await import(pathToFileURL(path.join(REPO_ROOT, "core", "themes.mjs")).href);
   const formats = await import(pathToFileURL(path.join(REPO_ROOT, "core", "formats.mjs")).href);
+  const templates = await import(pathToFileURL(path.join(REPO_ROOT, "core", "templates.mjs")).href);
   const shotEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "shot-engine.mjs")).href);
   const { probeDuration, probeDimensions } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
 
@@ -86,7 +87,10 @@ async function main() {
   const T = instants[0].t;
   const word = instants[0].wordId === null ? null : wordAt(instants[0].wordId);
 
-  const scenes = engine.resolveScenes(config.scenes ?? [], words);
+  const meta = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
+  })();
+  const scenes = engine.resolveScenes(templates.refreshTemplates(config.scenes ?? [], { format: formats.resolveFormat(meta).id }), words);
   for (const scene of scenes) {
     if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(projectDir, scene.graphic.src)).href;
     for (const item of scene.graphic?.items ?? []) if (item.src) item.url = pathToFileURL(path.join(projectDir, item.src)).href;
@@ -95,9 +99,6 @@ async function main() {
       scene.graphic = { ...scene.graphic, html: scene.graphic.html.replaceAll("assets/", base), css: (scene.graphic.css ?? "").replaceAll("assets/", base) };
     }
   }
-  const meta = (() => {
-    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
-  })();
   const stage = formats.stageOf(meta);
   const theme = themes.resolveTheme(config.theme ?? null);
   if (theme.logo) theme.logoUrl = pathToFileURL(path.join(projectDir, theme.logo.src)).href;
@@ -107,6 +108,7 @@ async function main() {
   const compose = {
     videoUrl: pathToFileURL(cleanVideo).href,
     screenUrl: fs.existsSync(screenVideo) ? pathToFileURL(screenVideo).href : null,
+    duration,
     scenes,
     captions: engine.captionsBurnedIn(config.captions) ? engine.resolvePhraseCaptions(words, { emphasis: config.captionEmphasis }) : null,
     wordSpans: engine.resolveCaptions(words),
@@ -158,7 +160,6 @@ async function main() {
     // — above the head, which is where a thumbnail's words go — with its
     // entrance already played.
     if (flag("thumb")) {
-      const templates = await import(pathToFileURL(path.join(REPO_ROOT, "core", "templates.mjs")).href);
       const spec = JSON.parse(fs.readFileSync(flag("thumb"), "utf8"));
       const graphic = templates.renderTemplate(spec.template ?? "thumbnail", spec.params ?? {}, { format: formats.resolveFormat(meta).id });
       await contents.executeJavaScript(`(() => {

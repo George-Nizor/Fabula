@@ -65,9 +65,11 @@ const CARD = `var(--ov-card, rgba(11, 14, 18, 0.88))`;
 
 // The stage's own padding. A tall frame keeps its bottom clear for captions
 // and platform chrome; a wide one only needs margins.
-const frame = (portrait) => portrait
-  ? `padding: 10cqh 7cqw 21cqh 7cqw;`
-  : `padding: 9cqh 7cqw 12cqh 7cqw;`;
+const frame = (portrait, strip = false) => strip
+  ? `padding: 5cqh 5cqw;`
+  : portrait
+    ? `padding: 10cqh 7cqw 21cqh 7cqw;`
+    : `padding: 9cqh 7cqw 12cqh 7cqw;`;
 
 // A field description does two jobs: it validates the params, and it is what
 // describe_templates prints so the assistant knows what to send.
@@ -136,10 +138,13 @@ function checkParams(template, params, id) {
 }
 
 // Shared css: the root fills its container and reads the theme's tokens.
-const base = (portrait) => `
-.t { position: absolute; inset: 0; box-sizing: border-box; ${frame(portrait)} display: flex; flex-direction: column; justify-content: center; color: ${TEXT}; font-family: ${FONT_BODY}; }
+// `strip`: a column card in a tall film, which sits in a wide, short strip
+// under the head (about 950×430 at 1080×1920). Its height is a quarter of
+// its width, so sizes keyed on cqh land tiny; a strip sizes on cqi.
+const base = (portrait, strip = false) => `
+.t { position: absolute; inset: 0; box-sizing: border-box; ${frame(portrait, strip)} display: flex; flex-direction: column; justify-content: center; color: ${TEXT}; font-family: ${FONT_BODY}; }
 .t * { box-sizing: border-box; }
-.t-kicker { font-family: ${FONT_DISPLAY}; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; font-size: min(3.2cqh, 3.6cqi); color: ${ACCENT}; }
+.t-kicker { font-family: ${FONT_DISPLAY}; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; font-size: ${strip ? "2.6cqi" : "min(3.2cqh, 3.6cqi)"}; color: ${ACCENT}; }
 .t-muted { color: ${MUTED}; }
 `;
 
@@ -194,13 +199,13 @@ export const TEMPLATES = {
     full: false,
     fields: { value: text("The figure, as it should read", 14), label: text("What it counts", 40), context: text("The line that makes it matter", 90, { required: false }), kicker: text("A few words above", 32, { required: false }) },
     example: { kicker: "Watch time", value: "80%", label: "watched with the sound off", context: "A short without captions is a short most people never hear." },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const html = `<div class="t t-num">${p.kicker ? `<div class="t-kicker">${esc(p.kicker)}</div>` : ""}<div class="t-value">${esc(p.value)}</div><div class="t-label">${esc(p.label)}</div>${p.context ? `<div class="t-ctx">${esc(p.context)}</div>` : ""}</div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-num { gap: 1.6cqh; }
-.t-value { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "20.8cqh, 26cqi" : "26cqh, 22cqi"}); line-height: 0.95; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: ${ACCENT}; clip-path: inset(calc((1 - ${wake(0, { from: 0.05, dur: 0.45 })}) * 100%) 0 0 0); transform: translateY(calc((1 - ${wake(0, { from: 0.05, dur: 0.45 })}) * 0.2em)); }
-.t-label { font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: min(${portrait ? "9.0" : "5.6"}cqh, 5.8cqi); opacity: ${wake(0, { from: 0.4, dur: 0.3 })}; }
-.t-ctx { font-family: ${FONT_SERIF}; font-size: min(${portrait ? "7.0" : "4.4"}cqh, 4.4cqi); color: ${MUTED}; max-width: 34ch; text-wrap: pretty; opacity: ${wake(0, { from: 0.65, dur: 0.3 })}; }`;
+.t-value { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: ${strip ? "12.5cqi" : `min(${portrait ? "20.8cqh, 26cqi" : "26cqh, 22cqi"})`}; line-height: 0.95; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: ${ACCENT}; clip-path: inset(calc((1 - ${wake(0, { from: 0.05, dur: 0.45 })}) * 100%) 0 0 0); transform: translateY(calc((1 - ${wake(0, { from: 0.05, dur: 0.45 })}) * 0.2em)); }
+.t-label { font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: ${strip ? "4.6cqi" : `min(${portrait ? "9.0" : "5.6"}cqh, 5.8cqi)`}; opacity: ${wake(0, { from: 0.4, dur: 0.3 })}; }
+.t-ctx { font-family: ${FONT_SERIF}; font-size: ${strip ? "3.9cqi" : `min(${portrait ? "7.0" : "4.4"}cqh, 4.4cqi)`}; color: ${MUTED}; max-width: ${strip ? "60ch" : "34ch"}; text-wrap: pretty; opacity: ${wake(0, { from: 0.65, dur: 0.3 })}; }`;
       return { html, css };
     },
   },
@@ -327,14 +332,14 @@ export const TEMPLATES = {
     full: false,
     fields: { term: text("The word or phrase", 32), kind: text("noun, verb, jargon, slang…", 24, { required: false }), meaning: text("What it means, in one sentence", 140) },
     example: { term: "dwell rule", kind: "noun · Fabula", meaning: "The floor under how long the head stays where it was put, so a plan cannot make it dart." },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const html = `<div class="t t-def"><div class="t-term">${esc(p.term)}</div>${p.kind ? `<div class="t-kind">${esc(p.kind)}</div>` : ""}<div class="t-rule"></div><div class="t-meaning">${esc(p.meaning)}</div></div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-def { gap: 1.2cqh; }
-.t-term { font-family: ${FONT_SERIF}; font-weight: 700; font-size: min(${portrait ? "11.2cqh, 11cqi" : "10cqh, 9cqi"}); line-height: 1; letter-spacing: -0.02em; opacity: ${wake(0, { from: 0.05, dur: 0.3 })}; }
-.t-kind { font-family: ${FONT_SERIF}; font-style: italic; font-size: min(${portrait ? "6.7" : "4.2"}cqh, 4.4cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.25, dur: 0.3 })}; }
-.t-rule { height: min(${portrait ? "0.8" : "0.5"}cqh, 0.7cqi); width: min(14cqw, 20cqi); margin: 1.6cqh 0; background: ${ACCENT}; transform-origin: left; transform: scaleX(${wake(0, { from: 0.3, dur: 0.4 })}); }
-.t-meaning { font-family: ${FONT_SERIF}; font-size: min(${portrait ? "8.0" : "5"}cqh, 5.4cqi); line-height: 1.3; max-width: 38ch; text-wrap: pretty; opacity: ${wake(0, { from: 0.55, dur: 0.35 })}; }`;
+.t-term { font-family: ${FONT_SERIF}; font-weight: 700; font-size: ${strip ? "8.6cqi" : `min(${portrait ? "11.2cqh, 11cqi" : "10cqh, 9cqi"})`}; line-height: 1; letter-spacing: -0.02em; opacity: ${wake(0, { from: 0.05, dur: 0.3 })}; }
+.t-kind { font-family: ${FONT_SERIF}; font-style: italic; font-size: ${strip ? "3.8cqi" : `min(${portrait ? "6.7" : "4.2"}cqh, 4.4cqi)`}; color: ${MUTED}; opacity: ${wake(0, { from: 0.25, dur: 0.3 })}; }
+.t-rule { height: ${strip ? "0.5cqi" : `min(${portrait ? "0.8" : "0.5"}cqh, 0.7cqi)`}; width: min(14cqw, 20cqi); margin: ${strip ? "0.8cqh 0" : "1.6cqh 0"}; background: ${ACCENT}; transform-origin: left; transform: scaleX(${wake(0, { from: 0.3, dur: 0.4 })}); }
+.t-meaning { font-family: ${FONT_SERIF}; font-size: ${strip ? "4.3cqi" : `min(${portrait ? "8.0" : "5"}cqh, 5.4cqi)`}; line-height: 1.3; max-width: ${strip ? "56ch" : "38ch"}; text-wrap: pretty; opacity: ${wake(0, { from: 0.55, dur: 0.35 })}; }`;
       return { html, css };
     },
   },
@@ -371,14 +376,14 @@ export const TEMPLATES = {
     full: false,
     fields: { items: items("The keys, in order", { min: 1, max: 4 }), does: text("What it does", 60, { required: false }) },
     example: { items: [{ label: "Ctrl" }, { label: "Shift" }, { label: "P" }], does: "Command palette" },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const html = `<div class="t t-keys"><div class="t-row">${p.items.map((it, i) => `${i ? `<span class="t-plus">+</span>` : ""}<span class="t-cap" style="--k:${wake(i, { from: 0.1, each: 0.16, dur: 0.25 })}">${esc(it.label)}</span>`).join("")}</div>${p.does ? `<div class="t-does">${esc(p.does)}</div>` : ""}</div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-keys { gap: 3cqh; align-items: flex-start; }
 .t-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1.2cqi; }
-.t-cap { display: inline-block; padding: 1.2cqi 2cqi; min-width: 6cqi; text-align: center; font-family: ${FONT_MONO}; font-weight: 700; font-size: min(${portrait ? "7.0" : "4.4"}cqh, 5.6cqi); color: ${INK}; background: ${TEXT}; border-radius: calc(1cqi * var(--ov-radius, 1)); box-shadow: 0 0.6cqi 0 color-mix(in srgb, ${TEXT} 45%, ${INK}); opacity: var(--k); transform: translateY(calc((1 - var(--k)) * -0.6cqi)); }
-.t-plus { font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: min(${portrait ? "6.4" : "4"}cqh, 5cqi); color: ${MUTED}; }
-.t-does { font-size: min(${portrait ? "7.4" : "4.6"}cqh, 4.6cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.7, dur: 0.3 })}; }`;
+.t-cap { display: inline-block; padding: 1.2cqi 2cqi; min-width: 6cqi; text-align: center; font-family: ${FONT_MONO}; font-weight: 700; font-size: ${strip ? "4.8cqi" : `min(${portrait ? "7.0" : "4.4"}cqh, 5.6cqi)`}; color: ${INK}; background: ${TEXT}; border-radius: calc(1cqi * var(--ov-radius, 1)); box-shadow: 0 0.6cqi 0 color-mix(in srgb, ${TEXT} 45%, ${INK}); opacity: var(--k); transform: translateY(calc((1 - var(--k)) * -0.6cqi)); }
+.t-plus { font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: ${strip ? "4cqi" : `min(${portrait ? "6.4" : "4"}cqh, 5cqi)`}; color: ${MUTED}; }
+.t-does { font-size: ${strip ? "4.1cqi" : `min(${portrait ? "7.4" : "4.6"}cqh, 4.6cqi)`}; color: ${MUTED}; opacity: ${wake(0, { from: 0.7, dur: 0.3 })}; }`;
       return { html, css };
     },
   },
@@ -391,16 +396,16 @@ export const TEMPLATES = {
     full: false,
     fields: { value: field("number", "0–100", { min: 0, max: 100 }), label: text("What is being measured", 48), note: text("A line beneath", 70, { required: false }) },
     example: { value: 80, label: "watched with the sound off", note: "so the captions are the audio" },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const fill = `calc(${wake(0, { from: 0.1, dur: 0.7 })} * ${p.value}%)`;
       const html = `<div class="t t-prog"><div class="t-head"><span class="t-label">${esc(p.label)}</span><span class="t-pct">${Math.round(p.value)}%</span></div><div class="t-track"><div class="t-fill"></div></div>${p.note ? `<div class="t-note">${esc(p.note)}</div>` : ""}</div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-prog { gap: 1.8cqh; }
-.t-head { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqi; font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: min(${portrait ? "9.6" : "6"}cqh, 6cqi); }
-.t-pct { font-weight: 900; font-size: min(${portrait ? "19.2" : "12"}cqh, 12cqi); color: ${ACCENT}; font-variant-numeric: tabular-nums; }
-.t-track { height: min(${portrait ? "8.0" : "5"}cqh, 5cqi); background: color-mix(in srgb, ${TEXT} 12%, transparent); border-radius: 999px; overflow: hidden; }
+.t-head { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqi; font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: ${strip ? "5cqi" : `min(${portrait ? "9.6" : "6"}cqh, 6cqi)`}; }
+.t-pct { font-weight: 900; font-size: ${strip ? "9cqi" : `min(${portrait ? "19.2" : "12"}cqh, 12cqi)`}; color: ${ACCENT}; font-variant-numeric: tabular-nums; }
+.t-track { height: ${strip ? "3.4cqi" : `min(${portrait ? "8.0" : "5"}cqh, 5cqi)`}; background: color-mix(in srgb, ${TEXT} 12%, transparent); border-radius: 999px; overflow: hidden; }
 .t-fill { height: 100%; width: ${fill}; background: linear-gradient(90deg, ${ACCENT}, ${ACCENT2}); border-radius: 999px; }
-.t-note { font-size: min(${portrait ? "7.2" : "4.5"}cqh, 4.5cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.7, dur: 0.3 })}; }`;
+.t-note { font-size: ${strip ? "3.9cqi" : `min(${portrait ? "7.2" : "4.5"}cqh, 4.5cqi)`}; color: ${MUTED}; opacity: ${wake(0, { from: 0.7, dur: 0.3 })}; }`;
       return { html, css };
     },
   },
@@ -455,15 +460,15 @@ export const TEMPLATES = {
     full: false,
     fields: { text: text("The line", 90), level: field("choice", "note, warning or stop", { options: ["note", "warning", "stop"], default: "warning" }), title: text("A short heading", 24, { required: false }) },
     example: { level: "warning", title: "Careful", text: "A false positive here sends someone into a multi-gigabyte download." },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const colour = { note: MUTED, warning: ACCENT2, stop: "#e05a4f" }[p.level];
       const mark = { note: "i", warning: "!", stop: "×" }[p.level];
       const html = `<div class="t t-alert"><div class="t-box"><div class="t-mark">${mark}</div><div class="t-body">${p.title ? `<div class="t-title">${esc(p.title)}</div>` : ""}<div class="t-text">${esc(p.text)}</div></div></div></div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-box { display: flex; gap: 2cqi; align-items: flex-start; padding: 2.4cqh 2.4cqi; background: ${CARD}; border-left: min(1cqw, 1.4cqi) solid ${colour}; border-radius: calc(1cqi * var(--ov-radius, 1)); opacity: ${wake(0, { from: 0.05, dur: 0.3 })}; transform: translateX(calc((1 - ${wake(0, { from: 0.05, dur: 0.3 })}) * -2cqi)); }
-.t-mark { flex: none; width: min(${portrait ? "14.4" : "9"}cqh, 10cqi); height: min(${portrait ? "14.4" : "9"}cqh, 10cqi); display: grid; place-items: center; border-radius: 50%; font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "8.8" : "5.5"}cqh, 6.5cqi); color: ${INK}; background: ${colour}; transform: scale(${wake(0, { from: 0.25, dur: 0.3 })}); }
-.t-title { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "8.8" : "5.5"}cqh, 6cqi); color: ${colour}; margin-bottom: 0.6cqh; }
-.t-text { font-size: min(${portrait ? "8.0" : "5"}cqh, 5.2cqi); line-height: 1.3; text-wrap: pretty; }`;
+.t-mark { flex: none; width: ${strip ? "9cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; height: ${strip ? "9cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; display: grid; place-items: center; border-radius: 50%; font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: ${strip ? "5cqi" : `min(${portrait ? "8.8" : "5.5"}cqh, 6.5cqi)`}; color: ${INK}; background: ${colour}; transform: scale(${wake(0, { from: 0.25, dur: 0.3 })}); }
+.t-title { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: ${strip ? "5cqi" : `min(${portrait ? "8.8" : "5.5"}cqh, 6cqi)`}; color: ${colour}; margin-bottom: 0.6cqh; }
+.t-text { font-size: ${strip ? "4.3cqi" : `min(${portrait ? "8.0" : "5"}cqh, 5.2cqi)`}; line-height: 1.3; text-wrap: pretty; }`;
       return { html, css };
     },
   },
@@ -539,11 +544,11 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
     full: false,
     fields: { title: text("A heading", 40, { required: false }), items: items("Lines: label and value as typed", { min: 2, max: 6, value: "required" }), total: text("The total, as typed", 20, { required: false }), totalLabel: text("Label for the total", 20, { required: false }), pace: PACE },
     example: { title: "One export", items: [{ label: "capture", value: "1:40" }, { label: "encode", value: "3:10" }, { label: "stitch", value: "0:20" }], total: "5:10", totalLabel: "Total" },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const n = p.items.length;
       const html = `<div class="t t-rc"><div class="t-paper">${p.title ? `<div class="t-title">${esc(p.title)}</div>` : ""}${p.items.map((it, i) => `<div class="t-line" style="--k:${arrive(p, i, n + (p.total ? 1 : 0), { from: 0.1, each: 0.12, dur: 0.2 })}"><span class="t-l">${esc(it.label)}</span><span class="t-dots"></span><span class="t-v">${esc(it.value)}</span></div>`).join("")}${p.total ? `<div class="t-line t-total" style="--k:${arrive(p, n, n + 1, { from: 0.2, each: 0.12, dur: 0.3 })}"><span class="t-l">${esc(p.totalLabel || "Total")}</span><span class="t-dots"></span><span class="t-v">${esc(p.total)}</span></div>` : ""}</div></div>`;
-      const css = `${base(portrait)}
-.t-paper { padding: 2.4cqh 2.6cqi; background: ${CARD}; border-radius: calc(1cqi * var(--ov-radius, 1)); font-family: ${FONT_MONO}; font-size: min(${portrait ? "7.0cqh, 4.6cqi" : "5.5cqh, 4.6cqi"}); opacity: ${wake(0, { from: 0.02, dur: 0.25 })}; }
+      const css = `${base(portrait, strip)}
+.t-paper { padding: 2.4cqh 2.6cqi; background: ${CARD}; border-radius: calc(1cqi * var(--ov-radius, 1)); font-family: ${FONT_MONO}; font-size: ${strip ? "3.8cqi" : `min(${portrait ? "7.0cqh, 4.6cqi" : "5.5cqh, 4.6cqi"})`}; opacity: ${wake(0, { from: 0.02, dur: 0.25 })}; }
 .t-title { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: 1.2em; margin-bottom: 1.4cqh; }
 .t-line { display: flex; align-items: baseline; gap: 1cqi; padding: 0.7cqh 0; opacity: var(--k); }
 .t-dots { flex: 1; border-bottom: 1px dotted ${MUTED}; opacity: 0.6; transform: translateY(-0.3em); }
@@ -585,16 +590,16 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
     full: false,
     fields: { name: text("Who wrote it", 40), handle: text("Their handle", 30, { required: false }), text: text("What they wrote", 240), meta: text("When, or where", 30, { required: false }) },
     example: { name: "A viewer", handle: "@someone", text: "I watched the whole thing with the sound off and still got it. Captions carried it.", meta: "2h" },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const initial = esc(p.name.trim().slice(0, 1).toUpperCase());
       const html = `<div class="t t-post"><div class="t-card"><div class="t-who"><div class="t-avatar">${initial}</div><div><div class="t-name">${esc(p.name)}</div>${p.handle ? `<div class="t-handle">${esc(p.handle)}${p.meta ? ` · ${esc(p.meta)}` : ""}</div>` : ""}</div></div><div class="t-text">${esc(p.text)}</div></div></div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-card { padding: 2.2cqh 2.4cqi; background: ${CARD}; border: 1px solid color-mix(in srgb, ${TEXT} 14%, transparent); border-radius: calc(1.4cqi * var(--ov-radius, 1)); opacity: ${wake(0, { from: 0.02, dur: 0.3 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.02, dur: 0.3 })}) * 2cqh)); }
 .t-who { display: flex; align-items: center; gap: 1.6cqi; margin-bottom: 1.6cqh; }
-.t-avatar { width: min(${portrait ? "14.4" : "9"}cqh, 10cqi); height: min(${portrait ? "14.4" : "9"}cqh, 10cqi); display: grid; place-items: center; border-radius: 50%; background: ${ACCENT}; color: ${INK}; font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "7.2" : "4.5"}cqh, 5cqi); }
-.t-name { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "8.0" : "5"}cqh, 5.4cqi); }
-.t-handle { font-size: min(${portrait ? "6.4" : "4"}cqh, 4.2cqi); color: ${MUTED}; }
-.t-text { font-size: min(${portrait ? "7.4cqh, 4.8cqi" : "5.5cqh, 5cqi"}); line-height: 1.35; text-wrap: pretty; clip-path: inset(0 0 calc((1 - ${wake(0, { from: 0.3, dur: 0.5 })}) * 100%) 0); }`;
+.t-avatar { width: ${strip ? "8cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; height: ${strip ? "8cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; display: grid; place-items: center; border-radius: 50%; background: ${ACCENT}; color: ${INK}; font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: ${strip ? "4cqi" : `min(${portrait ? "7.2" : "4.5"}cqh, 5cqi)`}; }
+.t-name { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: ${strip ? "4.6cqi" : `min(${portrait ? "8.0" : "5"}cqh, 5.4cqi)`}; }
+.t-handle { font-size: ${strip ? "3.6cqi" : `min(${portrait ? "6.4" : "4"}cqh, 4.2cqi)`}; color: ${MUTED}; }
+.t-text { font-size: ${strip ? "4.3cqi" : `min(${portrait ? "7.4cqh, 4.8cqi" : "5.5cqh, 5cqi"})`}; line-height: 1.35; text-wrap: pretty; clip-path: inset(0 0 calc((1 - ${wake(0, { from: 0.3, dur: 0.5 })}) * 100%) 0); }`;
       return { html, css };
     },
   },
@@ -607,17 +612,17 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
     full: false,
     fields: { title: text("A heading", 48, { required: false }), items: items("Parts: value is the share as a number; they are normalised", { min: 2, max: 5, value: "number" }), pace: PACE },
     example: { title: "Where the render time went", items: [{ label: "filter graph", value: 62 }, { label: "capture", value: 25 }, { label: "encode", value: 13 }] },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const total = p.items.reduce((sum, it) => sum + Math.max(it.value, 0), 0) || 1;
       const shares = p.items.map((it) => Math.max(it.value, 0) / total);
       const tones = [ACCENT, ACCENT2, `color-mix(in srgb, ${ACCENT} 55%, ${TEXT})`, MUTED, `color-mix(in srgb, ${TEXT} 35%, ${INK})`];
       const html = `<div class="t t-split">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-bar">${p.items.map((it, i) => `<div class="t-seg" style="--s:${shares[i].toFixed(4)}; --c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.05, each: 0.12, dur: 0.35 })}"></div>`).join("")}</div><div class="t-legend">${p.items.map((it, i) => `<div class="t-key" style="--c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.25, each: 0.12, dur: 0.3 })}"><span class="t-swatch"></span><span>${esc(it.label)}</span><span class="t-pct">${Math.round(shares[i] * 100)}%</span></div>`).join("")}</div></div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-split { gap: 2.4cqh; }
-.t-bar { display: flex; height: min(${portrait ? "14.4" : "9"}cqh, 10cqi); border-radius: 999px; overflow: hidden; background: color-mix(in srgb, ${TEXT} 10%, transparent); }
+.t-bar { display: flex; height: ${strip ? "8cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, ${TEXT} 10%, transparent); }
 .t-seg { flex: calc(var(--s) * var(--k)) 0 0; background: var(--c); }
 .t-legend { display: flex; flex-wrap: wrap; gap: 1cqh 2.4cqi; }
-.t-key { display: flex; align-items: center; gap: 0.8cqi; font-size: min(${portrait ? "7.7" : "4.8"}cqh, 5cqi); opacity: var(--k); }
+.t-key { display: flex; align-items: center; gap: 0.8cqi; font-size: ${strip ? "4.3cqi" : `min(${portrait ? "7.7" : "4.8"}cqh, 5cqi)`}; opacity: var(--k); }
 .t-swatch { width: 2cqi; height: 2cqi; border-radius: 0.3cqi; background: var(--c); }
 .t-pct { color: ${MUTED}; font-variant-numeric: tabular-nums; }`;
       return { html, css };
@@ -655,12 +660,12 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
     full: false,
     fields: { text: text("The question", 100), kicker: text("A few words above", 32, { required: false }) },
     example: { text: "Why was the second render ten minutes faster?" },
-    render: (p, { portrait }) => {
+    render: (p, { portrait, strip }) => {
       const html = `<div class="t t-q"><div class="t-mark">?</div>${p.kicker ? `<div class="t-kicker">${esc(p.kicker)}</div>` : ""}<div class="t-text">${esc(p.text)}</div></div>`;
-      const css = `${base(portrait)}
+      const css = `${base(portrait, strip)}
 .t-q { gap: 1.6cqh; }
-.t-mark { font-family: ${FONT_SERIF}; font-weight: 700; font-size: min(${portrait ? "25.6cqh, 26cqi" : "26cqh, 18cqi"}); line-height: 0.8; color: ${ACCENT}; opacity: ${wake(0, { from: 0.02, dur: 0.35 })}; transform: rotate(calc((1 - ${wake(0, { from: 0.02, dur: 0.35 })}) * -12deg)) scale(calc(0.8 + ${wake(0, { from: 0.02, dur: 0.35 })} * 0.2)); transform-origin: bottom left; }
-.t-text { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "10.2cqh, 7.6cqi" : "8cqh, 6.4cqi"}); line-height: 1.08; letter-spacing: -0.02em; text-wrap: balance; opacity: ${wake(0, { from: 0.35, dur: 0.35 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.35, dur: 0.35 })}) * 1.5cqh)); }`;
+.t-mark { font-family: ${FONT_SERIF}; font-weight: 700; font-size: ${strip ? "18cqi" : `min(${portrait ? "25.6cqh, 26cqi" : "26cqh, 18cqi"})`}; line-height: 0.8; color: ${ACCENT}; opacity: ${wake(0, { from: 0.02, dur: 0.35 })}; transform: rotate(calc((1 - ${wake(0, { from: 0.02, dur: 0.35 })}) * -12deg)) scale(calc(0.8 + ${wake(0, { from: 0.02, dur: 0.35 })} * 0.2)); transform-origin: bottom left; }
+.t-text { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: ${strip ? "6.2cqi" : `min(${portrait ? "10.2cqh, 7.6cqi" : "8cqh, 6.4cqi"})`}; line-height: 1.08; letter-spacing: -0.02em; text-wrap: balance; opacity: ${wake(0, { from: 0.35, dur: 0.35 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.35, dur: 0.35 })}) * 1.5cqh)); }`;
       return { html, css };
     },
   },
@@ -669,7 +674,7 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
 TEMPLATES.thumbnail = {
   label: "Thumbnail line",
   about: "A few big words over the picture, with a shade behind them so they read on any frame, and a small kicker. Made for render_thumbnail — the still a platform shows before anyone presses play — and usable as a title card over a cutaway.",
-  when: "The thumbnail, or a cold-open title over a still. Up to six words; fewer read better.",
+  when: "The thumbnail, or a cold-open title over a still. Up to six words; fewer read better. On a short's first words, `over: true` and `arrive: instant`, so the words are on the face at frame one.",
   persona: ["farmer", "editor"],
   full: true,
   fields: {
@@ -677,15 +682,17 @@ TEMPLATES.thumbnail = {
     kicker: text("A few small words above", 24, { required: false }),
     side: field("choice", "Where the words sit", { options: ["left", "right", "bottom"], default: "left" }),
     shade: field("number", "How dark the shade behind the words is, 0 to 1", { min: 0, max: 1, default: 0.55, required: false }),
+    arrive: field("choice", "build: the words land one by one; instant: all there at the first frame, for the film's opening frame", { options: ["build", "instant"], default: "build" }),
   },
   example: { kicker: "Rendering", line: "16 minutes → 6", side: "left" },
   render: (p, { portrait }) => {
     const words = p.line.split(" ");
-    const html = `<div class="t t-thumb t-${p.side}"><div class="t-shade"></div><div class="t-text">${p.kicker ? `<div class="t-kicker">${esc(p.kicker)}</div>` : ""}<div class="t-line">${words.map((w, i) => `<span class="t-w" style="--k:${wake(i, { from: 0.05, each: 0.08, dur: 0.25 })}">${esc(w)}</span>`).join(" ")}</div></div></div>`;
+    const instant = p.arrive === "instant";
+    const html = `<div class="t t-thumb t-${p.side}"><div class="t-shade"></div><div class="t-text">${p.kicker ? `<div class="t-kicker">${esc(p.kicker)}</div>` : ""}<div class="t-line">${words.map((w, i) => `<span class="t-w" style="--k:${instant ? "1" : wake(i, { from: 0.05, each: 0.08, dur: 0.25 })}">${esc(w)}</span>`).join(" ")}</div></div></div>`;
     const dir = { left: "90deg", right: "270deg", bottom: "0deg" }[p.side];
     const css = `${base(portrait)}
 .t-thumb { padding: 0; justify-content: ${p.side === "bottom" ? "flex-end" : "center"}; }
-.t-shade { position: absolute; inset: 0; background: linear-gradient(${dir}, rgba(0,0,0,${p.shade.toFixed(2)}) 0%, rgba(0,0,0,${(p.shade * 0.7).toFixed(2)}) ${p.side === "bottom" ? "35%" : "45%"}, rgba(0,0,0,0) ${p.side === "bottom" ? "70%" : "80%"}); opacity: ${wake(0, { from: 0, dur: 0.3 })}; }
+.t-shade { position: absolute; inset: 0; background: linear-gradient(${dir}, rgba(0,0,0,${p.shade.toFixed(2)}) 0%, rgba(0,0,0,${(p.shade * 0.7).toFixed(2)}) ${p.side === "bottom" ? "35%" : "45%"}, rgba(0,0,0,0) ${p.side === "bottom" ? "70%" : "80%"}); opacity: ${instant ? "1" : wake(0, { from: 0, dur: 0.3 })}; }
 .t-text { position: relative; ${frame(portrait)} ${p.side === "right" ? "align-self: flex-end; text-align: right;" : ""} ${portrait ? "padding-bottom: 22cqh;" : ""} max-width: ${portrait ? "100%" : "46%"}; display: flex; flex-direction: column; gap: 1.6cqh; }
 .t-kicker { color: ${ACCENT}; text-shadow: 0 0.2cqh 1cqh rgba(0,0,0,0.6); }
 .t-line { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "10cqh, 15cqi" : "16cqh, 11cqi"}); line-height: 0.98; letter-spacing: -0.03em; color: #ffffff; text-shadow: 0 0.4cqh 2cqh rgba(0,0,0,0.55); text-wrap: balance; }
@@ -738,7 +745,9 @@ export function renderTemplate(id, params = {}, { format = "landscape", full } =
   if (!template) throw new Error(`unknown template "${id}"; describe_templates lists ${TEMPLATE_IDS.join(", ")}`);
   const checked = checkParams(template, params ?? {}, id);
   const portrait = format === "vertical";
-  const { html, css } = template.render(checked, { portrait, format });
+  // A column card in a tall film is a strip under the head, not a column.
+  const strip = portrait && !(full ?? template.full);
+  const { html, css } = template.render(checked, { portrait, format, strip });
   return {
     kind: "custom",
     template: id,
@@ -761,4 +770,22 @@ export function expandTemplate(graphic, context) {
 
 export function expandTemplates(scenes, context) {
   return scenes.map((scene) => (scene?.graphic?.template ? { ...scene, graphic: expandTemplate(scene.graphic, context) } : scene));
+}
+
+// A plan as a reader takes it up. The html and css stored beside a template's
+// params are what the template rendered when the plan was written; the
+// template may have been improved since, and the picture should be the
+// template as it is now, not as it was. Everything else on the graphic
+// (`over`, a label) stays. A template that no longer accepts its stored
+// params keeps the stored rendering rather than losing the scene.
+export function refreshTemplates(scenes, context) {
+  return scenes.map((scene) => {
+    const graphic = scene?.graphic;
+    if (!graphic || graphic.kind !== "custom" || !graphic.template) return scene;
+    try {
+      return { ...scene, graphic: { ...graphic, ...renderTemplate(graphic.template, graphic.params ?? {}, { ...context, full: graphic.full }) } };
+    } catch {
+      return scene;
+    }
+  });
 }

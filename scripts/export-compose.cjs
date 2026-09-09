@@ -108,6 +108,7 @@ async function main() {
   const shotEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "shot-engine.mjs")).href);
   const themes = await import(pathToFileURL(path.join(REPO_ROOT, "core", "themes.mjs")).href);
   const formats = await import(pathToFileURL(path.join(REPO_ROOT, "core", "formats.mjs")).href);
+  const templates = await import(pathToFileURL(path.join(REPO_ROOT, "core", "templates.mjs")).href);
   const plan = await import(pathToFileURL(path.join(REPO_ROOT, "core", "render-plan.mjs")).href);
   pipeline = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
   FFMPEG = pipeline.FFMPEG;
@@ -138,7 +139,7 @@ async function main() {
   const fullStage = formats.stageOf(meta);
   const stage = draft ? { width: Math.round(fullStage.width * scale / 2) * 2, height: Math.round(fullStage.height * scale / 2) * 2 } : fullStage;
   if (draft) say(`draft at ${Math.round(scale * 100)}%: ${stage.width}×${stage.height}`);
-  const scenes = engine.resolveScenes(composeFile.scenes ?? [], words);
+  const scenes = engine.resolveScenes(templates.refreshTemplates(composeFile.scenes ?? [], { format: formats.resolveFormat(meta).id }), words);
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
   for (const scene of scenes) {
     if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
@@ -156,6 +157,7 @@ async function main() {
   const compose = {
     videoUrl: pathToFileURL(cleanVideo).href,
     screenUrl: hasScreen ? pathToFileURL(screenVideo).href : null,
+    duration,
     scenes,
     captions: engine.captionsBurnedIn(composeFile.captions) ? phrases : null,
     wordSpans: engine.resolveCaptions(words),

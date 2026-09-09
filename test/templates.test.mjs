@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TEMPLATES, TEMPLATE_IDS, describeTemplates, renderTemplate, expandTemplate, expandTemplates } from "../core/templates.mjs";
+import { TEMPLATES, TEMPLATE_IDS, describeTemplates, renderTemplate, expandTemplate, expandTemplates, refreshTemplates } from "../core/templates.mjs";
 import { validateScenes } from "../core/compose-engine.mjs";
 
 const words = [
@@ -113,4 +113,39 @@ test("every entrance completes by the time --q reaches 1, whatever the item coun
   const code = renderTemplate("code", { items: [{ label: "function f() {" }, { label: "    return 1;" }, { label: "}" }] });
   assert.equal(code.params.items[1].label, "    return 1;", "code keeps its indentation");
   assert.equal(describeTemplates().find((t) => t.id === "alert").fields.level.required, false, "a choice is never required");
+});
+
+test("a column card in a tall film is sized for the strip under the head, not for a column or a stage", () => {
+  const columns = TEMPLATE_IDS.filter((id) => TEMPLATES[id].full === false);
+  assert.ok(columns.length >= 9);
+  for (const id of columns) {
+    const strip = renderTemplate(id, TEMPLATES[id].example, { format: "vertical" });
+    const stage = renderTemplate(id, TEMPLATES[id].example, { format: "vertical", full: true });
+    assert.notEqual(strip.css, stage.css, `${id}: the strip has its own scale`);
+    assert.ok(!strip.css.includes("padding: 10cqh 7cqw 21cqh 7cqw"), `${id}: the strip does not keep a caption's room at its foot`);
+    assert.ok(stage.css.includes("padding: 10cqh 7cqw 21cqh 7cqw"), `${id}: blown up to the stage it does`);
+  }
+});
+
+test("a thumbnail can be there at frame one", () => {
+  const built = renderTemplate("thumbnail", { line: "Straight up", kicker: "Orbit" }, { format: "vertical" });
+  const instant = renderTemplate("thumbnail", { line: "Straight up", kicker: "Orbit", arrive: "instant" }, { format: "vertical" });
+  assert.ok(built.html.includes("--k:clamp("), "by default the words build in");
+  assert.ok(!instant.html.includes("clamp(") && instant.html.includes("--k:1"), "instant: every word is present from --q 0");
+  assert.ok(!instant.css.includes("opacity: clamp("), "and so is the shade");
+});
+
+test("a reader re-expands a template from its params, keeping what else the graphic carries", () => {
+  const stale = { type: "graphic", fromWordId: 0, toWordId: 3, graphic: { kind: "custom", template: "definition", params: { term: "orbit", meaning: "Falling and missing." }, full: false, over: true, label: "orbit", html: "<div>old</div>", css: ".old{}" } };
+  const [fresh] = refreshTemplates([stale], { format: "vertical" });
+  assert.ok(fresh.graphic.html.includes("orbit") && !fresh.graphic.html.includes("old"), "the rendering is the template's now");
+  assert.ok(fresh.graphic.css.includes("8.6cqi"), "rendered for the strip a column card sits in");
+  assert.equal(fresh.graphic.over, true);
+  assert.equal(fresh.graphic.label, "orbit");
+  assert.equal(fresh.graphic.full, false);
+  const broken = { ...stale, graphic: { ...stale.graphic, params: { term: "x".repeat(400) } } };
+  const [kept] = refreshTemplates([broken], { format: "vertical" });
+  assert.equal(kept.graphic.html, "<div>old</div>", "params the template refuses keep the stored rendering");
+  const plain = { type: "graphic", fromWordId: 0, toWordId: 3, graphic: { kind: "stat", value: 3, label: "x" } };
+  assert.deepEqual(refreshTemplates([plain], { format: "landscape" })[0], plain);
 });

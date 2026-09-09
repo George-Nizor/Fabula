@@ -1,0 +1,176 @@
+{
+  "scenes": [
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "thumbnail",
+        "params": {
+          "line": "Straight up, straight back down",
+          "kicker": "Orbit",
+          "side": "bottom",
+          "shade": 0.6,
+          "arrive": "instant"
+        },
+        "full": true,
+        "over": true
+      },
+      "fromWordId": 0,
+      "toWordId": 11
+    },
+    {
+      "type": "kinetic",
+      "fromWordId": 12,
+      "toWordId": 18
+    },
+    {
+      "type": "stage",
+      "layout": "cutaway",
+      "fromWordId": 24,
+      "toWordId": 30
+    },
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "word",
+        "params": {
+          "words": "Turn sideways.",
+          "note": "as it climbs"
+        },
+        "full": true
+      },
+      "fromWordId": 24,
+      "toWordId": 30
+    },
+    {
+      "type": "stage",
+      "layout": "cutaway",
+      "fromWordId": 31,
+      "toWordId": 55
+    },
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "flow",
+        "params": {
+          "title": "Why it never lands",
+          "items": [
+            {
+              "label": "accelerate sideways"
+            },
+            {
+              "label": "gravity pulls down"
+            },
+            {
+              "label": "the ground curves away"
+            },
+            {
+              "label": "it falls around the planet"
+            }
+          ],
+          "pace": "span"
+        },
+        "full": true
+      },
+      "fromWordId": 31,
+      "toWordId": 55
+    },
+    {
+      "type": "stage",
+      "layout": "side",
+      "fromWordId": 56,
+      "toWordId": 68
+    },
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "definition",
+        "params": {
+          "term": "orbit",
+          "kind": "noun",
+          "meaning": "Falling around the planet so fast that the ground keeps curving away beneath you."
+        },
+        "full": false
+      },
+      "fromWordId": 56,
+      "toWordId": 68
+    },
+    {
+      "type": "callout",
+      "text": "Stages",
+      "style": "tag",
+      "fromWordId": 69,
+      "toWordId": 75
+    },
+    {
+      "type": "stage",
+      "layout": "cutaway",
+      "fromWordId": 76,
+      "toWordId": 102
+    },
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "before-after",
+        "params": {
+          "before": "Empty tanks and engines still riding along",
+          "after": "Dropped. The rest goes further on less.",
+          "beforeLabel": "Burning",
+          "afterLabel": "Discarded",
+          "pace": "span"
+        },
+        "full": true
+      },
+      "fromWordId": 76,
+      "toWordId": 102
+    },
+    {
+      "type": "graphic",
+      "graphic": {
+        "kind": "custom",
+        "template": "cta",
+        "params": {
+          "line": "That is how rockets work",
+          "where": "The full explainer is on the channel",
+          "button": "Watch it",
+          "arrow": "down",
+          "shade": 0.6
+        },
+        "full": true,
+        "over": true
+      },
+      "fromWordId": 103,
+      "toWordId": 106
+    }
+  ],
+  "captions": "open",
+  "theme": {
+    "preset": "mono",
+    "accent": "#49c9ed",
+    "accent2": "#ffad52",
+    "fonts": {
+      "display": "Space Grotesk",
+      "body": "Inter"
+    },
+    "titleStyle": "rise",
+    "calloutStyle": "note",
+    "titleCase": "none",
+    "glow": 0.1,
+    "radius": 0.5,
+    "transition": "glide"
+  },
+  "punch": {
+    "zoom": 1.12
+  },
+  "captionEmphasis": "auto",
+  "audio": {
+    "voice": {
+      "loudness": -14,
+      "measured": -45
+    }
+  }
+}

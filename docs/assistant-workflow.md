@@ -273,12 +273,16 @@ the fields and a complete example each. Write one as
 
 in `set_scenes`, `add_scenes`, `update_scenes` or an insert option; the html and css are
 generated, and the template id and params stay beside them in `get_scenes`, so a patch to
-`params` re-renders the graphic. Reach for a template before writing html by hand; the
+`params` re-renders the graphic; the window and the renders re-expand every template from
+its params as they read the plan, so a plan written last week is drawn with the templates as
+they are today. Reach for a template before writing html by hand; the
 hand-written `custom` graphic is for a moment none of them fit. Full-stage templates pair
-with a `cutaway` or `full` layout; column templates sit beside the head. `over: true` on a
+with a `cutaway` or `full` layout; column templates sit beside the head — in a tall film,
+in the strip under it, and they size themselves for that strip. `over: true` on a
 custom graphic draws it over the head instead of under — the words on the face, which is the
-feed's own frame: the `thumbnail` template at word zero of a short, the `cta` with its `shade`
-at the end. In a tall frame captions and titles sit above the bottom eighth, where the
+feed's own frame: the `thumbnail` template at word zero of a short with `arrive: instant`,
+so the words are there at frame one, the `cta` with its `shade` at the end. A card that
+reaches either edge of the film is whole at that edge rather than fading in or out. In a tall frame captions and titles sit above the bottom eighth, where the
 platform's own controls are, and the layouts stop their cards at the same floor. `docs/craft/visual-grammar.md`
 is the lookup from what the speaker is doing to which one.
 
@@ -420,7 +424,10 @@ cutaway with a visual covering the same word span.
 A cutaway obeys the dwell rule like every other layout, with a floor of its own: nothing
 travels, so a cutaway may be as short as 1.2 s, but a return to camera shorter than 3 s
 between two cutaways is bridged away rather than shown. A third of a second of presenter
-between two full-stage visuals is not a beat, it is a flash.
+between two full-stage visuals is not a beat, it is a flash. The same holds at the film's
+ends: a sliver of the head under half a second before a card anchored on the first word, or
+after one anchored on the last, goes to the card. The window and the render settle the
+timeline from the film's own length, so what the stage shows is what the film does.
 
 **Which makes covering a cutaway your job.** With the flash bridged away, a gap between two
 cards inside one cutaway is an empty stage. `set_scenes`, `update_scenes`, `add_scenes` and

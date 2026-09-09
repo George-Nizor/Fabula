@@ -67,6 +67,8 @@ is brought to -14 in the stitch. A music bed was tried with a tone and measured,
 hidden behind the head, one callout on a card, an 8.6 s still inside the flow (span pacing
 fixed it).
 
+Both plans are in `plans/` as files, with the template renderings stripped to their params.
+
 ## What both say
 
 - The reading is right about *where*; the judgment is *what*. `draft_scenes` placed the
