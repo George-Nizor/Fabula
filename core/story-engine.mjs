@@ -281,7 +281,9 @@ function numberWordsAt(tokens, i) {
 
 export function numberIn(text) {
   const raw = String(text).split(/\s+/);
-  const tokens = raw.map((t) => t.toLowerCase().replace(/[^a-z0-9$%.,]/g, ""));
+  // Trailing punctuation is the sentence's, not the figure's: "16." is 16,
+  // "80%." is 80%, "$4.2M," is $4.2M.
+  const tokens = raw.map((t) => t.toLowerCase().replace(/[^a-z0-9$%.,]/g, "").replace(/[.,]+$/, ""));
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i];
     let value = null; let shown = null; let length = 1; let unit = null;
@@ -289,7 +291,7 @@ export function numberIn(text) {
     if (digits) {
       value = Number(digits[1].replace(/,/g, ""));
       if (digits[2] === "k") value *= 1e3; else if (digits[2] === "m") value *= 1e6;
-      shown = `${t.startsWith("$") ? "$" : ""}${digits[1]}${digits[2] === "k" || digits[2] === "m" ? digits[2] : ""}`;
+      shown = `${t.startsWith("$") ? "$" : ""}${digits[1]}${digits[2] === "k" ? "k" : digits[2] === "m" ? "M" : ""}`;
       if (digits[2] === "%") unit = "%"; else if (t.startsWith("$")) unit = "$"; else if (digits[2] === "x") unit = "×";
     } else if (t in SMALL || t in TENS) {
       const parsed = numberWordsAt(tokens, i);

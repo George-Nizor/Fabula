@@ -134,3 +134,13 @@ test("a quiet voice is pointed out when the bed is set, and not once a target is
   assert.equal(targeted.voice.note, undefined);
   assert.equal(describeAudio({ music: { src: "assets/bed.mp3" }, voice: { measured: -18 } }, words, 8).voice.note, undefined);
 });
+
+test("a preview span outside every music span gets a silent bed, and the bed's reference is the voice as it will be heard", () => {
+  const confined = audioGraph({ audio: { music: { src: "assets/bed.mp3", spans: [{ fromWordId: 0, toWordId: 1 }] } }, words, from: 100, span: 40, musicPath: "m" });
+  assert.ok(!confined.filter.includes("min(1,)"), confined.filter);
+  assert.ok(confined.filter.includes("*0'") || confined.filter.includes("*0:"), "presence is zero");
+  // Target -16 with a measurement of -24: the voice is gained to -16, so the bed sits under -16.
+  const g = audioGraph({ audio: { music: { src: "assets/bed.mp3", level: -18, loudness: -10 }, voice: { loudness: -16, measured: -24 } }, words, span: 8, musicPath: "m" });
+  assert.ok(g.filter.includes(`volume=${Math.pow(10, -24 / 20).toFixed(4).replace(/0+$/, "")}`) || g.filter.includes("volume=0.0631"), g.filter.split("\n")[2]);
+  assert.equal(describeAudio({ music: { src: "assets/bed.mp3", level: -18, loudness: -10 }, voice: { loudness: -16, measured: -24 } }, words, 8).music.gainDb, -24);
+});

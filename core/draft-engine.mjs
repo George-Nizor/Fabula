@@ -138,7 +138,7 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
     if (span.end - span.start < 1.5) continue;
     const card = cardFor(moment, span, { shortForm });
     if (!card) continue;
-    const { layout, todo: note, ...scene } = card;
+    const { layout, todo: note, start: _s, end: _e, ...scene } = card; // seconds are derived; only word ids are written
     if (layout && layout !== "focus") scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout });
     scenes.push(scene);
     if (note) todo.push(`scene at ${span.start.toFixed(1)}s (${moment.kind}): ${note}`);

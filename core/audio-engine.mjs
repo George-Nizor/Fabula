@@ -144,6 +144,7 @@ export function bedSpans(music, words, duration, { pad = 0.6 } = {}) {
 // A presence expression for the spans: 1 inside, 0 outside, faded over
 // `fade` seconds at each edge.
 export function spanPresenceExpression(spans, fade, T = "t") {
+  if (!spans.length) return "0"; // no span in this window: the bed is silent here
   const f = Math.max(fade, 0.05);
   const tents = spans.map(({ start, end }) => `clip((${T}-${num(start)})/${num(f)},0,1)*clip((${num(end)}-${T})/${num(f)},0,1)`);
   return `min(1,${tents.join("+")})`;
@@ -195,7 +196,10 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
     // pass, and the gain expression reads t, which has to keep advancing.
     "asetpts=N/SR/TB",
     `atrim=duration=${num(span)}`,
-    `volume=${num(dbToLinear(bedGainDb(music, voiceLoudness ?? audio?.voice?.measured ?? (voice.loudness ?? undefined))))}`,
+    // Relative to the voice as it will be heard: its target when one is set
+    // (the stitch gains it there), else what was measured — the same
+    // reference describeAudio reports.
+    `volume=${num(dbToLinear(bedGainDb(music, voice.loudness ?? voiceLoudness ?? voice.measured ?? undefined)))}`,
     `volume=volume='${presence ? `(${gain})*${presence}` : gain}':eval=frame`,
     ...(fade > 0 && !confined ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
   ];

@@ -171,3 +171,11 @@ test("a retake is the earlier of two near-identical sentences within half a minu
   assert.ok(editorialCuts(ws).some((c) => c.reason === "retake"));
   assert.ok(!editorialCuts(ws, { kinds: ["stutter"] }).some((c) => c.reason === "retake"));
 });
+
+test("a figure that ends a clause is still a figure", () => {
+  assert.equal(numberIn("The render took 16.").value, 16);
+  assert.equal(numberIn("That is 80%.").shown, "80%");
+  assert.equal(numberIn("We made $4.2M, then more").shown, "$4.2M");
+  assert.deepEqual([numberIn("It took sixteen minutes.").shown, numberIn("It took sixteen minutes.").unit], ["16 min", "minutes"]);
+  assert.equal(numberIn("It took 25, maybe 30 minutes").shown, "25");
+});

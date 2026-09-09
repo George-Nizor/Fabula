@@ -56,7 +56,7 @@ import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templa
 import { readStory, editorialCuts } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
-import { validateAudio, describeAudio, bedSpans, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, describeAudio, bedSpans, assetAudioPath, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { chapterList } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
@@ -556,7 +556,9 @@ server.registerTool("story_cuts", {
   const dir = currentProjectDir();
   const review = readReview(dir);
   if (!review?.words) throw new Error("no cut list yet: the first pass or cut_pass writes review.json");
-  const found = editorialCuts(review.words, kinds ? { kinds } : {});
+  // Proposals already in the list are not added again: re-running adds nothing twice.
+  const known = new Set(review.cuts.flatMap((cut) => (cut.sources ?? [cut]).map((source) => `${source.reason}:${source.wordIds?.[0]}`)));
+  const found = editorialCuts(review.words, kinds ? { kinds } : {}).filter((cut) => !known.has(`${cut.reason}:${cut.fromWordId}`));
   const byId = new Map(review.words.map((word) => [word.id, word]));
   const pad = 0.04;
   const proposals = found.map((cut) => {
@@ -773,6 +775,7 @@ server.registerTool("set_audio", {
   if (music !== undefined) {
     if (music === null) delete audio.music;
     else {
+      if (!assetAudioPath(music.src)) throw new Error("music.src must be a project-relative audio file under assets/, e.g. assets/bed.mp3 (import_audio puts one there)");
       if (!fs.existsSync(path.join(dir, music.src))) throw new Error(`no such asset ${music.src}; import_audio first`);
       const { spans, ...rest } = music;
       audio.music = { ...(audio.music?.src === music.src ? audio.music : {}), ...rest };
@@ -1162,7 +1165,7 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
     warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
   }
-  for (const short of absorbedStages(resolved)) {
+  for (const short of absorbedStages(resolved, duration)) {
     warnings.push(`scene ${short.index}: a ${short.layout} layout of ${short.seconds}s is under the ${short.floor}s dwell floor and will be absorbed into its neighbour; a card planned for it lands wherever the neighbour puts cards. Give it more words, or drop the stage scene.`);
   }
   for (const over of overFullStage(resolved)) {

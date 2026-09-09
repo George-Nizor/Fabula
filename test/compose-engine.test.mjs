@@ -310,3 +310,13 @@ test("a custom graphic over the head is valid and is never reported as hidden be
   assert.deepEqual(hiddenFullStage([over], 10), []);
   assert.throws(() => validateScenes([{ ...over, graphic: { ...over.graphic, over: "yes" } }], words), /over is true or false/);
 });
+
+test("the first and last stage segments are never reported as absorbed", () => {
+  const scenes = [
+    { type: "stage", start: 0, end: 2, fromWordId: 0, toWordId: 1, layout: "side" },
+    { type: "stage", start: 20, end: 21, fromWordId: 0, toWordId: 1, layout: "side" },
+    { type: "stage", start: 58.5, end: 60, fromWordId: 0, toWordId: 1, layout: "pip" },
+  ];
+  const short = absorbedStages(scenes, 60);
+  assert.deepEqual(short.map((s) => s.index), [1]);
+});

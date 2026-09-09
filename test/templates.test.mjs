@@ -94,3 +94,23 @@ test("describe_templates says what each one is for and which fields it takes, an
   assert.ok(!farmer.some((t) => t.id === "timeline"));
   assert.ok(describeTemplates({ persona: "editor" }).some((t) => t.id === "timeline"));
 });
+
+test("every entrance completes by the time --q reaches 1, whatever the item count", () => {
+  const worst = [
+    ["receipt", { items: Array.from({ length: 6 }, (_, i) => ({ label: `l${i}`, value: "1" })), total: "9" }],
+    ["ranking", { items: Array.from({ length: 6 }, (_, i) => ({ label: `r${i}` })), countdown: "up" }],
+    ["code", { items: Array.from({ length: 8 }, (_, i) => ({ label: `line ${i}` })) }],
+    ["word", { words: "one two three", note: "n" }],
+    ["myth-fact", { myth: "m", fact: "f" }],
+    ["phone", { items: Array.from({ length: 4 }, (_, i) => ({ label: `m${i}` })) }],
+  ];
+  for (const [id, params] of worst) {
+    const { html, css } = renderTemplate(id, params);
+    for (const m of (html + css).matchAll(/clamp\(0, calc\(\(var\(--q\) - ([\d.]+)\) \/ ([\d.]+)\), 1\)/g)) {
+      assert.ok(Number(m[1]) + Number(m[2]) <= 1.001, `${id}: a window opens at ${m[1]} for ${m[2]} and never closes`);
+    }
+  }
+  const code = renderTemplate("code", { items: [{ label: "function f() {" }, { label: "    return 1;" }, { label: "}" }] });
+  assert.equal(code.params.items[1].label, "    return 1;", "code keeps its indentation");
+  assert.equal(describeTemplates().find((t) => t.id === "alert").fields.level.required, false, "a choice is never required");
+});

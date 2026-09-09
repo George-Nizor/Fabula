@@ -24,8 +24,13 @@ const esc = (value) => String(value ?? "")
 // A 0→1 window on the entrance variable: item i wakes at `from + i * each`
 // and arrives over `dur`. Written as CSS so the painter sets one number and
 // the browser does the rest, exactly the same in the window and the export.
-const wake = (i, { from = 0.05, each = 0.12, dur = 0.35 } = {}) =>
-  `clamp(0, calc((var(--q) - ${(from + i * each).toFixed(2)}) / ${dur.toFixed(2)}), 1)`;
+// The painter clamps --q at 1, so a window has to close by then: an item
+// scheduled later than that is pulled back to land on the last beat rather
+// than never arriving.
+const wake = (i, { from = 0.05, each = 0.12, dur = 0.35 } = {}) => {
+  const start = Math.max(0, Math.min(from + i * each, 1 - dur));
+  return `clamp(0, calc((var(--q) - ${start.toFixed(2)}) / ${dur.toFixed(2)}), 1)`;
+};
 
 // The same window on the SPAN variable: item i of n arrives at an even share
 // of the card's whole time, so a diagram develops as the explanation does
@@ -68,7 +73,7 @@ const frame = (portrait) => portrait
 // describe_templates prints so the assistant knows what to send.
 const field = (type, about, extra = {}) => ({ type, about, ...extra });
 const text = (about, max = 80, extra = {}) => field("text", about, { max, ...extra });
-const items = (about, { min = 1, max = 5, value = false, required = true } = {}) => field("items", about, { min, max, value, required });
+const items = (about, { min = 1, max = 5, value = false, required = true, keepSpace = false } = {}) => field("items", about, { min, max, value, required, keepSpace });
 const PACE = field("choice", "entrance: everything arrives in the first two seconds; span: the items arrive one by one across the card's whole time, so the picture keeps developing while the speaker talks — for a card that holds longer than five seconds", { options: ["entrance", "span"], default: "entrance", required: false });
 
 function checkText(value, spec, name, id) {
@@ -76,7 +81,8 @@ function checkText(value, spec, name, id) {
     if (spec.required !== false) throw new Error(`template ${id}: ${name} is required`);
     return "";
   }
-  const s = String(value).replace(/\s+/g, " ").trim();
+  // A line of code keeps its indentation; everything else is one line of prose.
+  const s = spec.keepSpace ? String(value).replace(/[\r\n]+/g, " ").replace(/\s+$/, "") : String(value).replace(/\s+/g, " ").trim();
   if (s.length > spec.max) throw new Error(`template ${id}: ${name} is at most ${spec.max} characters`);
   if (/:\/\//.test(s)) throw new Error(`template ${id}: ${name} cannot hold a link; write the name of the site instead`);
   return s;
@@ -101,7 +107,7 @@ function checkItems(value, spec, name, id) {
   if (value.length < spec.min || value.length > spec.max) throw new Error(`template ${id}: ${name} takes ${spec.min}–${spec.max} items, got ${value.length}`);
   return value.map((item, i) => {
     if (!item || typeof item !== "object") throw new Error(`template ${id}: ${name}[${i}] must be an object`);
-    const label = checkText(item.label, { max: 60, required: true }, `${name}[${i}].label`, id);
+    const label = checkText(item.label, { max: 60, required: true, keepSpace: spec.keepSpace }, `${name}[${i}].label`, id);
     const out = { label };
     if (spec.value) {
       if (spec.value === "number") out.value = checkNumber(item.value, { required: true }, `${name}[${i}].value`, id);
@@ -339,7 +345,7 @@ export const TEMPLATES = {
     when: "A line of code, a command, a config value the speaker is reading out. Keep it to the lines that matter.",
     persona: ["editor"],
     full: true,
-    fields: { title: text("The filename or a label", 40, { required: false }), items: items("The lines, in order; label is the line", { min: 1, max: 8 }), mark: field("number", "1-based line to highlight", { required: false, min: 1, max: 8 }), pace: PACE },
+    fields: { title: text("The filename or a label", 40, { required: false }), items: items("The lines, in order; label is the line, indentation kept", { min: 1, max: 8, keepSpace: true }), mark: field("number", "1-based line to highlight", { required: false, min: 1, max: 8 }), pace: PACE },
     example: { title: "clean-graph.mjs", items: [{ label: "// convert once, before any scale" }, { label: "format=yuv420p," }, { label: "scale=w=1920:h=1080" }], mark: 2 },
     render: (p, { portrait }) => {
       const html = `<div class="t t-code"><div class="t-win"><div class="t-bar"><span class="t-d"></span><span class="t-d"></span><span class="t-d"></span>${p.title ? `<span class="t-file">${esc(p.title)}</span>` : ""}</div><pre class="t-pre">${p.items.map((it, i) => `<div class="t-ln${p.mark === i + 1 ? " t-mark" : ""}" style="--k:${arrive(p, i, p.items.length, { from: 0.15, each: 0.1, dur: 0.2 })}"><span class="t-n">${i + 1}</span>${esc(it.label)}</div>`).join("")}</pre></div></div>`;
@@ -716,7 +722,8 @@ export function describeTemplates({ persona } = {}) {
 }
 
 function describeField(spec) {
-  const out = { type: spec.type, about: spec.about, required: spec.required !== false };
+  // A choice always has its default, so it is never required.
+  const out = { type: spec.type, about: spec.about, required: spec.type !== "choice" && spec.required !== false };
   if (spec.type === "text") out.max = spec.max;
   if (spec.type === "number") { if (spec.min !== undefined) out.min = spec.min; if (spec.max !== undefined) out.max = spec.max; }
   if (spec.type === "items") { out.min = spec.min; out.max = spec.max; if (spec.value) out.value = spec.value === "number" ? "a number" : spec.value === "required" ? "text, required" : "text, optional"; }

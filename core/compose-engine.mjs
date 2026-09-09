@@ -178,10 +178,13 @@ export function resolveScenes(scenes, words) {
 // side card planned for a breath lands wherever the neighbour puts cards —
 // in a cutaway, the whole stage. Reported by scene index, before the render
 // shows it.
-export function absorbedStages(scenes) {
+export function absorbedStages(scenes, durationSeconds = Infinity) {
   const out = [];
   scenes.forEach((scene, index) => {
     if (scene.type !== "stage" || !scene.layout) return;
+    // The timeline's first and last segments are never absorbed: they have
+    // only one neighbour and the dwell rule leaves them be.
+    if (scene.start <= 0.01 || scene.end >= durationSeconds - 0.01) return;
     const floor = scene.layout === "cutaway" ? 1.2 : 3;
     const seconds = scene.end - scene.start;
     if (seconds < floor - 0.01) out.push({ index, layout: scene.layout, seconds: Number(seconds.toFixed(1)), floor });

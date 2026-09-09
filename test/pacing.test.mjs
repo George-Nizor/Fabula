@@ -82,3 +82,9 @@ test("a span-paced before-after counts its sweep as a change", () => {
   const { stats } = describePacing(still, { duration: 16, format: "vertical", shortForm: true, captions: "open" });
   assert.ok(stats.longestStill.seconds < 8, JSON.stringify(stats.longestStill));
 });
+
+test("a visual ending on the film's last frame is not counted twice", () => {
+  const toEnd = describePacing([scene("title", 10, 60, { text: "x" })], { duration: 60, format: "landscape", captions: "closed" });
+  const before = describePacing([scene("title", 10, 50, { text: "x" })], { duration: 60, format: "landscape", captions: "closed" });
+  assert.ok(toEnd.stats.changesPerMinute < before.stats.changesPerMinute, `${toEnd.stats.changesPerMinute} vs ${before.stats.changesPerMinute}`);
+});

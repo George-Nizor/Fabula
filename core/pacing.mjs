@@ -57,7 +57,7 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
   }
   for (const segment of timeline) changes.add(segment.start);
   const ticks = [...changes].filter((t) => t >= 0 && t <= duration).sort((a, b) => a - b);
-  if (duration > 0) ticks.push(duration);
+  if (duration > 0 && ticks.at(-1) !== duration) ticks.push(duration);
   let longest = { start: 0, end: 0 };
   for (let i = 1; i < ticks.length; i += 1) {
     if (ticks[i] - ticks[i - 1] > longest.end - longest.start) longest = { start: ticks[i - 1], end: ticks[i] };

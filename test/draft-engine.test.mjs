@@ -63,7 +63,7 @@ test("the editor's draft opens on the promise, marks the turns, places spaced ca
   const cards = resolved.filter((s) => s.type !== "stage").sort((a, b) => a.start - b.start);
   for (let i = 1; i < cards.length; i += 1) assert.ok(cards[i].start >= cards[i - 1].end - 0.01, `cards ${i - 1} and ${i} overlap`);
   assert.ok(draft.todo.some((t) => t.includes("preamble")), "the preamble is flagged for the cut");
-  assert.ok(draft.scenes.every((s) => !("todo" in s) && !("layout" in s && s.type !== "stage")), "scene objects are clean");
+  assert.ok(draft.scenes.every((s) => !("todo" in s) && !("layout" in s && s.type !== "stage") && !("start" in s) && !("end" in s)), "scene objects carry word ids only");
 });
 
 test("the farmer's draft is denser, and ends a short on the ask", () => {
