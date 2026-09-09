@@ -302,6 +302,8 @@ is the lookup from what the speaker is doing to which one.
 or captions, and a line of up to six words over it from the `thumbnail` template — a kicker,
 the line, a shade behind them. Pick the frame from a `preview_sheet` where the face is doing
 something; put the words on the side the face is not. The line is a promise the film keeps.
+Two to four `variants` render side by side into `out/thumbnail-variants.png` at the size a feed
+shows them, which is the size to choose at; the one whose words are read without trying wins.
 
 `export_description` writes `out/description.md`: the title, a summary you write from the
 story, the links, the chapter list and the image credits, as one block to paste into the

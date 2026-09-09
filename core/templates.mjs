@@ -671,6 +671,61 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
   },
 };
 
+TEMPLATES["lower-third"] = {
+  label: "Lower third",
+  about: "A name plate at the foot of the frame, over the face: the name in the display face, what they are under it, and an accent bar that arrives first. The plate a viewer reads without looking away from the person.",
+  when: "When the speaker is introduced or a guest joins — once, in the first ten seconds, four to six seconds long. Give it over: true; it belongs on the face, not under it.",
+  persona: ["editor", "farmer"],
+  full: true,
+  fields: {
+    name: text("The name", 40),
+    role: text("What they are, in a few words", 60, { required: false }),
+    side: field("choice", "Which side of the frame", { options: ["left", "right"], default: "left" }),
+  },
+  example: { name: "Sam Apple", role: "Editor, Fabula" },
+  render: (p, { portrait }) => {
+    const html = `<div class="t t-lt t-${p.side}"><div class="t-plate"><div class="t-bar"></div><div class="t-text"><div class="t-name">${esc(p.name)}</div>${p.role ? `<div class="t-role">${esc(p.role)}</div>` : ""}</div></div></div>`;
+    const slide = wake(0, { from: 0.05, dur: 0.4 });
+    const css = `${base(portrait)}
+.t-lt { padding: 0 ${portrait ? "6cqw" : "5cqw"} ${portrait ? "26cqh" : "13cqh"}; justify-content: flex-end; align-items: ${p.side === "right" ? "flex-end" : "flex-start"}; }
+.t-plate { display: flex; gap: ${portrait ? "2cqw" : "1.2cqw"}; align-items: stretch; max-width: ${portrait ? "88%" : "46%"}; padding: ${portrait ? "1.4cqh 3.2cqw 1.4cqh 2.4cqw" : "1.6cqh 2.2cqw 1.6cqh 1.6cqw"}; background: color-mix(in srgb, ${INK} 78%, transparent); border-radius: calc(${portrait ? "1.6cqw" : "0.9cqw"} * var(--ov-radius, 1)); opacity: ${slide}; transform: translateX(calc((1 - ${slide}) * ${p.side === "right" ? "" : "-"}12%)); }
+.t-bar { flex: none; width: ${portrait ? "1cqw" : "0.6cqw"}; border-radius: 999px; background: ${ACCENT}; transform: scaleY(${wake(0, { from: 0.02, dur: 0.3 })}); transform-origin: bottom; }
+.t-text { display: flex; flex-direction: column; gap: 0.4cqh; ${p.side === "right" ? "text-align: right;" : ""} }
+.t-name { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "4.2cqh" : "5.2cqh"}, ${portrait ? "6.2cqi" : "5.4cqi"}); line-height: 1.05; letter-spacing: -0.01em; color: #ffffff; }
+.t-role { font-family: ${FONT_BODY}; font-size: min(${portrait ? "2.6cqh" : "3.1cqh"}, ${portrait ? "3.8cqi" : "3.3cqi"}); color: rgba(255,255,255,0.78); opacity: ${wake(0, { from: 0.35, dur: 0.3 })}; }`;
+    return { html, css };
+  },
+};
+
+TEMPLATES.endscreen = {
+  label: "End screen",
+  about: "Room for the platform's end-screen elements over the film's last twenty seconds: a heading, a large frame for the next video, a small one for a playlist and a round one for subscribe, in the places YouTube lets them sit. The frames are empty on purpose — YouTube draws the real elements over them — and the labels say what goes where.",
+  when: "The last twenty seconds of a long film for YouTube, as a cutaway; the goodbye is spoken over it. Not for a short.",
+  persona: ["editor", "farmer"],
+  full: true,
+  fields: {
+    title: text("The heading", 40, { required: false }),
+    next: text("What the large frame is for", 40, { required: false }),
+    more: text("What the small frame is for", 40, { required: false }),
+    subscribe: field("choice", "A round subscribe frame", { options: ["yes", "no"], default: "yes" }),
+  },
+  example: { title: "Watch next", next: "the whole rocket series", more: "shorts from this film" },
+  render: (p, { portrait }) => {
+    const html = `<div class="t t-es">${p.title ? `<div class="t-title">${esc(p.title)}</div>` : ""}<div class="t-grid"><div class="t-slot t-big"><span class="t-lbl">${esc(p.next || "next video")}</span></div><div class="t-col"><div class="t-slot t-small"><span class="t-lbl">${esc(p.more || "playlist")}</span></div>${p.subscribe === "yes" ? `<div class="t-slot t-round"><span class="t-lbl">subscribe</span></div>` : ""}</div></div></div>`;
+    const css = `${base(portrait)}
+.t-es { gap: 2cqh; justify-content: ${portrait ? "center" : "flex-start"}; }
+.t-title { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "4.4cqh" : "6cqh"}, 6cqi); letter-spacing: -0.01em; opacity: ${wake(0, { from: 0.02, dur: 0.3 })}; }
+.t-grid { display: flex; flex-direction: ${portrait ? "column" : "row"}; gap: ${portrait ? "3cqh" : "3cqw"}; align-items: ${portrait ? "center" : "stretch"}; }
+.t-col { display: flex; flex-direction: ${portrait ? "row" : "column"}; gap: ${portrait ? "4cqw" : "3cqh"}; justify-content: space-between; align-items: center; }
+.t-slot { display: grid; place-items: center; border: min(0.35cqw, 0.5cqi) dashed color-mix(in srgb, ${ACCENT} 70%, transparent); background: color-mix(in srgb, ${ACCENT} 6%, transparent); border-radius: calc(1cqi * var(--ov-radius, 1)); opacity: var(--k); transform: scale(calc(0.94 + var(--k) * 0.06)); }
+.t-big { width: ${portrait ? "86cqw" : "52cqw"}; aspect-ratio: 16 / 9; --k: ${wake(0, { from: 0.1, dur: 0.35 })}; }
+.t-small { width: ${portrait ? "40cqw" : "30cqw"}; aspect-ratio: 16 / 9; --k: ${wake(0, { from: 0.3, dur: 0.35 })}; }
+.t-round { width: ${portrait ? "22cqw" : "12cqw"}; aspect-ratio: 1; border-radius: 50%; --k: ${wake(0, { from: 0.5, dur: 0.35 })}; }
+.t-lbl { font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: min(2.6cqh, 3cqi); letter-spacing: 0.08em; text-transform: uppercase; color: ${MUTED}; text-align: center; padding: 0 1cqi; }`;
+    return { html, css };
+  },
+};
+
 TEMPLATES.thumbnail = {
   label: "Thumbnail line",
   about: "A few big words over the picture, with a shade behind them so they read on any frame, and a small kicker. Made for render_thumbnail — the still a platform shows before anyone presses play — and usable as a title card over a cutaway.",

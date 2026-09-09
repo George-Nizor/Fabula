@@ -74,6 +74,14 @@ before it is shaped, the vignette after the scale so it sits on the card — and
 shows the nearest CSS can do through the Look page's Footage sliders. It is part of the theme
 so a brand carries it, and part of every chunk's identity so a change re-renders the film.
 
+## Three more for the belt (2026-09-10)
+
+A `lower-third` template — the name plate over the face when the speaker is introduced,
+made for `over: true` like the thumbnail and the cta; an `endscreen` template that leaves
+YouTube's last twenty seconds with a heading and three empty frames where the platform draws
+its elements; and `render_thumbnail` `variants`, two to four lines rendered side by side at
+the size a feed shows them, which is the size to choose at.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

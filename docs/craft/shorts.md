@@ -88,7 +88,9 @@ The thumbnail is the first frame the platform shows and the words on it are the 
 written twin. `render_thumbnail`: a frame where the face is expressive, three to five words
 that promise what the film delivers, the words on the side the face is not. The video's
 title says the same thing in different words; the two are read together. Never a promise the
-film does not keep — the platform measures whether people stay.
+film does not keep — the platform measures whether people stay. Never choose from one:
+`render_thumbnail` with two to four `variants` puts them side by side at the size the feed
+shows them, and the one whose words are read without trying is the one.
 
 ## Choosing the clips
 

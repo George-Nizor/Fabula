@@ -24,7 +24,8 @@ visible too. Landscape and vertical differ in what fits, so both are given.
 | shows something typed | `code` | `keys`, `screen` | cutaway / side | cutaway | The screen track if the recording has one; otherwise the lines themselves. |
 | changes subject | `section` | `cover`, `headline`, head alone | full / cutaway | cutaway | A mark the viewer can feel. |
 | opens the film | `hook` | `title`, `cover`, `teaser` | focus + title | cutaway | The promise, then what is coming. |
-| closes the film | head alone | `kinetic`, `word` | focus | focus | The last line is the viewer's. |
+| introduces themselves or a guest | `lower-third` (`over: true`) | `title` | focus | focus | Once, four to six seconds, in the first ten. |
+| closes the film | head alone | `kinetic`, `word`, `endscreen` | focus | focus | The last line is the viewer's; on YouTube, the last twenty seconds leave room for the end screen. |
 | asks the viewer to do something | `cta` | `callout` | — | cutaway | Shorts only. |
 | tells a story | head alone | `image`, `clip`, `cover` | focus | focus | A story wants the face. Put the picture where the story names a thing. |
 | says nothing visual for a while | head alone | punch-in, `callout` | focus | focus | The head is a choice. Mark the passage with a punch-in or one callout, not a card per sentence. |
@@ -48,7 +49,8 @@ visible too. Landscape and vertical differ in what fits, so both are given.
 
 Full-stage (pair with `cutaway` or `full`): `hook`, `word`, `trio`, `timeline`, `flow`,
 `before-after`, `myth-fact`, `code`, `ladder`, `scale`, `headline`, `cta`, `teaser`,
-`ranking`, `phone`.
+`ranking`, `phone`, `endscreen` (the last twenty seconds of a YouTube film, room for the
+platform's elements).
 
 Column (sit in `side`, `pip` or `full`'s content rect beside the head): `big-number`,
 `definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`. In a tall
@@ -57,8 +59,9 @@ column template sizes itself for that strip; a `question` there is a line, not a
 
 Any template takes `full: true|false` to override its default, but a full-stage design
 squeezed into a column or a column card blown up to the stage rarely reads well. `over: true`
-draws a custom graphic over the head rather than under it; only `thumbnail` and `cta` (with a
-`shade`) are made for that — a few words on the face, the opening or the ending of a short.
+draws a custom graphic over the head rather than under it; only `thumbnail`, `cta` (with a
+`shade`) and `lower-third` are made for that — a few words on the face, the opening or the
+ending of a short, the name plate when the speaker is introduced.
 
 ## Two frames, one plan
 

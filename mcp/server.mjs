@@ -1297,8 +1297,11 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   resolved.forEach((scene, index) => {
     const graphic = scene.graphic;
     if (!graphic) return;
-    if (graphic.over && !["thumbnail", "cta"].includes(graphic.template)) {
-      warnings.push(`scene ${index}: over: true draws the ${graphic.template ?? graphic.kind} on top of the head; only thumbnail and cta (with a shade) are made for the face. Drop over, and give it a cutaway or full stage scene.`);
+    if (graphic.over && !["thumbnail", "cta", "lower-third"].includes(graphic.template)) {
+      warnings.push(`scene ${index}: over: true draws the ${graphic.template ?? graphic.kind} on top of the head; only thumbnail, cta (with a shade) and lower-third are made for the face. Drop over, and give it a cutaway or full stage scene.`);
+    }
+    if (graphic.template === "lower-third" && !graphic.over) {
+      warnings.push(`scene ${index}: a lower-third under the head is hidden by it; give it over: true.`);
     }
     if (graphic.template === "cta" && !shape.shortForm) {
       warnings.push(`scene ${index}: a cta in the long film; the ask belongs in a short, and a film ends on the head or the spoken word (docs/craft/editor.md).`);
@@ -1679,27 +1682,55 @@ server.registerTool("render_thumbnail", {
   description:
     "The still a platform shows before anyone presses play: one frame of the composed film — captions taken off — with a few big words over it from the thumbnail template (a kicker, a line of up to six words, a shade behind them so they read on any frame), written to out/thumbnail.png at 1280×720 (a tall film keeps its shape). Pick a frame where the face is doing something: preview_sheet shows the candidates. The line is a promise, not a summary, and never one the film does not keep.",
   inputSchema: {
-    line: z.string().min(1).max(40).describe("The words, six at most"),
+    line: z.string().min(1).max(40).optional().describe("The words, six at most (or give variants)"),
     kicker: z.string().max(24).optional(),
+    variants: z.array(z.object({
+      line: z.string().min(1).max(40),
+      kicker: z.string().max(24).optional(),
+      side: z.enum(["left", "right", "bottom"]).optional(),
+      shade: z.number().min(0).max(1).optional(),
+      word_id: z.number().int().min(0).optional(),
+      at_seconds: z.number().min(0).optional(),
+    })).min(2).max(4).optional().describe("Two to four lines (each with its own frame if wanted) rendered side by side into out/thumbnail-variants.png, to choose between; the fields above are the defaults each variant falls back to"),
     side: z.enum(["left", "right", "bottom"]).optional().describe("Where the words sit; leave the face on the other side"),
     shade: z.number().min(0).max(1).optional().describe("How dark the shade behind the words is, 0.55 by default"),
     word_id: z.number().int().min(0).optional().describe("The frame, a beat after this word"),
     at_seconds: z.number().min(0).optional().describe("Or an exact time on the clean timeline"),
     name: z.string().max(40).optional().describe("File name under out/, thumbnail.png by default"),
   },
-}, async ({ line, kicker, side, shade, word_id, at_seconds, name }) => {
+}, async ({ line, kicker, side, shade, word_id, at_seconds, name, variants }) => {
   const dir = currentProjectDir();
-  if (word_id === undefined && at_seconds === undefined) throw new Error("give a word_id or an at_seconds");
-  const spec = path.join(dir, "out", "frames", "thumbnail-spec.json");
-  fs.mkdirSync(path.dirname(spec), { recursive: true });
-  fs.writeFileSync(spec, JSON.stringify({ template: "thumbnail", params: { line, kicker, side, shade } }));
-  const leaf = (name ?? "thumbnail.png").replace(/[^a-z0-9._-]/gi, "_").replace(/(\.png)?$/i, ".png");
-  const args = [`--thumb=${spec}`, `--out=${path.join(dir, "out", leaf)}`, `--width=${projectFormatSafe() === "vertical" ? 1080 : 1280}`];
-  if (word_id !== undefined) args.push(`--word=${word_id}`);
-  else args.push(`--at=${at_seconds}`);
-  const result = await runFrame(dir, args);
-  fs.rmSync(spec, { force: true });
-  return ok({ ...result, hint: "look at it; a thumbnail is judged at a fifth of this size, so if the words are not the first thing you see, use fewer" });
+  const one = async (fields, leaf) => {
+    if (fields.word_id === undefined && fields.at_seconds === undefined) throw new Error("give a word_id or an at_seconds");
+    if (!fields.line) throw new Error("give a line, or variants each with one");
+    const spec = path.join(dir, "out", "frames", "thumbnail-spec.json");
+    fs.mkdirSync(path.dirname(spec), { recursive: true });
+    fs.writeFileSync(spec, JSON.stringify({ template: "thumbnail", params: { line: fields.line, kicker: fields.kicker, side: fields.side, shade: fields.shade } }));
+    const args = [`--thumb=${spec}`, `--out=${path.join(dir, "out", leaf)}`, `--width=${projectFormatSafe() === "vertical" ? 1080 : 1280}`];
+    if (fields.word_id !== undefined) args.push(`--word=${fields.word_id}`);
+    else args.push(`--at=${fields.at_seconds}`);
+    try { return await runFrame(dir, args); } finally { fs.rmSync(spec, { force: true }); }
+  };
+  const defaults = { line, kicker, side, shade, word_id, at_seconds };
+  if (!variants) {
+    const leaf = (name ?? "thumbnail.png").replace(/[^a-z0-9._-]/gi, "_").replace(/(\.png)?$/i, ".png");
+    const result = await one(defaults, leaf);
+    return ok({ ...result, hint: "look at it; a thumbnail is judged at a fifth of this size, so if the words are not the first thing you see, use fewer" });
+  }
+  // Variants: each rendered alone, then tiled into one picture, small, the
+  // way a feed shows them — which is the size to judge them at.
+  const tiles = [];
+  for (const [i, variant] of variants.entries()) {
+    const fields = { ...defaults, ...Object.fromEntries(Object.entries(variant).filter(([, v]) => v !== undefined)) };
+    const result = await one(fields, `frames/thumb-variant-${i + 1}.png`);
+    tiles.push({ index: i + 1, line: fields.line, kicker: fields.kicker ?? null, side: fields.side ?? "left", file: result.file, at: result.at });
+  }
+  const { execFileSync } = await import("node:child_process");
+  const out = path.join(dir, "out", (name ?? "thumbnail-variants.png").replace(/[^a-z0-9._-]/gi, "_").replace(/(\.png)?$/i, ".png"));
+  const inputs = tiles.flatMap((t) => ["-i", t.file]);
+  const scaled = tiles.map((_, i) => `[${i}:v]scale=${projectFormatSafe() === "vertical" ? 270 : 480}:-2[t${i}]`).join(";");
+  execFileSync(FFMPEG, ["-y", "-v", "error", ...inputs, "-filter_complex", `${scaled};${tiles.map((_, i) => `[t${i}]`).join("")}hstack=inputs=${tiles.length}:shortest=1`, out]);
+  return ok({ file: out, variants: tiles, hint: "each is shown at the size a feed shows it; the one whose words you read first without trying is the one. render_thumbnail with that line alone writes out/thumbnail.png" });
 });
 
 server.registerTool("preview_sheet", {
