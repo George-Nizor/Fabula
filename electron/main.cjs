@@ -183,7 +183,8 @@ function readCompose(dir) {
     const punch = readPunch(dir, readJson(path.join(dir, "review.json")));
     const meta = core.projectState.readProjectMeta(dir);
     const format = core.formats.resolveFormat(meta).id;
-    const scenes = core.compose.resolveScenes(core.templates.refreshTemplates(config.scenes ?? [], { format }), words);
+    const duration = cleanDuration(cleanVideo, words);
+    const scenes = core.compose.resolveScenes(core.templates.refreshTemplates(config.scenes ?? [], { format }), words, { durationSeconds: duration });
     const assetUrl = (src) => pathToFileURL(path.join(dir, src)).href;
     for (const scene of scenes) {
       if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
@@ -204,7 +205,6 @@ function readCompose(dir) {
         }
       }
     }
-    const duration = cleanDuration(cleanVideo, words);
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
       duration,

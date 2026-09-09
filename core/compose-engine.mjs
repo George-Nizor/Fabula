@@ -11,7 +11,7 @@ function path_isAbsoluteLike(p) {
   return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\");
 }
 
-import { LAYOUTS, PIP_CORNERS, TRANSITIONS, FULL_STAGE_KINDS, resolveLayoutTimeline } from "./stage-engine.mjs";
+import { LAYOUTS, PIP_CORNERS, TRANSITIONS, FULL_STAGE_KINDS, MIN_DWELL_SECONDS, resolveLayoutTimeline } from "./stage-engine.mjs";
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
@@ -176,7 +176,7 @@ export function validateScenes(scenes, words) {
 // beat. Captions hang the same way.
 export const GRAPHIC_HANG_SECONDS = 0.5;
 
-export function resolveScenes(scenes, words) {
+export function resolveScenes(scenes, words, { durationSeconds = 0 } = {}) {
   validateScenes(scenes, words);
   const byId = new Map(words.map((word) => [word.id, word]));
   const resolved = scenes.map((scene) => ({
@@ -188,6 +188,22 @@ export function resolveScenes(scenes, words) {
   for (let i = 0; i + 1 < cards.length; i += 1) {
     const gap = cards[i + 1].start - cards[i].end;
     if (gap > 0 && gap <= GRAPHIC_HANG_SECONDS) cards[i].end = cards[i + 1].start;
+  }
+  // A card hangs with its layout. The dwell rule bridges a return to the
+  // head shorter than three seconds between two placed layouts, so the
+  // layout a card sat in is held past the card's last word; the room it made
+  // would be empty for that breath — the head made small for nothing — so
+  // the card stays until the layout changes or the next card arrives. Known
+  // only with the film's length, which is what settles the timeline.
+  if (durationSeconds > 0 && cards.length) {
+    const timeline = resolveLayoutTimeline(resolved, durationSeconds);
+    cards.forEach((card, i) => {
+      const segment = timeline.find((s) => s.start <= card.end - 0.01 && card.end - 0.01 < s.end);
+      if (!segment || segment.layout === "focus") return;
+      const room = segment.end - card.end;
+      const next = cards[i + 1]?.start ?? Infinity;
+      if (room > 0.01 && room <= MIN_DWELL_SECONDS && next >= segment.end - 0.01) card.end = segment.end;
+    });
   }
   return resolved;
 }

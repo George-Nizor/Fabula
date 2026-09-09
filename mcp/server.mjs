@@ -1172,7 +1172,7 @@ server.registerTool("review_film", {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
-  const scenes = resolveScenes(config.scenes ?? [], words);
+  const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
   const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
   const duration = filmDuration(dir, words);
   const chapters = chapterList({ scenes, words, title: readProjectMeta(dir).title ?? "Introduction", duration });
@@ -1250,8 +1250,8 @@ function filmDuration(dir, words) {
 // and the three that edit part of a plan, so a patch is read as carefully
 // as a rewrite.
 function readBackPlan(dir, scenes, words, themeConfig, captions) {
-  const resolved = resolveScenes(scenes, words);
   const duration = filmDuration(dir, words);
+  const resolved = resolveScenes(scenes, words, { durationSeconds: duration });
   const theme = resolveTheme(themeConfig ?? {});
   const shape = resolveFormat(projectFormat(dir));
   const pacing = describePacing(resolved, {
@@ -1548,7 +1548,7 @@ server.registerTool("export_chapters", {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
-  const scenes = resolveScenes(config.scenes ?? [], words);
+  const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
   const list = chapterList({ scenes, words, title: title ?? readProjectMeta(dir).title ?? "Introduction", duration: words.at(-1)?.end });
   const file = path.join(dir, "out", "chapters.txt");
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1568,7 +1568,7 @@ server.registerTool("export_description", {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
-  const scenes = resolveScenes(config.scenes ?? [], words);
+  const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
   const shown = title ?? readProjectMeta(dir).title ?? "Untitled";
   const chapters = chapterList({ scenes, words, title: shown, duration: words.at(-1)?.end });
   const credits = listAssets(path.join(dir, "assets")).filter((asset) => asset.attribution?.author || asset.attribution?.license || asset.attribution?.pageUrl);

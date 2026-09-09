@@ -349,3 +349,23 @@ test("a placed layout with nothing in the room it makes is reported, by the seco
   assert.deepEqual(emptyPlacedLayouts([cutaway(10, 30)], 60), [], "a cutaway is uncoveredCutaways' business");
   assert.equal(emptyPlacedLayouts([side(10, 30)], 60)[0].layout, "side");
 });
+
+test("a card hangs with its layout when the return to the head after it is bridged away", () => {
+  const words = Array.from({ length: 40 }, (_, id) => ({ id, text: "w", start: id * 0.5, end: id * 0.5 + 0.45 }));
+  // words 10–19 sit under a side card; word 20 starts the section a breath later.
+  const plan = [
+    { type: "stage", layout: "side", fromWordId: 10, toWordId: 19 },
+    { type: "graphic", fromWordId: 10, toWordId: 19, graphic: { kind: "stat", value: 1, label: "x" } },
+    { type: "stage", layout: "full", fromWordId: 21, toWordId: 39 },
+    { type: "graphic", fromWordId: 21, toWordId: 39, graphic: { kind: "section", title: "two" } },
+  ];
+  const bare = resolveScenes(plan, words);
+  assert.equal(bare[1].end, 9.95, "without the film's length the card ends on its word");
+  const held = resolveScenes(plan, words, { durationSeconds: 20 });
+  assert.equal(held[1].end, 10.5, "the side layout is held to the section's start; the card stays with it");
+  assert.deepEqual(emptyPlacedLayouts(held, 20), []);
+  // A card that ends three seconds and more before its layout does is the plan's to fix.
+  const wide = resolveScenes([plan[0], { ...plan[1], toWordId: 12 }, plan[2], plan[3]], words, { durationSeconds: 20 });
+  assert.equal(wide[1].end, 6.45);
+  assert.equal(emptyPlacedLayouts(wide, 20).length, 1);
+});

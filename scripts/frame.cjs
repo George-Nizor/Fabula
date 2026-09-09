@@ -90,7 +90,7 @@ async function main() {
   const meta = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
   })();
-  const scenes = engine.resolveScenes(templates.refreshTemplates(config.scenes ?? [], { format: formats.resolveFormat(meta).id }), words);
+  const scenes = engine.resolveScenes(templates.refreshTemplates(config.scenes ?? [], { format: formats.resolveFormat(meta).id }), words, { durationSeconds: duration });
   for (const scene of scenes) {
     if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(projectDir, scene.graphic.src)).href;
     for (const item of scene.graphic?.items ?? []) if (item.src) item.url = pathToFileURL(path.join(projectDir, item.src)).href;

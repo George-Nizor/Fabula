@@ -139,7 +139,7 @@ async function main() {
   const fullStage = formats.stageOf(meta);
   const stage = draft ? { width: Math.round(fullStage.width * scale / 2) * 2, height: Math.round(fullStage.height * scale / 2) * 2 } : fullStage;
   if (draft) say(`draft at ${Math.round(scale * 100)}%: ${stage.width}×${stage.height}`);
-  const scenes = engine.resolveScenes(templates.refreshTemplates(composeFile.scenes ?? [], { format: formats.resolveFormat(meta).id }), words);
+  const scenes = engine.resolveScenes(templates.refreshTemplates(composeFile.scenes ?? [], { format: formats.resolveFormat(meta).id }), words, { durationSeconds: duration });
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
   for (const scene of scenes) {
     if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);

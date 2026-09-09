@@ -444,7 +444,9 @@ cards inside one cutaway is an empty stage. `set_scenes`, `update_scenes`, `add_
 `remove_scenes` all report those gaps by the second in `warnings`; close them by extending the
 card either side, or drop the cutaway there. The same read covers every placed layout: a
 `side`, `pip`, `band` or `full` that holds with nothing in the room it makes is the head made
-small for nothing, and is reported the same way.
+small for nothing, and is reported the same way. A card whose layout is held past its last
+word — a breath, up to the dwell floor — hangs with the layout, so a seam of a second between
+a card and the next stage scene is not a fault; three seconds and more is yours to close.
 
 ## How the picture changes at a boundary
 
