@@ -771,8 +771,16 @@ function templateScript(theme, template) {
   if (!rendered.ok) return null;
   const timeline = previewTimeline([{ start: 0, end: 99, layout: rendered.graphic.full ? "cutaway" : "side" }], theme);
   const scenes = [{ type: "graphic", start: 0.3, end: 5.7, graphic: rendered.graphic }];
-  const compose = previewCompose(theme, { scenes });
-  return (t) => ({ compose, layout: layoutOf(timeline, t) });
+  // With a caption, when the film burns them in: that is how the card will
+  // actually be seen, and in a tall frame the two share the lower third.
+  // The window's compose carries the phrases themselves when captions are
+  // burned in, and null when they are not.
+  const burned = Boolean(compose()?.captions);
+  const words = ["Captions", "sit", "here"];
+  const wordSpans = words.map((text, i) => ({ start: 0.8 + i * 0.5, end: 1.3 + i * 0.5, text }));
+  const captions = burned ? [{ start: 0.8, end: 5.7, text: words.join(" "), words: wordSpans.map((w) => ({ ...w })) }] : null;
+  const composeFor = previewCompose(theme, burned ? { scenes, captions, wordSpans } : { scenes });
+  return (t) => ({ compose: composeFor, layout: layoutOf(timeline, t) });
 }
 
 function captionScript(theme, style) {
