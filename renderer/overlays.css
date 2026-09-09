@@ -864,3 +864,8 @@
 .is-tall .ov-caption { bottom: 13cqh; font-size: 6cqmin; max-width: 86cqw; white-space: normal; text-align: center; line-height: 1.15; }
 .is-tall .ov-caption.style-band { bottom: 11cqh; }
 .is-tall .ov-title { bottom: 22cqh; }
+
+/* The spoken word with the head on the stage: low, off the face, above the
+   captions — in the middle only when the stage is the word's alone. */
+.ov-kinetic.is-low { top: 68cqh; }
+.is-tall .ov-kinetic.is-low { top: 62cqh; font-size: 14cqmin; }

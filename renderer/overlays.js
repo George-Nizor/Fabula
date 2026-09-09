@@ -769,7 +769,7 @@ function build(part, stage) {
       return node;
     }
     case "caption": return buildCaption(part);
-    case "kinetic": return el("div", `ov ov-kinetic tone-${part.tone}`, part.text);
+    case "kinetic": return el("div", `ov ov-kinetic tone-${part.tone}${part.low ? " is-low" : ""}`, part.text);
     case "brand": return buildBrand(part);
     case "graphic": {
       const card = buildGraphic(part);
@@ -804,7 +804,7 @@ function animate(node, part, stage, theme) {
 
 // What identifies a part across frames (its element is kept while this
 // holds) and what would need a rebuild (its structure changed under it).
-const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => (w.emph ? `${w.text}*` : w.text)), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone });
+const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => (w.emph ? `${w.text}*` : w.text)), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone, low: part.low });
 
 window.FabulaStage = {
   glowAt,
@@ -875,7 +875,10 @@ window.FabulaStage = {
           const wp = Math.min((t - span.start) / (span.end - span.start), 1.5);
           const punch = r3(1 + (1 - easeOut(Math.min(wp * 4, 1))) * 0.35);
           const alpha = r2(easeOut(Math.min(wp * 6, 1)));
-          parts.push({ key: `${key}:${span.start}`, kind: "kinetic", layer: "over", text: span.text, punch, alpha, tilt: ((index * 37) % 7 - 3) * 0.5, tone: index % 3 === 2 ? "accent" : "text", accent: scene.accent });
+          // With the head on the stage the word sits low, off the face; on a
+          // cutaway it owns the middle.
+          const low = Boolean(layout) && !layout.headHidden && (layout.alpha ?? 1) > 0.3;
+          parts.push({ key: `${key}:${span.start}`, kind: "kinetic", layer: "over", text: span.text, punch, alpha, low, tilt: ((index * 37) % 7 - 3) * 0.5, tone: index % 3 === 2 ? "accent" : "text", accent: scene.accent });
           captionEaten = true;
         }
       } else if (scene.type === "title") {
