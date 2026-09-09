@@ -48,6 +48,10 @@ export const CRAFT_DOCS = {
   "visual-grammar": "docs/craft/visual-grammar.md",
   references: "docs/craft/references.md",
   examples: "docs/craft/examples.md",
+  // The two worked plans as the assistant wrote them: template ids and
+  // params, no renderings. Read beside `examples`, which says why.
+  "plan-short": "docs/craft/plans/why-rockets-go-sideways.json",
+  "plan-film": "docs/craft/plans/rocket-editor-run.json",
 };
 
 export function validatePersona(id) {
