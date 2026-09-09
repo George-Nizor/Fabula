@@ -64,6 +64,12 @@ function validateGraphic(graphic, at) {
     }
     if (graphic.in !== undefined && !(typeof graphic.in === "number" && graphic.in >= 0)) throw new Error(`${at}: clip \`in\` is seconds into the clip, 0 or more`);
     if (graphic.fit !== undefined && !CLIP_FITS.has(graphic.fit)) throw new Error(`${at}: clip fit must be cover or contain`);
+    // sound: the clip's own sound under the voice, ducked from the words
+    // like the bed; true, or { level } in dB on the file (-14 by default).
+    if (graphic.sound !== undefined && graphic.sound !== null && graphic.sound !== false && graphic.sound !== true) {
+      if (typeof graphic.sound !== "object" || Array.isArray(graphic.sound)) throw new Error(`${at}: clip sound is true, false or { level }`);
+      if (graphic.sound.level !== undefined && !(typeof graphic.sound.level === "number" && graphic.sound.level >= -40 && graphic.sound.level <= 0)) throw new Error(`${at}: clip sound.level is dB on the file, -40 to 0`);
+    }
     if (graphic.label !== undefined && typeof graphic.label !== "string") throw new Error(`${at}: clip label must be text`);
     return;
   }

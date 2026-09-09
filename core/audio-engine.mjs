@@ -162,9 +162,32 @@ export function spanPresenceExpression(spans, fade, T = "t") {
   return `min(1,${tents.join("+")})`;
 }
 
-export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0 }) {
+// A clip's own sound, as the stitch places it: the clip scenes that carry
+// sound and touch the span, each with where its file is read from and where
+// in the span it lands. Level is dB on the file, -14 unless the plan says.
+export const NAT_SOUND_DEFAULT_DB = -14;
+export function clipSounds(scenes, { from = 0, span }) {
+  return (scenes ?? [])
+    .filter((scene) => scene.type === "graphic" && scene.graphic?.kind === "clip" && scene.graphic.sound && scene.graphic.src)
+    .filter((scene) => scene.end > from && scene.start < from + span)
+    .map((scene) => {
+      const start = Math.max(scene.start, from);
+      const end = Math.min(scene.end, from + span);
+      const level = typeof scene.graphic.sound === "object" && typeof scene.graphic.sound.level === "number" ? scene.graphic.sound.level : NAT_SOUND_DEFAULT_DB;
+      return {
+        src: scene.graphic.src,
+        offset: Number(((scene.graphic.in ?? 0) + (start - scene.start)).toFixed(3)),
+        at: Number((start - from).toFixed(3)),
+        seconds: Number((end - start).toFixed(3)),
+        level,
+      };
+    });
+}
+
+export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0, clips = [], clipPath = (src) => src }) {
   const { music, voice } = resolveAudio(audio);
-  if (!music && voice.loudness === null && voice.clean === "off") return null;
+  const nats = clipSounds(clips, { from, span });
+  if (!music && voice.loudness === null && voice.clean === "off" && nats.length === 0) return null;
   const lines = [];
   // The clean-up comes first, so a loudness target is met on the voice as it
   // will be heard.
@@ -185,8 +208,29 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
     voiceLabel = "v1";
   }
   const voiceTarget = voice.loudness !== null && typeof (voiceLoudness ?? voice.measured) === "number" ? voice.loudness : null;
+  // The clips' own sound: each read from its offset, placed at its second in
+  // the span, at its level, and ducked under the words the way the bed is.
+  // Inputs follow the music's (or take its place when there is none).
+  const natInputs = [];
+  const natLabels = [];
+  if (nats.length) {
+    const natWindows = swellWindows(words, from + span)
+      .map((w) => ({ start: w.start - from, end: w.end - from }))
+      .filter((w) => w.end > 0 && w.start < span)
+      .map((w) => ({ start: Number(Math.max(w.start, 0).toFixed(3)), end: Number(Math.min(w.end, span).toFixed(3)) }));
+    const duck = bedGainExpression(natWindows, music ?? MUSIC_DEFAULTS);
+    nats.forEach((nat, k) => {
+      const index = 2 + (music ? 1 : 0) + k;
+      const delayMs = Math.round(nat.at * 1000);
+      lines.push(`[${index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=N/SR/TB,atrim=duration=${num(nat.seconds)},volume=${num(nat.level)}dB,volume=volume='${duck}':eval=frame,afade=t=in:st=0:d=0.25,afade=t=out:st=${num(Math.max(nat.seconds - 0.35, 0))}:d=0.35${delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : ""}[nat${k}]`);
+      natInputs.push("-ss", num(nat.offset), "-t", num(nat.seconds), "-i", clipPath(nat.src));
+      natLabels.push(`[nat${k}]`);
+    });
+  }
   if (!music) {
-    return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]`, voiceTarget };
+    if (!nats.length) return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]`, voiceTarget };
+    lines.push(`[${voiceLabel}]${natLabels.join("")}amix=inputs=${1 + natLabels.length}:duration=first:dropout_transition=0:normalize=0[mix]`);
+    return { inputs: natInputs, filter: lines.join(";\n") + "\n", map: "[mix]", voiceTarget, nats };
   }
   // The film's swell windows, shifted to the span's own clock.
   const windows = swellWindows(words, from + span)
@@ -218,9 +262,9 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
     ...(fade > 0 && !confined ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
   ];
   lines.push(`${bed.join(",")}[bed]`);
-  lines.push(`[${voiceLabel}][bed]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]`);
-  const inputs = [...(music.loop ? ["-stream_loop", "-1"] : []), ...(from > 0 ? ["-ss", num(from)] : []), "-i", musicPath];
-  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined, voiceTarget };
+  lines.push(`[${voiceLabel}][bed]${natLabels.join("")}amix=inputs=${2 + natLabels.length}:duration=first:dropout_transition=0:normalize=0[mix]`);
+  const inputs = [...(music.loop ? ["-stream_loop", "-1"] : []), ...(from > 0 ? ["-ss", num(from)] : []), "-i", musicPath, ...natInputs];
+  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined, voiceTarget, nats };
 }
 
 // A one-line account of the bed, for the tool that sets it and for status.

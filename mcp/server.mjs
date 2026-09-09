@@ -23,6 +23,7 @@ import {
   probeDuration,
   measureLoudness,
   probeDimensions,
+  probeHasAudio,
   computeReview,
   reviewStats,
   scanFraming,
@@ -1516,7 +1517,7 @@ server.registerTool("describe_kit", {
     quote: "text, optional by",
     compare: "left{title, items[]}, right{title, items[]} — two columns and a VS badge",
     image: `src (assets/…), optional label and motion (${[...IMAGE_MOTIONS].join("/")})`,
-    clip: "B-roll: src (assets/….mp4 from import_clip), optional in (seconds into the clip), fit (cover/contain), label — plays muted in the card while the voice carries on; one at a time",
+    clip: "B-roll: src (assets/….mp4 from import_clip), optional in (seconds into the clip), fit (cover/contain), label, sound (true or { level } in dB, -14 by default: the clip's own sound under the voice, ducked from the words) — plays in the card while the voice carries on; one at a time",
     logos: "items[{src, label?}] — pictures in a row",
     screen: "the recording's own screen track, in sync; only inside get_framing's screenSpans",
     cover: "WHOLE STAGE: a still edge to edge with title, subtitle, optional tint",
@@ -1949,7 +1950,7 @@ server.registerTool("import_image", {
 
 server.registerTool("import_clip", {
   description:
-    "B-roll: bring a video clip the person has — a phone clip, a screen capture, footage they own — into the project's assets/ as a muted, browser-playable mp4 for a `clip` graphic, which plays it in the card while the voice carries on (a side layout beside the head, or a cutaway when the clip is the picture). Re-encoded to H.264 no wider than 1920 with the sound dropped; a long file takes a while, so cut it to the part that is wanted with `from` and `seconds`. Returns the src and the clip's length; a scene longer than the clip holds its last frame, and the read-back says so.",
+    "B-roll: bring a video clip the person has — a phone clip, a screen capture, footage they own — into the project's assets/ as a browser-playable mp4 for a `clip` graphic, which plays it in the card while the voice carries on (a side layout beside the head, or a cutaway when the clip is the picture). Re-encoded to H.264 no wider than 1920, its sound kept; the card is silent unless the plan gives the graphic `sound: true` (or `{ level }` in dB), and then the clip's own sound plays under the voice, ducked from the words like the bed. A long file takes a while, so cut it to the part that is wanted with `from` and `seconds`. Returns the src and the clip's length; a scene longer than the clip holds its last frame, and the read-back says so.",
   inputSchema: {
     path: z.string().describe("Path to the video on the pipeline host (mp4/mov/mkv/webm/m4v)"),
     name: z.string().optional().describe("File name under assets/; the source's own name by default"),
@@ -1968,12 +1969,15 @@ server.registerTool("import_clip", {
   const target = path.join(assets, leaf);
   const { execFileSync } = await import("node:child_process");
   const cut = [...(from ? ["-ss", String(from)] : []), ...(seconds ? ["-t", String(seconds)] : [])];
-  execFileSync(FFMPEG, ["-y", "-v", "error", ...cut, "-i", source, "-an", "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", target], { stdio: ["ignore", "ignore", "pipe"] });
+  // The clip's own sound is kept (aac) so a plan may play it under the
+  // voice; the card itself is silent unless the plan says sound: true.
+  execFileSync(FFMPEG, ["-y", "-v", "error", ...cut, "-i", source, "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", target], { stdio: ["ignore", "ignore", "pipe"] });
   const metadata = { source: `file:${source}`, requestedUrl: null, from: from ?? 0, ...(attribution ?? {}) };
   fs.writeFileSync(`${target}.source.json`, JSON.stringify(metadata, null, 2) + "\n");
   const dims = probeDimensions(target);
   const length = probeDuration(target);
-  return ok({ src: `assets/${leaf}`, seconds: Number(length.toFixed(2)), width: dims.width, height: dims.height, bytes: fs.statSync(target).size, attribution: metadata, hint: `a clip graphic: { kind: "clip", src: "assets/${leaf}", in: 0, fit: "cover" } over up to ${length.toFixed(1)}s of words, with a side or cutaway stage scene` });
+  const sound = probeHasAudio(target);
+  return ok({ src: `assets/${leaf}`, seconds: Number(length.toFixed(2)), width: dims.width, height: dims.height, sound, bytes: fs.statSync(target).size, attribution: metadata, hint: `a clip graphic: { kind: "clip", src: "assets/${leaf}", in: 0, fit: "cover"${sound ? ", sound: true to hear it under the voice" : ""} } over up to ${length.toFixed(1)}s of words, with a side or cutaway stage scene${sound ? "" : "; the file has no sound track"}` });
 });
 
 server.registerTool("list_assets", {
@@ -1984,7 +1988,7 @@ server.registerTool("list_assets", {
   // A clip is listed with its length, which is what a scene over it needs.
   const assets = listAssets(path.join(dir, "assets")).map((asset) => {
     if (asset.kind !== "clip") return asset;
-    try { return { ...asset, seconds: Number(probeDuration(path.join(dir, asset.src)).toFixed(2)) }; } catch { return asset; }
+    try { return { ...asset, seconds: Number(probeDuration(path.join(dir, asset.src)).toFixed(2)), sound: probeHasAudio(path.join(dir, asset.src)) }; } catch { return asset; }
   });
   return ok({ assets });
 });

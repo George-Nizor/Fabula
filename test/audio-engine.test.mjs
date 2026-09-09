@@ -159,3 +159,27 @@ test("the voice can be cleaned before it is levelled, and the graph says so in o
   assert.match(describeAudio({ voice: { clean: "light" } }, [], 0).voice.cleanAbout, /rumble below 80 Hz/);
   assert.equal(resolveAudio({}).voice.clean, "off");
 });
+
+test("a clip's own sound is read from its offset, placed at its second, ducked from the words and mixed under the voice", async () => {
+  const { clipSounds } = await import("../core/audio-engine.mjs");
+  const words = [{ id: 0, text: "a", start: 0, end: 0.4 }, { id: 1, text: "b", start: 6, end: 6.4 }];
+  const scenes = [
+    { type: "graphic", start: 2, end: 5, graphic: { kind: "clip", src: "assets/demo.mp4", in: 1.5, sound: true } },
+    { type: "graphic", start: 8, end: 9, graphic: { kind: "clip", src: "assets/quiet.mp4" } },
+  ];
+  const [nat] = clipSounds(scenes, { from: 0, span: 10 });
+  assert.deepEqual(nat, { src: "assets/demo.mp4", offset: 1.5, at: 2, seconds: 3, level: -14 });
+  const [later] = clipSounds(scenes, { from: 3, span: 5 });
+  assert.equal(later.offset, 2.5, "a preview span starting inside the clip reads further in");
+  assert.equal(later.at, 0);
+  const voiceOnly = audioGraph({ audio: {}, words, span: 10, clips: scenes, clipPath: (src) => `/p/${src}` });
+  assert.deepEqual(voiceOnly.inputs, ["-ss", "1.5", "-t", "3", "-i", "/p/assets/demo.mp4"]);
+  assert.match(voiceOnly.filter, /\[2:a\]aformat.*volume=-14dB,volume=volume='.*':eval=frame,afade=t=in.*adelay=2000\|2000\[nat0\]/s);
+  assert.match(voiceOnly.filter, /\[v0\]\[nat0\]amix=inputs=2/);
+  assert.equal(voiceOnly.map, "[mix]");
+  const withBed = audioGraph({ audio: { music: { src: "assets/bed.mp3" } }, words, span: 10, musicPath: "/p/assets/bed.mp3", clips: scenes, clipPath: (src) => `/p/${src}` });
+  assert.match(withBed.filter, /\[3:a\]aformat/, "after the music input");
+  assert.match(withBed.filter, /\[v0\]\[bed\]\[nat0\]amix=inputs=3/);
+  assert.equal(withBed.inputs.at(-1), "/p/assets/demo.mp4");
+  assert.equal(audioGraph({ audio: {}, words, span: 10, clips: [scenes[1]] }), null, "a clip without sound: the voice as it is");
+});

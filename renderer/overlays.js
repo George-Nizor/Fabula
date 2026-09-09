@@ -906,7 +906,7 @@ window.FabulaStage = {
         // the way the screen track is; a second one showing at once is the
         // plan's fault and the read-back says so.
         if (scene.graphic.kind === "clip" && rect && stage && !clip) {
-          clip = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, edgeIn: Boolean(scene.edgeIn), edgeOut: Boolean(scene.edgeOut), src: scene.graphic.src, url: scene.graphic.url ?? scene.graphic.src, in: scene.graphic.in ?? 0, fit: scene.graphic.fit ?? "cover" };
+          clip = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, edgeIn: Boolean(scene.edgeIn), edgeOut: Boolean(scene.edgeOut), src: scene.graphic.src, url: scene.graphic.url ?? scene.graphic.src, in: scene.graphic.in ?? 0, fit: scene.graphic.fit ?? "cover", sound: scene.graphic.sound ? (typeof scene.graphic.sound === "object" && typeof scene.graphic.sound.level === "number" ? scene.graphic.sound.level : -14) : null };
         }
       } else if (scene.type === "kinetic") {
         // Giant word-by-word type, riding the per-word spans; the caption

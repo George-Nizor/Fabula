@@ -63,6 +63,13 @@ export function probeDuration(file) {
   return duration;
 }
 
+// Whether a file carries a sound track at all: a clip without one has no
+// natural sound to play, and the assistant should know before planning it.
+export function probeHasAudio(file) {
+  const result = spawnSync(FFPROBE, ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type", "-of", "csv=p=0", file], { encoding: "utf8" });
+  return /audio/.test(String(result.stdout ?? ""));
+}
+
 export function probeDimensions(file) {
   const result = spawnSync(FFPROBE, [
     "-v", "error",

@@ -2273,6 +2273,11 @@ function tick() {
     if (plan?.clip) {
       const want = now - plan.clip.start + plan.clip.in;
       if (Math.abs(els.clip.currentTime - want) > 0.12) els.clip.currentTime = want;
+      // The clip's own sound at its level; the film ducks it under the words
+      // too, which the window does not — near enough to judge the choice.
+      const heard = plan.clip.sound !== null && plan.clip.sound !== undefined;
+      els.clip.muted = !heard;
+      if (heard) els.clip.volume = Math.min(1, Math.pow(10, plan.clip.sound / 20));
       if (!els.video.paused && els.clip.paused) els.clip.play().catch(() => {});
       if (els.video.paused && !els.clip.paused) els.clip.pause();
     } else if (!els.clip.paused) els.clip.pause();

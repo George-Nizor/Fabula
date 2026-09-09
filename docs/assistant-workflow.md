@@ -196,7 +196,10 @@ screen capture, stock they own — comes in through `import_clip`, cut to the se
 and re-encoded muted, for a `clip` graphic: B-roll that plays in the card while the voice
 carries on, beside the head in a `side` layout or as the whole picture in a `cutaway`. It is
 read from `in` seconds into the clip; a scene longer than the clip holds the last frame, and
-the read-back says so. One clip at a time. Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
+the read-back says so. One clip at a time. The card is silent unless the graphic carries
+`sound: true` (or `{ level }` in dB on the file, -14 by default): then the clip's own sound —
+a demo's clicks, a street, a machine — plays under the voice, ducked from the words like the
+bed, faded at its edges. Sound lives in the stitch, so it costs seconds, not chunks. Pictures come from the web through `search_images` (Wikimedia Commons: logos and photos with
 licences, SVGs rasterised) and `fetch_image` (a direct image, a page's share image, or a site's
 icon), which file them under `media/<project>/assets/` for `image` and `logos` graphics and the
 theme logo. When someone names a product, a tool or a site, a logo beside the words is usually

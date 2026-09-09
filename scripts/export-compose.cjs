@@ -425,7 +425,7 @@ async function main() {
   const voiceLoudness = composeFile.audio?.voice?.measured
     ?? (cleanAudio && cleanAudio.identity === cleanMap.identity && typeof cleanAudio.voiceLoudness === "number" ? cleanAudio.voiceLoudness : undefined);
   const stitch = async (voiceTrimDb) => {
-    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceLoudness, voiceTrimDb });
+    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceLoudness, voiceTrimDb, clips: scenes, clipPath: (src) => path.join(projectDir, src) });
     const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
     if (sound) fs.writeFileSync(soundFile, sound.filter);
     await run([
@@ -440,7 +440,7 @@ async function main() {
     return sound;
   };
   const sound = await stitch(0);
-  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${composeFile.audio?.voice?.loudness != null ? `, voice to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
+  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${sound.nats?.length ? `, ${sound.nats.length} clip(s) with their own sound under it` : ""}${composeFile.audio?.voice?.loudness != null ? `, voice to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
   // The ceiling takes a little off a voice that needed a lot of gain. The
   // stitch is seconds, so measure what came out and go once more with the
   // difference trimmed in.
