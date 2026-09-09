@@ -804,7 +804,7 @@ function animate(node, part, stage, theme) {
 
 // What identifies a part across frames (its element is kept while this
 // holds) and what would need a rebuild (its structure changed under it).
-const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => w.text), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone });
+const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => (w.emph ? `${w.text}*` : w.text)), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone });
 
 window.FabulaStage = {
   glowAt,
@@ -849,7 +849,8 @@ window.FabulaStage = {
     for (const scene of compose.scenes ?? []) {
       if (scene.type === "stage" || scene.start > t || t >= scene.end) continue;
       const p = clamp01((t - scene.start) / (scene.end - scene.start));
-      const key = `${scene.type}:${scene.start}:${scene.fromWordId ?? ""}`;
+      // An over-the-head card and an under one may share a word; the layer keeps their keys apart.
+      const key = `${scene.type}:${scene.start}:${scene.fromWordId ?? ""}${scene.type === "graphic" && scene.graphic?.over ? ":over" : ""}`;
       if (scene.type === "graphic") {
         const sig = graphicSignature(scene.graphic, p, t, scene);
         const full = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;

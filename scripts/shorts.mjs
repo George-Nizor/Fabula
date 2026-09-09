@@ -72,6 +72,7 @@ export function createShort(parentDir, { fromWordId, toWordId, title, format = "
 
   const review = readReview(parentDir);
   if (!review) throw new Error("the film has no cut list to inherit");
+  if (!fs.existsSync(path.join(parentDir, "source.json"))) throw new Error("the film references no recording (no source.json); a short needs the same recording to render from");
   const shown = cleanTitle(title ?? defaultTitle(words, span, parent.title));
   const mediaRoot = root ?? path.dirname(parentDir);
   const name = freeName(mediaRoot, slugify(shown));

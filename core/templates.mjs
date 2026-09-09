@@ -726,7 +726,7 @@ function describeField(spec) {
   const out = { type: spec.type, about: spec.about, required: spec.type !== "choice" && spec.required !== false };
   if (spec.type === "text") out.max = spec.max;
   if (spec.type === "number") { if (spec.min !== undefined) out.min = spec.min; if (spec.max !== undefined) out.max = spec.max; }
-  if (spec.type === "items") { out.min = spec.min; out.max = spec.max; if (spec.value) out.value = spec.value === "number" ? "a number" : spec.value === "required" ? "text, required" : "text, optional"; }
+  if (spec.type === "items") { out.min = spec.min; out.max = spec.max; if (spec.value) out.value = spec.value === "number" ? "a number" : spec.value === "required" ? "text, required" : "text, optional"; if (spec.keepSpace) out.keepSpace = true; }
   if (spec.type === "choice") { out.options = spec.options; out.default = spec.default; }
   return out;
 }

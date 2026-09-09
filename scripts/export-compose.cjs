@@ -169,7 +169,10 @@ async function main() {
   const to = Math.min(Number(flag("to") ?? duration), duration);
   const outPath = flag("out") ?? path.join(projectDir, "out", draft ? "draft.mp4" : "final.mp4");
   const wholeFilm = outPath === path.join(projectDir, "out", "final.mp4");
-  label = wholeFilm ? "Rendering the film" : "Rendering a preview span";
+  // The whole film, as the film or as a draft: the sound is finished on it
+  // and its own chunk cache is pruned after it. A preview span is neither.
+  const wholeOutput = flag("from") === undefined && flag("to") === undefined;
+  label = wholeFilm ? "Rendering the film" : draft && wholeOutput ? "Rendering a draft" : "Rendering a preview span";
   const chunkSeconds = Number(flag("chunk") ?? plan.DEFAULT_CHUNK_SECONDS);
   const chunks = plan.chunkPlan(from, to, FPS, chunkSeconds);
   const total = chunks.reduce((n, c) => n + c.frames, 0);
@@ -399,8 +402,17 @@ async function main() {
   const musicSrc = composeFile.audio?.music?.src;
   const musicPath = musicSrc ? path.join(projectDir, musicSrc) : null;
   if (musicSrc && !fs.existsSync(musicPath)) throw new Error(`the music bed ${musicSrc} is not in the project; import_audio puts it there`);
+  // The voice's measured loudness, from the bed's own setting when it was
+  // measured there, else from the clean render's measurement when it
+  // describes this clean cut — so a target set before the clean cut existed
+  // (a short's) still lands exactly.
+  const cleanAudio = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "out", "clean-audio.json"), "utf8")); } catch { return null; }
+  })();
+  const voiceLoudness = composeFile.audio?.voice?.measured
+    ?? (cleanAudio && cleanAudio.identity === cleanMap.identity && typeof cleanAudio.voiceLoudness === "number" ? cleanAudio.voiceLoudness : undefined);
   const stitch = async (voiceTrimDb) => {
-    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceTrimDb });
+    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceLoudness, voiceTrimDb });
     const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
     if (sound) fs.writeFileSync(soundFile, sound.filter);
     await run([
@@ -419,7 +431,7 @@ async function main() {
   // The ceiling takes a little off a voice that needed a lot of gain. The
   // stitch is seconds, so measure what came out and go once more with the
   // difference trimmed in.
-  if (sound?.voiceTarget !== null && sound?.voiceTarget !== undefined && wholeFilm) {
+  if (sound?.voiceTarget !== null && sound?.voiceTarget !== undefined && wholeOutput) {
     let trim = 0;
     for (let pass = 0; pass < 3; pass += 1) {
       const got = pipeline.measureLoudness(partial);
@@ -437,10 +449,29 @@ async function main() {
     fs.writeFileSync(outPath.replace(/\.mp4$/, `.${format}`), engine.subtitleFile(phrases, format, from, to));
   }
 
+  // The credits the film owes, beside it: every asset with a source. Written
+  // with the whole film, so handing over out/ hands over the credits.
+  if (wholeOutput) {
+    try {
+      const { listAssets } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "images.mjs")).href);
+      const credited = listAssets(path.join(projectDir, "assets")).filter((asset) => asset.attribution && (asset.attribution.author || asset.attribution.license || asset.attribution.pageUrl));
+      const creditsFile = path.join(projectDir, "out", "credits.md");
+      if (credited.length) {
+        const lines = ["# Image credits", "", ...credited.map(({ src, attribution: a }) => {
+          const name = src.replace(/^assets\//, "");
+          const link = a.pageUrl ? `[${name}](${a.pageUrl})` : name;
+          return `- ${a.author ? `${a.author}: ` : ""}${link}${a.license ? ` — ${a.license}.` : ""}`;
+        }), ""];
+        fs.writeFileSync(creditsFile, lines.join("\n"));
+        say(`credits: ${credited.length} asset(s) in out/credits.md`);
+      }
+    } catch (error) { say(`credits not written: ${error.message}`); }
+  }
+
   // After a whole film, chunks no plan references any more are dead weight,
   // and so are plates from an older accent or renderer; a preview span's
   // chunks are cheap to make again.
-  if (wholeFilm) {
+  if (wholeOutput) {
     const keep = new Set(chunks.map((chunk) => path.basename(chunk.cached)));
     for (const entry of fs.readdirSync(cacheDir)) {
       const file = path.join(cacheDir, entry);

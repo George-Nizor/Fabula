@@ -839,7 +839,7 @@ server.registerTool("set_inserts", {
         id: z.string().describe("short slug"),
         label: z.string().max(60).describe("what the person sees on the button"),
         scenes: z.array(optionSceneShape).min(1),
-      })).min(1).max(5),
+      })).min(2).max(4),
     })).max(60),
     apply_first: z.boolean().optional().describe("Materialise each insert's first option now, so the film has a plan before anyone chooses (default true)"),
   },
@@ -1601,6 +1601,7 @@ const themeShape = {
   title_case: z.enum(["none", "upper"]).optional(),
   transition: z.enum([...TRANSITIONS]).optional()
     .describe(`How the picture changes at every layout boundary: dissolve (${TRANSITION_SECONDS.dissolve}s — the head fades out, the arrangement changes, it fades back; nothing slides), glide (${TRANSITION_SECONDS.glide}s — the head travels between rectangles), cut (one frame). A boundary a cutaway touches always dissolves: there is nothing to fly to.`),
+  transitionSeconds: z.number().min(0.3).max(1.8).nullable().optional().describe("How long every layout boundary takes, 0.3–1.8 s, overriding the style's own pace (glide 0.9, dissolve 0.5); null restores the style's own"),
   glow: z.number().min(0).max(0.4).optional().describe("Strength of the accent light on the field, 0 off"),
   radius: z.number().min(0).max(2).optional().describe("Corner rounding multiplier, 0 square"),
   logo: z.object({
@@ -1849,7 +1850,7 @@ server.registerTool("status", {
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   state.punch = readPunch(dir);
   state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
-  state.clean = cleanSummary(dir);
+  state.clean = cleanSummary(dir, { measure: true });
   state.stale = staleness(dir);
   // Who this session was started as, when the launcher said.
   state.persona = PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : null;

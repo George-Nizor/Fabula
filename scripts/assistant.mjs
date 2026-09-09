@@ -98,7 +98,7 @@ export function readPreferences(file = PREFS) {
   let data;
   try { data = JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (error) {
-    if (error.code === "ENOENT") return { provider: "codex", persona: DEFAULT_PERSONA, profiles: {} };
+    if (error.code === "ENOENT") return { provider: "claude", persona: DEFAULT_PERSONA, profiles: {} };
     throw new Error(`Cannot read assistant preferences at ${file}: ${error.message}`);
   }
   if (!data || !Object.hasOwn(EFFORTS, data.provider) || !data.profiles || typeof data.profiles !== "object") {

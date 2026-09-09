@@ -76,6 +76,7 @@ async function main() {
     // The walk stops short of the last half second: the final frames of a
     // clean cut decode black on some seeks, and a black tile says nothing.
     for (let t = Math.min(0.8, duration); t < duration - 0.5; t += every) instants.push({ t: clampT(t), wordId: null });
+    if (instants.length === 0) instants.push({ t: clampT(Math.min(0.8, duration / 2)), wordId: null }); // a film shorter than a breath: one tile
     if (instants.length > 48) instants = instants.filter((_, i) => i % Math.ceil(instants.length / 48) === 0);
   } else if (flag("word") !== undefined) {
     instants = String(flag("word")).split(",").map((s) => wordAt(Number(s))).map((word) => ({ t: clampT(word.start + 0.35), wordId: word.id }));
@@ -183,7 +184,7 @@ async function main() {
     const out = path.resolve(flag("out") ?? path.join(framesDir, `t-${T.toFixed(2)}.png`));
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, Buffer.from(shot.data, "base64"));
-    console.log(JSON.stringify({ file: out, ...describe(T, word?.id ?? null, layout), format: formats.resolveFormat(meta).id, width, height }));
+    console.log(JSON.stringify({ file: out, ...describe(T, word?.id ?? null, thumbLayout), format: formats.resolveFormat(meta).id, width, height }));
     app.quit();
     return;
   }

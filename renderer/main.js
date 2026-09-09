@@ -1323,13 +1323,18 @@ const fillSelect = (select, values, current, blank) => {
 // what the inspector writes is exactly what set_scenes would have written.
 const templateEls = () => ({ wrap: $("insp-template-wrap"), head: $("insp-template-head"), fields: $("insp-template-fields"), note: $("insp-template-note") });
 const itemsToLines = (items = []) => items.map((i) => (i.value !== undefined && i.value !== "" ? `${i.label} | ${i.value}` : i.label)).join("\n");
-const linesToItems = (text, valueKind) => text.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
-  const at = line.lastIndexOf("|");
-  if (at === -1) return { label: line };
-  const label = line.slice(0, at).trim();
-  const raw = line.slice(at + 1).trim();
-  return { label, value: valueKind === "a number" ? Number(raw) : raw };
-});
+// Lines to items. A field with values splits each line at its last "|";
+// a field without them takes the whole line — a line of code may hold a
+// pipe, and keeps its indentation when the template says so.
+const linesToItems = (text, valueKind, keepSpace = false) => text.split("\n")
+  .map((l) => (keepSpace ? l.replace(/\s+$/, "") : l.trim())).filter((l) => l.trim()).map((line) => {
+    if (!valueKind) return { label: line };
+    const at = line.lastIndexOf("|");
+    if (at === -1) return { label: line };
+    const label = line.slice(0, at).trim();
+    const raw = line.slice(at + 1).trim();
+    return { label, value: valueKind === "a number" ? Number(raw) : raw };
+  });
 
 function renderTemplateEditor(scene) {
   const t = templateEls();
@@ -1381,12 +1386,14 @@ async function commitTemplate(id, spec) {
   for (const input of t.fields.querySelectorAll("[data-field]")) {
     const field = spec.fields[input.dataset.field];
     const value = input.value;
-    if (field.type === "items") params[input.dataset.field] = linesToItems(value, field.value);
+    if (field.type === "items") params[input.dataset.field] = linesToItems(value, field.value, field.keepSpace);
     else if (field.type === "number") { if (value !== "") params[input.dataset.field] = Number(value); }
     else if (value !== "") params[input.dataset.field] = value;
   }
   const format = state?.format?.id ?? "landscape";
-  const result = window.FabulaTemplates.render(id, params, { format });
+  // The scene's own full/over overrides survive an edit.
+  const current = compose()?.scenes[selectedScene]?.graphic ?? {};
+  const result = window.FabulaTemplates.render(id, params, { format, full: current.full });
   if (!result.ok) { t.note.textContent = result.error; return; }
   t.note.textContent = "";
   const { html, css, params: checked, full } = result.graphic;

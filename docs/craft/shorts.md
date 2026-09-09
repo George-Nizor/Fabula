@@ -64,8 +64,8 @@ A short is a sequence of small events. Between events the thumb drifts.
 
 A short nearly always has a bed. It is part of the energy, it covers the room, and the
 platform expects it. Keep it low enough that the captions are still the audio for the silent
-majority and the voice wins for everyone else — `set_audio` with a `level` around -16 and a
-`duck` around -12 is the usual place — and let it swell in the run-in and after the last
+majority and the voice wins for everyone else — `set_audio`'s defaults, `level` -18 LU under the
+voice and `duck` -12 below that, are the usual place — and let it swell in the run-in and after the last
 word, where the cta sits. Normalise the voice to -14 LUFS. Use only music the person owns or
 has licensed; `import_audio` brings it in and Fabula fetches none.
 

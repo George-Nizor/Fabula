@@ -296,11 +296,15 @@ function landscapeRects(layout, corner, videoAspect, stage) {
 function portraitRects(layout, corner, videoAspect, stage) {
   const { width: W, height: H } = stage;
   const margin = W * 0.045;
+  // A tall film is watched with captions on, above the bottom eighth where
+  // the platform's own controls are, so every content rect stops at one
+  // floor — the same floor renderer/overlays.css puts the captions above.
+  const captionFloor = H * 0.80;
   // The window a cropped head fills, with the safe band the visuals get.
   if (layout === "cutaway") {
     return {
       video: { x: -W * 3, y: 0, w: H * videoAspect, h: H },
-      content: { x: W * 0.06, y: H * 0.09, w: W * 0.88, h: H * 0.82 },
+      content: { x: W * 0.06, y: H * 0.09, w: W * 0.88, h: captionFloor - H * 0.09 },
     };
   }
   if (layout === "pip") {
@@ -331,15 +335,11 @@ function portraitRects(layout, corner, videoAspect, stage) {
     }[corner ?? "br"];
     return {
       video: { ...at, w, h },
-      content: { x: W * 0.05, y: H * 0.08, w: W * 0.9, h: H * 0.84 },
+      // The same room as a cutaway, with the head in a corner.
+      content: { x: W * 0.06, y: H * 0.09, w: W * 0.88, h: captionFloor - H * 0.09 },
     };
   }
-  // A tall film is watched with captions on, so the bottom of the frame is
-  // spoken for. Cards stop above it rather than being drawn under two lines
-  // of type — the one place a portrait content rect is not simply "the rest".
-  // Captions sit above the bottom eighth, where the platform's own controls
-  // are; cards stop above the captions.
-  const captionFloor = H * 0.80;
+
   if (layout === "band") {
     // The head whole, in its own aspect, across the width — the shot for a
     // wide moment a crop would ruin, with the visual under it.

@@ -117,7 +117,7 @@ architecture, the decisions already made, and what has been proven or disproven.
 Fabula is a two-hander: the window is where you watch and tweak, the assistant does the work.
 What the assistant works with: `docs/craft/` (the editor's craft, the short-form farmer's, a
 visual grammar of what goes with what is said, and reference styles described as methods), a
-`read_story` tool that marks the transcript up before composing, twenty-four named graphic
+`read_story` tool that marks the transcript up before composing, twenty-five named graphic
 templates (a timeline, a flow, before/after, myth and fact, a code window, a phone, a call to
 action…) filled in from fields, a pacing read on every plan write beside the variety read, and
 `preview_sheet`, which tiles the whole film into one picture so it can be looked at before it

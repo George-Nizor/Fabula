@@ -38,6 +38,11 @@ test("every tool the docs name is registered", async () => {
     const names = new Set(tools.map((tool) => tool.name));
     for (const name of EXPECTED) assert.ok(names.has(name), `${name} is not registered`);
     for (const tool of tools) assert.ok(tool.description && tool.description.length > 40, `${tool.name} has no real description`);
+    // Parameters the docs promise.
+    const params = (name) => Object.keys(tools.find((tool) => tool.name === name).inputSchema.properties ?? {});
+    assert.ok(params("set_theme").includes("transitionSeconds"), "set_theme takes transitionSeconds");
+    assert.ok(params("set_audio").includes("voice_loudness") && params("set_captions").includes("emphasis"));
+    assert.ok(params("render_final").includes("draft"));
   });
 });
 

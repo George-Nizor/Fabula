@@ -117,7 +117,7 @@ export function currentCleanPlan(dir, { dims = null } = {}) {
   });
 }
 
-export function cleanSummary(dir) {
+export function cleanSummary(dir, { measure = false } = {}) {
   const paths = projectPaths(dir);
   const map = readCleanMap(dir);
   if (!map || !fs.existsSync(paths.clean)) return null;
@@ -134,28 +134,28 @@ export function cleanSummary(dir) {
     // The voice's integrated loudness, measured by the clean render, when it
     // describes this clean cut. A voice far under where platforms play is
     // said here so it is known before anyone composes a frame.
-    ...voiceLoudness(dir, map),
+    ...voiceLoudness(dir, map, measure),
   };
 }
 
-function voiceLoudness(dir, map) {
-  try {
-    const file = path.join(dir, "out", "clean-audio.json");
-    let audio = fs.existsSync(file) ? readJson(file) : null;
-    // A clean cut rendered before the measurement existed, or by an older
-    // job: measure it once now and keep it beside the map.
-    if (!audio || audio.identity !== map.identity || typeof audio.voiceLoudness !== "number") {
-      const measured = measureLoudness(projectPaths(dir).clean);
-      if (typeof measured !== "number") return {};
-      audio = { identity: map.identity, voiceLoudness: measured };
-      fs.writeFileSync(file, JSON.stringify(audio, null, 2));
-    }
-    const out = { voiceLoudness: audio.voiceLoudness };
-    if (audio.voiceLoudness < -24) out.voiceNote = `the voice measures ${audio.voiceLoudness} LUFS, well under the -14 to -16 platforms play at; set_audio voice_loudness -16 (a film) or -14 (a short) normalises it in the stitch`;
-    return out;
-  } catch {
-    return {};
-  }
+function voiceLoudness(dir, map, measure) {
+  const file = path.join(dir, "out", "clean-audio.json");
+  let audio = null;
+  try { audio = readJson(file); } catch { audio = null; }
+  const current = audio && audio.identity === map.identity;
+  // Measuring is an ffmpeg pass over the whole clean cut: the server does it
+  // once when asked (status), never the window on its poll. A failed
+  // measurement is recorded as null so it is not tried on every call.
+  if (!current && measure) {
+    let loudness = null;
+    try { loudness = measureLoudness(path.join(dir, "out", "clean.mp4")); } catch { loudness = null; }
+    audio = { identity: map.identity, voiceLoudness: loudness };
+    try { fs.writeFileSync(file, JSON.stringify(audio, null, 2)); } catch { /* the next status tries again */ }
+  } else if (!current) return {};
+  if (typeof audio.voiceLoudness !== "number") return {};
+  const out = { voiceLoudness: audio.voiceLoudness };
+  if (audio.voiceLoudness < -24) out.voiceNote = `the voice measures ${audio.voiceLoudness} LUFS, well under the -14 to -16 platforms play at; set_audio voice_loudness -16 (a film) or -14 (a short) normalises it in the stitch`;
+  return out;
 }
 
 // The last lines of a job's log, without Chromium's D-Bus grumbling (the
