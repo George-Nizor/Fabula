@@ -33,8 +33,9 @@ puts the persona's brief at the head of the first message and the session calls
 `adopt_persona` first, which returns the brief and the two guides in full. Switch mid-session
 when the work changes — a film, then its shorts — by calling `adopt_persona` again.
 `read_craft` has the rest of `docs/craft/`: the visual grammar of what goes with what is said,
-and `references`, a set of widely watched styles described as methods for when the person
-says "make it feel like…".
+`references`, a set of widely watched styles described as methods for when the person
+says "make it feel like…", `examples`, two real films worked scene by scene, and `plan-short`
+and `plan-film`, those two plans as the compose.json they were written as.
 
 Invariants that shape every change to the code:
 
