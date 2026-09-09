@@ -40,10 +40,15 @@ export function pendingInbox(dir) {
 // Takes every pending event: returned to the caller, moved to the seen file.
 export function takeInbox(dir) {
   const file = path.join(dir, INBOX);
-  const list = readList(file);
+  if (!fs.existsSync(file)) return [];
+  // Move the file aside first: an event the window appends after this
+  // instant lands in a fresh inbox rather than in the one being emptied.
+  const taking = `${file}.${process.pid}.taking`;
+  try { fs.renameSync(file, taking); } catch { return []; }
+  const list = readList(taking);
+  fs.rmSync(taking, { force: true });
   if (list.length === 0) return [];
   const seenFile = path.join(dir, SEEN);
   writeList(seenFile, [...readList(seenFile), ...list].slice(-200));
-  writeList(file, []);
   return list;
 }

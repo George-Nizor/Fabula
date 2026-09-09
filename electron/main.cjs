@@ -51,6 +51,14 @@ Promise.all([
 })
   .catch((error) => console.error("core engines failed to load:", error));
 
+// The server reads these files on every tool call: write beside and
+// rename, so neither side ever reads a truncated file.
+function writeJsonAtomic(file, value) {
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(value, null, 2));
+  fs.renameSync(temp, file);
+}
+
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -334,15 +342,18 @@ function reanchorProject() {
     const newWords = core.cut.flattenWords(readJson(paths.cleanTranscript));
     const config = readJson(paths.compose) ?? { scenes: [] };
     const report = core.reanchor.reanchorScenes(config.scenes ?? [], oldWords, newWords);
+    const lastId = newWords.at(-1)?.id ?? 0;
+    const clamp = (id) => Math.min(Math.max(id, 0), lastId);
     for (const entry of report) {
-      if (!entry.ok) continue;
-      config.scenes[entry.index].fromWordId = entry.fromWordId;
-      config.scenes[entry.index].toWordId = entry.toWordId;
+      const scene = config.scenes[entry.index];
+      if (!scene) continue;
+      if (entry.ok) { scene.fromWordId = entry.fromWordId; scene.toWordId = entry.toWordId; }
+      else { scene.fromWordId = clamp(scene.fromWordId); scene.toWordId = clamp(Math.max(scene.toWordId, scene.fromWordId)); }
     }
     core.compose.validateScenes(config.scenes ?? [], newWords);
     config.cutIdentity = ps.cleanTranscriptStamp(dir) ?? config.cutIdentity;
     if (!config.cutIdentity) delete config.cutIdentity;
-    fs.writeFileSync(paths.compose, JSON.stringify(config, null, 2));
+    writeJsonAtomic(paths.compose, config);
     const unresolved = report.filter((r) => !r.ok);
     return { ok: true, moved: report.length - unresolved.length, unresolved: unresolved.map((r) => ({ index: r.index, type: r.type, reason: r.reason })) };
   } catch (error) {
@@ -598,7 +609,7 @@ function setCutEnabled(index, enabled) {
   const review = file && readJson(file);
   if (!review?.cuts?.[index]) return null;
   review.cuts[index].enabled = Boolean(enabled);
-  fs.writeFileSync(file, JSON.stringify(review, null, 2));
+  writeJsonAtomic(file, review);
   return attachDerived(review, dir);
 }
 
@@ -908,7 +919,7 @@ app.whenReady().then(() => {
     if (!Array.isArray(wordIds) || wordIds.length === 0 || wordIds.length > 5000 || !wordIds.every(Number.isInteger)) return { ok: false, error: "Select some words first." };
     try {
       review.cuts = core.cut.addWordCut(review.cuts, review.words, wordIds);
-      fs.writeFileSync(file, JSON.stringify(review, null, 2));
+      writeJsonAtomic(file, review);
       event.sender.send("fabula:state", readState());
       return { ok: true, cuts: review.cuts.length };
     } catch (error) {
@@ -992,7 +1003,7 @@ app.whenReady().then(() => {
       }
       core.themes.validateTheme(config.theme);
       if (config.punch && !(config.punch.zoom >= 1.02 && config.punch.zoom <= 1.5)) throw new Error("punch zoom must be 1.02–1.5");
-      fs.writeFileSync(file, JSON.stringify(config, null, 2));
+      writeJsonAtomic(file, config);
       event.sender.send("fabula:state", readState());
       return { ok: true };
     } catch (error) {

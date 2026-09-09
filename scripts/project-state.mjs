@@ -213,7 +213,7 @@ export function staleness(dir, { dims = null } = {}) {
   if (fs.existsSync(paths.compose) && fs.existsSync(paths.cleanTranscript)) {
     const config = readComposeConfig(dir);
     const stamp = cleanTranscriptStamp(dir);
-    const moved = config.cutIdentity && stamp
+    const moved = (config.scenes?.length ?? 0) > 0 && config.cutIdentity && stamp
       ? config.cutIdentity !== stamp
       : mtime(paths.compose) < mtime(paths.cleanTranscript);
     if (moved) {

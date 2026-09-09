@@ -146,12 +146,20 @@ function readReview(dir) {
   return readJson(review);
 }
 
+// The window reads both files every half second: write beside and rename,
+// so a read never lands on a truncated file.
+function writeJsonAtomic(file, value) {
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(value, null, 2));
+  fs.renameSync(temp, file);
+}
+
 function writeReview(dir, review) {
-  fs.writeFileSync(projectPaths(dir).review, JSON.stringify(review, null, 2));
+  writeJsonAtomic(projectPaths(dir).review, review);
 }
 
 function writeComposeConfig(dir, config) {
-  fs.writeFileSync(projectPaths(dir).compose, JSON.stringify(config, null, 2));
+  writeJsonAtomic(projectPaths(dir).compose, config);
 }
 
 // Punch-ins live in compose.json (they are a compose-time decision); a
@@ -265,7 +273,7 @@ server.registerTool("open_project", {
   const ext = path.extname(video_path).toLowerCase();
   if (!/^\.(mp4|mov|mkv|webm|m4v)$/.test(ext)) throw new Error(`unsupported container: ${ext}`);
   const shown = cleanTitle(title ?? path.basename(video_path, ext));
-  const projectName = name ? name.replace(/[^a-z0-9-_]/gi, "_").toLowerCase() : slugify(shown);
+  const projectName = name ? (name.replace(/[^a-z0-9-_]/gi, "_").replace(/^[^a-z0-9]+/i, "").toLowerCase() || slugify(shown)) : slugify(shown);
   const dir = path.join(mediaRoot(), projectName);
   const existing = stagedVideo(dir);
   if (existing && path.resolve(existing) !== path.resolve(video_path)) {
@@ -409,7 +417,7 @@ server.registerTool("transcribe", {
 
 server.registerTool("cut_pass", {
   description:
-    "Run the deterministic cut pass over the current project's transcript: silence gaps and filler words become cut proposals, all enabled. Writes review.json, which the Fabula window renders live. Re-running resets any toggles. Tune min_gap for the speaker: 0.6s is tight and reads fast-cut; conversational delivery usually wants 0.8–1.0s so natural beats survive. The clean cut stays current as long as the resulting cut list is the same as the one it was rendered from — status says.",
+    "Run the deterministic cut pass over the current project's transcript: silence gaps and filler words become cut proposals, all enabled. Writes review.json, which the Fabula window renders live. Re-running resets the toggles on its own proposals; cuts the person drew, add_cut and story_cuts survive. Tune min_gap for the speaker: 0.6s is tight and reads fast-cut; conversational delivery usually wants 0.8–1.0s so natural beats survive. The clean cut stays current as long as the resulting cut list is the same as the one it was rendered from — status says.",
   inputSchema: {
     min_gap_seconds: z.number().min(0.2).max(5).optional().describe("Shortest pause proposed as a cut (default 0.6)"),
     keep_breath_seconds: z.number().min(0).max(1).optional().describe("Air left on each side of a cut (default 0.15)"),
@@ -423,6 +431,13 @@ server.registerTool("cut_pass", {
     minGapSeconds: min_gap_seconds,
     keepBreathSeconds: keep_breath_seconds,
   });
+  // The pass proposes pauses and fillers; everything else in the list — a
+  // cut the person drew, add_cut's judgment, story_cuts' proposals — is theirs
+  // and survives a retune. Toggles on the pass's own proposals reset.
+  if (fs.existsSync(paths.review)) {
+    const kept = (readJson(paths.review).cuts ?? []).filter((cut) => (cut.sources ?? [cut]).some((source) => !["silence", "filler", "pause"].includes(source.reason)));
+    if (kept.length) review.cuts = normalizeCuts([...review.cuts, ...kept]);
+  }
   // A project from before punch-ins moved to compose.json: carry the plan
   // over once, so a retuned pass never loses it.
   if (fs.existsSync(paths.review)) {
@@ -443,6 +458,10 @@ server.registerTool("detect_framing", {
   inputSchema: {},
 }, async () => {
   const dir = currentProjectDir();
+  // The scan writes progress.json too; while a job owns that file the scan
+  // would take its pid and, finishing first, delete the job's record.
+  const busy = runningJob(dir);
+  if (busy) throw new Error(`${busy.stage} is running (pid ${busy.pid ?? "?"}); wait_render first, then scan`);
   const paths = projectPaths(dir);
   if (!paths.video) throw new Error("project has no staged video");
   const scan = await withProgress(dir, "framing", "Scanning for the head in the frame", () =>
@@ -997,7 +1016,10 @@ server.registerTool("set_scenes", {
   const previous = readComposeConfig(dir);
   const mergedTheme = theme ? { ...(previous.theme ?? {}), ...theme } : previous.theme;
   validateTheme(mergedTheme);
+  // Everything the plan was not given — the sound, the caption emphasis,
+  // whatever set_audio and set_captions wrote — travels through untouched.
   const config = {
+    ...previous,
     scenes: shaped,
     captions: captions === undefined ? captionMode(previous.captions) : captionMode(captions),
     theme: mergedTheme,
@@ -1745,7 +1767,16 @@ server.registerTool("reanchor_scenes", {
   const config = readComposeConfig(dir);
   const report = reanchorScenes(config.scenes ?? [], oldWords, newWords);
   const unresolved = report.filter((r) => !r.ok);
+  // An unresolved scene keeps its old ids — clamped to the new transcript
+  // when the old ones no longer exist, so the moved scenes can still be
+  // written and the person sees the stranded one where the film now ends.
+  const lastId = newWords.at(-1)?.id ?? 0;
+  const clamp = (id) => Math.min(Math.max(id, 0), lastId);
   if (apply) {
+    for (const entry of unresolved) {
+      const scene = config.scenes[entry.index];
+      if (scene) { scene.fromWordId = clamp(scene.fromWordId); scene.toWordId = clamp(Math.max(scene.toWordId, scene.fromWordId)); }
+    }
     for (const entry of report) {
       if (!entry.ok) continue;
       config.scenes[entry.index].fromWordId = entry.fromWordId;

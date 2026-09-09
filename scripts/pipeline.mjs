@@ -290,6 +290,7 @@ export function pidAlive(pid) {
 }
 
 const STALE_PROGRESS_MS = 3 * 60 * 1000;
+const QUIET_PROGRESS_MS = 60 * 60 * 1000;
 
 // The job in flight, or null. A record whose process is gone is rewritten
 // as a failure so nothing waits on it; a pid-less record (an in-process step
@@ -304,8 +305,12 @@ export function runningJob(dir) {
     reportProgress(dir, progress.stage, progress.label, `failed: the ${progress.stage} process (pid ${progress.pid}) died before finishing; see out/${progress.stage}.log`);
     return null;
   }
+  // Seen from the other platform (the Windows window over a WSL job) only
+  // freshness can vouch for it. The transcriptions report once and then run
+  // whisperx silently for as long as the footage needs, so they get an hour.
   const age = Date.now() - Date.parse(progress.updatedAt ?? progress.startedAt ?? 0);
-  return age < STALE_PROGRESS_MS ? progress : null;
+  const quiet = ["transcribe", "retranscribe", "first_pass"].includes(progress.stage);
+  return age < (quiet ? QUIET_PROGRESS_MS : STALE_PROGRESS_MS) ? progress : null;
 }
 
 // Starts a detached job: stdout and stderr to out/<stage>.log, progress.json
@@ -320,15 +325,28 @@ export function startJob(dir, stage, label, command, args, options = {}) {
   fs.mkdirSync(path.join(dir, "out"), { recursive: true });
   const logFile = path.join(dir, "out", `${stage}.log`);
   const log = fs.openSync(logFile, "w");
+  // A headless Electron started from inside another Electron would run as
+  // bare node and die on its first Chromium flag; the frame tool strips the
+  // same variable.
+  const env = { ...process.env, ...(options.env ?? {}) };
+  delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(command, args, {
     detached: true,
     stdio: ["ignore", log, log],
     cwd: "cwd" in options ? options.cwd : REPO_ROOT,
-    env: { ...process.env, ...(options.env ?? {}) },
+    env,
   });
   fs.closeSync(log);
+  // A spawn that fails (no such program) is an event, not a throw; without a
+  // listener it takes the whole process down and leaves a pid-less record
+  // that refuses the next start for three minutes.
+  child.on("error", (error) => {
+    try { fs.appendFileSync(logFile, `could not start ${command}: ${error.message}\n`); } catch { /* the record says it */ }
+    reportProgress(dir, stage, label, `failed: could not start ${path.basename(command)}: ${error.message}`);
+  });
   child.unref();
   clearProgress(dir);
+  if (!child.pid) throw new Error(`could not start ${path.basename(command)}; see ${logFile}`);
   reportProgress(dir, stage, label, "starting", { pid: child.pid });
   return { pid: child.pid, log: logFile };
 }
@@ -346,7 +364,18 @@ export async function waitForJob(dir, seconds) {
     if (typeof progress.detail === "string" && progress.detail.startsWith("failed:")) {
       return { state: "failed", stage: progress.stage, error: progress.detail.slice(8), log: path.join(dir, "out", `${progress.stage}.log`) };
     }
-    if (!runningJob(dir)) continue; // just marked as died; the next read reports it
+    if (!runningJob(dir)) {
+      // Just marked as died — the next read reports it — or a record nothing
+      // here can vouch for (another platform's pid, gone quiet): say so
+      // rather than spin.
+      const again = readProgress(dir);
+      if (again && !(typeof again.detail === "string" && again.detail.startsWith("failed:"))) {
+        return { state: "stale", stage: again.stage, label: again.label, detail: again.detail, startedAt: again.startedAt, pid: again.pid,
+          note: `the ${again.stage} record has not been updated since ${again.updatedAt ?? again.startedAt} and its process cannot be seen from here; if it is not running, remove progress.json and start again` };
+      }
+      await sleep(250);
+      continue;
+    }
     if (Date.now() >= deadline) {
       return { state: "running", stage: progress.stage, label: progress.label, detail: progress.detail, startedAt: progress.startedAt, pid: progress.pid };
     }

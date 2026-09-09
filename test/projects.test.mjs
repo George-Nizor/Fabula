@@ -72,3 +72,36 @@ test("project names are leaf folder names, never paths", () => {
   for (const bad of ["../etc", "a/b", ".hidden", "", "with space"]) assert.ok(!PROJECT_NAME_RE.test(bad), bad);
   for (const good of ["applemansam-demo", "obs-2026-04-26", "Talk_2"]) assert.ok(PROJECT_NAME_RE.test(good), good);
 });
+
+import { waitForJob, runningJob, reportProgress } from "../scripts/pipeline.mjs";
+import { appendInbox, takeInbox, pendingInbox } from "../scripts/inbox.mjs";
+
+test("a job record nobody here can vouch for is reported as stale, not spun on", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-job-"));
+  try {
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    fs.writeFileSync(path.join(dir, "progress.json"), JSON.stringify({ stage: "render_final", label: "Rendering", detail: "starting", startedAt: old, updatedAt: old, pid: 4242, platform: "some-other-platform" }));
+    const started = Date.now();
+    const result = await waitForJob(dir, 0);
+    assert.equal(result.state, "stale", JSON.stringify(result));
+    assert.ok(Date.now() - started < 2000, "returned at once");
+    // A transcription seen from the other platform is trusted for longer: it reports once and runs silently.
+    fs.writeFileSync(path.join(dir, "progress.json"), JSON.stringify({ stage: "retranscribe", label: "Transcribing", detail: "starting", startedAt: old, updatedAt: old, pid: 4242, platform: "some-other-platform" }));
+    assert.ok(runningJob(dir), "a ten-minute-old transcription is still running");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the inbox is taken by moving it aside, so nothing appended meanwhile is lost", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-inbox-"));
+  try {
+    appendInbox(dir, { type: "message", text: "one" });
+    appendInbox(dir, { type: "message", text: "two" });
+    const taken = takeInbox(dir);
+    assert.deepEqual(taken.map((e) => e.text), ["one", "two"]);
+    assert.deepEqual(pendingInbox(dir), []);
+    appendInbox(dir, { type: "message", text: "three" });
+    assert.deepEqual(takeInbox(dir).map((e) => e.text), ["three"]);
+    assert.deepEqual(takeInbox(dir), []);
+    assert.ok(!fs.readdirSync(dir).some((name) => name.endsWith(".taking")), "no taking file is left behind");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
