@@ -114,7 +114,9 @@ export async function fetchImage({ url, name, kind = "auto", attribution, assets
   let file = freePath(assetsDir, base, ext);
   fs.writeFileSync(file, bytes);
   file = normalise(file, ext, ffmpeg);
-  const metadata = { source: target, requestedUrl: url, ...(attribution ?? {}) };
+  // A picture found through a page is credited to the page, unless the
+  // caller named one.
+  const metadata = { source: target, requestedUrl: url, ...(via ? { pageUrl: url } : {}), ...(attribution ?? {}) };
   fs.writeFileSync(`${file}.source.json`, JSON.stringify(metadata, null, 2) + "\n");
   return { attribution: metadata, file, src: `assets/${path.basename(file)}`, bytes: fs.statSync(file).size, via, source: target, type };
 }

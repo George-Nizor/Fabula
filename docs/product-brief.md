@@ -32,6 +32,18 @@ stretched between the stylesheet's top and the painter's bottom, the inspector a
 scene by index against a plan the assistant rewrites, the Look sliders snapped back under the
 hand, duplicate scenes shared a paint key.
 
+A seventh reader drove the belt over the MCP protocol itself, as the assistant does, and
+found twenty-one more — and, by writing a probe plan into the reference short while a
+snapshot run had moved the open project under it, proved its own top finding: a write could
+not be atomic with the check of which project is open. Every tool now remembers the project it
+last answered for, and a write that finds a different one open refuses and names both. The
+rest were the tools' honesty: a params patch replaced a template's params whole, a new kind
+left the old template's rendering behind, a missing picture passed validation, `wait_render`
+reported the last job as if it were running, the adopted persona was forgotten by `status`,
+a font nobody vendored was accepted, and the draft shipped tags reading "Earth" and pills cut
+off with an ellipsis. The two worked plans are checked in under `docs/craft/plans` so the
+reference films can be put back from the repository.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

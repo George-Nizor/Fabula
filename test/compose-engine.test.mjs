@@ -123,10 +123,10 @@ test("full-stage kinds validate, and a custom graphic may carry nothing that run
   ok({ kind: "section", title: "THE JOURNEY", number: "02" });
   bad({ kind: "section", title: "x", number: "1234567" }, /number/);
   ok({ kind: "custom", html: "<div class=\"a\">hi</div>", css: ".a { opacity: var(--q); }" });
-  bad({ kind: "custom", html: "<script>alert(1)</script>" }, /may not contain/);
-  bad({ kind: "custom", html: "<div onclick=\"x()\">hi</div>" }, /may not contain/);
-  bad({ kind: "custom", html: "<img src=\"https://example.com/x.png\">" }, /may not contain/);
-  bad({ kind: "custom", html: "<div>x</div>", css: "@import url(evil.css);" }, /may not contain/);
+  bad({ kind: "custom", html: "<script>alert(1)</script>" }, /may not carry/);
+  bad({ kind: "custom", html: "<div onclick=\"x()\">hi</div>" }, /may not carry/);
+  bad({ kind: "custom", html: "<img src=\"https://example.com/x.png\">" }, /may not carry/);
+  bad({ kind: "custom", html: "<div>x</div>", css: "@import url(evil.css);" }, /may not carry/);
 });
 
 test("insert points validate, materialise a choice, and replace it on a second choice", async () => {

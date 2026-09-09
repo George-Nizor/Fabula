@@ -155,6 +155,11 @@ async function main() {
       ? stageEngine.layoutAt(stageEngine.resolveLayoutTimeline([], duration), T, dims.width / dims.height, stage)
       : layout;
     await contents.executeJavaScript(`__renderAt(${T}, ${JSON.stringify(thumbLayout)})`);
+    // What the picture is, not what the plan says: a thumbnail is the head
+    // at focus with the line, whatever the plan had at that instant.
+    const describeThumb = (t, wordId, lay) => (flag("thumb")
+      ? { at: Number(t.toFixed(2)), wordId, layout: "focus", headOpacity: 1, showing: ["thumbnail line"], planned: describe(t, wordId, lay).showing }
+      : describe(t, wordId, lay));
     // A thumbnail: the frame as composed, the captions taken off (a caption
     // in a thumbnail is noise), and a template's words laid over everything
     // — above the head, which is where a thumbnail's words go — with its
@@ -185,7 +190,7 @@ async function main() {
     const out = path.resolve(flag("out") ?? path.join(framesDir, `t-${T.toFixed(2)}.png`));
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, Buffer.from(shot.data, "base64"));
-    console.log(JSON.stringify({ file: out, ...describe(T, word?.id ?? null, thumbLayout), format: formats.resolveFormat(meta).id, width, height }));
+    console.log(JSON.stringify({ file: out, ...describeThumb(T, word?.id ?? null, thumbLayout), format: formats.resolveFormat(meta).id, width, height }));
     app.quit();
     return;
   }

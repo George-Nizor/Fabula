@@ -90,7 +90,7 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
   if (stillSeconds > pace.stillStretch && stillSeconds < duration) {
     notes.push(shortForm
       ? `Nothing changes from ${longest.start.toFixed(1)}s to ${longest.end.toFixed(1)}s (${stillSeconds.toFixed(1)}s). A short wants a change every few seconds — a caption style shift, a callout, a punch-in, the big word — or the thumb moves on.`
-      : `Nothing changes from ${at(longest.start)} to ${at(longest.end)} (${Math.round(stillSeconds)}s). A callout, a punch-in or a return to the head would mark the passage.`);
+      : `Nothing changes from ${at(longest.start)} to ${at(longest.end)} (${Math.round(stillSeconds)}s). A callout, a punch-in, a card or a change of layout would mark the passage.`);
   }
 
   // Word budgets, per scene, by the index get_scenes reports.
@@ -118,6 +118,12 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
       }
       if (shape === "vertical" && scene.graphic.kind === "compare" && ((scene.graphic.left?.items?.length ?? 0) > 3 || (scene.graphic.right?.items?.length ?? 0) > 3)) {
         notes.push(`scene ${index}: two columns of more than three items do not fit a tall frame side by side; trim each side, or use before-after.`);
+      }
+      if (shape === "vertical" && ["list", "steps"].includes(scene.graphic.kind) && (scene.graphic.items?.length ?? 0) > 3) {
+        notes.push(`scene ${index}: a ${scene.graphic.kind} of ${scene.graphic.items.length} items in a tall frame; three is what the strip under the head reads. Cut it to three, or split it over two cards.`);
+      }
+      if (shape === "vertical" && ["ranking", "teaser"].includes(scene.graphic.template) && (scene.graphic.params?.items?.length ?? 0) > 3) {
+        notes.push(`scene ${index}: a ${scene.graphic.template} of ${scene.graphic.params.items.length} items in a tall frame; three read, five do not. Cut it, or split it.`);
       }
     }
   });

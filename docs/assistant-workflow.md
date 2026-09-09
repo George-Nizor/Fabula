@@ -86,7 +86,10 @@ names (`status` and `list_projects` report `root`); `<root>/current-project.json
 open project. `list_projects` lists every staged folder there with the stage it has reached, `switch_project` opens an existing one,
 `open_project` starts one from a recording, `close_project` returns the window to its start
 screen. The window's Projects dialog does the same, so the person may have switched projects
-between your turns: `status` names the open project — check it before writing anything.
+between your turns: `status` names the open project. A write cannot be atomic with that check,
+so the server makes it one: every tool remembers the project it last answered for, and a write
+that finds a different project open refuses and names both. Nothing is written; `status` takes
+the new project up, and the write goes through on the next call if it is still meant.
 
 ## The shape a film is delivered in
 
@@ -274,7 +277,8 @@ the fields and a complete example each. Write one as
 
 in `set_scenes`, `add_scenes`, `update_scenes` or an insert option; the html and css are
 generated, and the template id and params stay beside them in `get_scenes`, so a patch to
-`params` re-renders the graphic; the window and the renders re-expand every template from
+`params` re-renders the graphic — one param at a time, the rest stay; a different kind or
+template is a new card and nothing of the old one carries over; the window and the renders re-expand every template from
 its params as they read the plan, so a plan written last week is drawn with the templates as
 they are today. Reach for a template before writing html by hand; the
 hand-written `custom` graphic is for a moment none of them fit. Full-stage templates pair

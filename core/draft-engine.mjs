@@ -27,6 +27,14 @@ const trimTo = (text, max) => {
   const words = String(text).replace(/[.!?…]+$/, "").split(/\s+/).filter(Boolean);
   return words.length <= max ? words.join(" ") : `${words.slice(0, max).join(" ")}…`;
 };
+// A callout is a phrase, not a sentence cut off. When the sentence is longer
+// than a callout holds, the moment goes to the to-do list with the words
+// left for the assistant to write, rather than to the stage as a fragment.
+const calloutOrNote = (sentence, span, max, style, todo) => {
+  const words = String(sentence).replace(/[.!?…]+$/, "").split(/\s+/).filter(Boolean);
+  if (words.length <= max) return { type: "callout", ...span, text: words.join(" "), style, ...(todo ? { todo } : {}) };
+  return { type: "note", ...span, todo: `${todo ? `${todo}; ` : ""}the sentence is ${words.length} words, more than a callout holds — write the phrase yourself, or leave the head to say it` };
+};
 const charsTo = (text, max) => (String(text).length <= max ? String(text) : `${String(text).slice(0, max - 1).trim()}…`);
 
 // The word ids a card covers: from the moment's first word, for about
@@ -56,7 +64,7 @@ function cardFor(moment, span, { shortForm }) {
     case "warning":
       return { type: "graphic", ...span, graphic: { kind: "custom", template: "alert", params: { text: charsTo(sentence, 90), level: "warning" } }, layout: "side" };
     case "claim":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "stamp" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "stamp", "");
     case "number": {
       const figure = moment.evidence;
       if (figure && figure.shown) {
@@ -67,22 +75,24 @@ function cardFor(moment, span, { shortForm }) {
           todo: `the figure ${figure.shown} was read from “${sentence}”; check the value and the label say what the speaker meant`,
         };
       }
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "bar", todo: "a number said aloud: replace this callout with a stat or big-number once you have read the value and what it counts" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "bar", "a number said aloud: replace this callout with a stat or big-number once you have read the value and what it counts");
     }
     case "name":
-      return { type: "callout", ...span, text: moment.evidence.slice(0, 2).join(" · "), style: "tag", todo: `${moment.evidence.join(", ")}: a picture or a logo beside the words is usually worth two calls (search_images, fetch_image, import_image)` };
+      // A name is a picture's cue, not a card of its own: nobody ships a tag
+      // reading "Earth".
+      return { type: "note", ...span, todo: `${moment.evidence.join(", ")} named: a picture or a logo beside the words is usually worth two calls (search_images, fetch_image, import_image), as an image card in a side layout` };
     case "definition":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "note", todo: "a term is being defined: a definition template wants the term and its meaning in your words" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "note", "a term is being defined: a definition template wants the term and its meaning in your words");
     case "comparison":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "pill", todo: "two things set against each other: compare, before-after or scale, with the sides named" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "pill", "two things set against each other: compare, before-after or scale, with the sides named");
     case "list":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "pill", todo: "an enumeration: list, steps or ranking with the items written out" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "pill", "an enumeration: list, steps or ranking with the items written out");
     case "process":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "pill", todo: "one thing leads to the next: a flow with the steps named" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "pill", "one thing leads to the next: a flow with the steps named");
     case "change":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "pill", todo: "a before and an after: the before-after template with both states written out" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "pill", "a before and an after: the before-after template with both states written out");
     case "code":
-      return { type: "callout", ...span, text: trimTo(sentence, shortForm ? 5 : 8), style: "tag", todo: "something typed or pressed: a code or keys template with the lines, or the screen track" };
+      return calloutOrNote(sentence, span, shortForm ? 5 : 8, "tag", "something typed or pressed: a code or keys template with the lines, or the screen track");
     case "cta":
       return null; // the ending handles the ask
     default:
@@ -138,6 +148,7 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
     if (span.end - span.start < 1.5) continue;
     const card = cardFor(moment, span, { shortForm });
     if (!card) continue;
+    if (card.type === "note") { todo.push(`at ${span.start.toFixed(1)}s (${moment.kind}): ${card.todo}`); continue; }
     const { layout, todo: note, start: _s, end: _e, ...scene } = card; // seconds are derived; only word ids are written
     if (layout && layout !== "focus") scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout });
     scenes.push(scene);

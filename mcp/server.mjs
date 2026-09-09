@@ -75,8 +75,27 @@ import { INVARIANTS } from "../core/assistant-brief.mjs";
 
 // media/ beside the checkout, or the folder fabula.settings.json names; read
 // per call so a change made in the window applies to the next tool call.
-const mediaRoot = () => configuredProjectsRoot() ?? path.join(REPO_ROOT, "media");
+// FABULA_PROJECTS_ROOT is the test hook: a media root that is not the person's.
+const mediaRoot = () => process.env.FABULA_PROJECTS_ROOT || configuredProjectsRoot() || path.join(REPO_ROOT, "media");
 const pointerFile = () => path.join(mediaRoot(), "current-project.json");
+
+// A write must be atomic with the check of which project is open. The
+// person switches projects in the window between the assistant's turns, and
+// a `status` a few seconds ago proves nothing about now; a plan written to
+// the wrong project is the person's afternoon. So every tool remembers the
+// project it last answered for, and a write tool refuses when the pointer
+// names a different one: the refusal names both, a read (status) takes the
+// new one up, and the write goes through on the next call if it is still
+// meant. The tools that move the pointer take it up themselves.
+let answeredProject = null;
+let activeTool = null;
+const READ_TOOLS = new Set([
+  "status", "list_projects", "get_scenes", "get_theme", "list_cuts", "get_framing", "get_inserts", "describe_kit", "describe_templates",
+  "adopt_persona", "read_craft", "read_story", "review_plan", "review_film", "check_scenes", "preview_frame", "preview_sheet", "film_sheet",
+  "list_clean_words", "list_themes", "list_assets", "list_music", "search_images", "suggest_clips", "wait_render", "wait_for_input",
+]);
+const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project", "create_short", "rename_project"]);
+let adoptedPersona = null; // adopt_persona in this session; status reports it
 // Jobs are launched from the shared specs (scripts/project-state.mjs), the
 // same ones the window uses, so the two never drift in arguments.
 const RUNNER = { node: process.execPath };
@@ -128,6 +147,11 @@ function electronBinary() {
 function currentProjectDir() {
   if (!fs.existsSync(pointerFile())) throw new Error("no open project; switch_project one from list_projects, or open_project a recording");
   const pointer = JSON.parse(fs.readFileSync(pointerFile(), "utf8"));
+  const writing = activeTool !== null && !READ_TOOLS.has(activeTool) && !POINTER_TOOLS.has(activeTool);
+  if (writing && answeredProject !== null && answeredProject !== pointer.dir) {
+    throw new Error(`the open project changed from "${answeredProject}" to "${pointer.dir}" since the last call — the person switched in the window. Nothing was written. status reads the new project; call ${activeTool} again if it is still meant for "${pointer.dir}", or switch_project back.`);
+  }
+  answeredProject = pointer.dir;
   return path.join(mediaRoot(), pointer.dir);
 }
 
@@ -258,9 +282,42 @@ const server = new McpServer({ name: "fabula", version: "0.2.0" }, {
 The first pass (transcript, framing scan, cut proposals) runs by itself when the window creates a project, and the person reviews the cuts there; your work is the composition. docs/assistant-workflow.md is the whole workflow. adopt_persona (editor for a film, farmer for shorts) hands you the craft for the job; read_story marks the transcript up before you compose and draft_scenes turns it into a skeleton; describe_templates lists the named graphics; every plan write returns variety and pacing reads; review_film is the whole film in one look, render_final draft: true the whole film at half size in a fraction of the time, and film_sheet what the encoder actually wrote.`,
 });
 
+// Every tool runs with its name on the record, so currentProjectDir can tell
+// a write from a read (see answeredProject).
+{
+  const register = server.registerTool.bind(server);
+  server.registerTool = (name, spec, handler) => register(name, spec, async (...args) => {
+    activeTool = name;
+    try { return await handler(...args); } finally { activeTool = null; }
+  });
+}
+
+// A template expanded with the scene's index on any refusal, so "items needs
+// 2–5 items" says which scene.
+function expandPlan(scenes, context) {
+  return scenes.map((scene, index) => {
+    try { return expandTemplates([scene], context)[0]; }
+    catch (error) { throw new Error(`scene ${index}: ${error.message}`); }
+  });
+}
+
+// The pictures a plan names must exist before the plan is written, as
+// set_audio and set_theme already insist: finding out at the render is late.
+function assertAssets(dir, scenes) {
+  const missing = (src) => src && !fs.existsSync(path.join(dir, src));
+  scenes.forEach((scene, index) => {
+    const graphic = scene.graphic;
+    if (!graphic) return;
+    if (missing(graphic.src)) throw new Error(`scene ${index}: no such asset ${graphic.src}; list_assets shows what exists, fetch_image / import_image / search_images bring one in`);
+    for (const item of graphic.items ?? []) {
+      if (item && typeof item === "object" && missing(item.src)) throw new Error(`scene ${index}: no such asset ${item.src}; list_assets shows what exists`);
+    }
+  });
+}
+
 server.registerTool("open_project", {
   description:
-    "Start a project from a recording and make it the open one. The footage is referenced where it lives (never copied); the project folder <root>/<slug>/ holds only derived files, and the review UI is pointed at it. The title is the person's name for it (ask them; the folder is a slug of it). A recording that already has a project reopens that project. Returns whether a transcript already exists.",
+    "Start a project from a recording and make it the open one. The footage is referenced where it lives (never copied); the project folder <root>/<slug>/ holds only derived files, and the review UI is pointed at it. The title is the person's name for it (ask them; the folder is a slug of it). A title that already has a project reopens that project, provided it is the same recording; the same recording under a new title is a new project (list_projects shows what exists). Returns whether a transcript already exists.",
   inputSchema: {
     video_path: z.string().describe("Path to the raw recording (mp4/mov/mkv/webm)"),
     title: z.string().optional().describe("The project's name as the person wants it shown; defaults to the recording's file name"),
@@ -290,6 +347,7 @@ server.registerTool("open_project", {
     throw new Error(`${projectName} is already a ${projectFormat(dir)} project; set_format changes the shape of an existing one, and says what it costs`);
   }
   fs.writeFileSync(pointerFile(), JSON.stringify({ dir: projectName }, null, 2));
+  answeredProject = projectName;
   const paths = projectPaths(dir);
   return ok({
     project: projectName,
@@ -309,6 +367,7 @@ server.registerTool("list_projects", {
   inputSchema: {},
 }, async () => {
   const current = fs.existsSync(pointerFile()) ? readJson(pointerFile()).dir : null;
+  answeredProject = current;
   return ok({ root: mediaRoot(), current, projects: listProjects(mediaRoot()).map((project) => ({ ...project, current: project.name === current })) });
 });
 
@@ -321,6 +380,7 @@ server.registerTool("switch_project", {
   const project = describeProject(path.join(mediaRoot(), name));
   if (!project) throw new Error(`no project called ${name}; list_projects shows what exists`);
   fs.writeFileSync(pointerFile(), JSON.stringify({ dir: name }, null, 2));
+  answeredProject = name;
   return ok({ project: name, stage: project.stage, video: project.video, videoPresent: project.videoPresent });
 });
 
@@ -394,6 +454,7 @@ server.registerTool("close_project", {
   inputSchema: {},
 }, async () => {
   fs.rmSync(pointerFile(), { force: true });
+  answeredProject = null;
   return ok({ closed: true });
 });
 
@@ -485,7 +546,7 @@ server.registerTool("set_framing", {
   const paths = projectPaths(dir);
   if (!segments || segments.length === 0) {
     fs.rmSync(paths.framing, { force: true });
-    return ok({ framing: null });
+    return ok({ framing: null, stale: ["clean"], hint: "the clean cut was framed by the segments just removed; render_clean re-renders it unframed" });
   }
   const dims = probeDimensions(paths.video);
   const duration = probeDuration(paths.video);
@@ -997,7 +1058,7 @@ server.registerTool("set_scenes", {
 }, async ({ scenes, captions, theme, punch_zoom }) => {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
-  const shaped = expandTemplates(scenes.map((scene) => ({
+  const shaped = expandPlan(scenes.map((scene) => ({
     type: scene.type,
     fromWordId: scene.from_word_id,
     toWordId: scene.to_word_id,
@@ -1202,7 +1263,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   resolved.forEach((scene, index) => {
     if (scene.graphic?.kind !== "screen") return;
     const covered = spans.some((span) => span.start <= scene.start + 0.05 && scene.end - 0.05 <= span.end);
-    if (!covered) warnings.push(`scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span ${JSON.stringify(spans)}`);
+    if (!covered) warnings.push(spans.length
+      ? `scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span (${spans.map((s) => `${s.start.toFixed(1)}–${s.end.toFixed(1)}s`).join(", ")})`
+      : `scene ${index}: a screen graphic, but the recording has no screen track (detect_framing found no screen beside the head)`);
   });
   for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
     warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
@@ -1213,6 +1276,16 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   for (const over of overFullStage(resolved)) {
     warnings.push(`scene ${over.index}: the ${over.type} sits over the full-stage ${over.card} for ${over.seconds}s and lands on its text. Put the words in the card, or move the ${over.type} to a moment the head holds.`);
   }
+  resolved.forEach((scene, index) => {
+    const graphic = scene.graphic;
+    if (!graphic) return;
+    if (graphic.over && !["thumbnail", "cta"].includes(graphic.template)) {
+      warnings.push(`scene ${index}: over: true draws the ${graphic.template ?? graphic.kind} on top of the head; only thumbnail and cta (with a shade) are made for the face. Drop over, and give it a cutaway or full stage scene.`);
+    }
+    if (graphic.template === "cta" && !shape.shortForm) {
+      warnings.push(`scene ${index}: a cta in the long film; the ask belongs in a short, and a film ends on the head or the spoken word (docs/craft/editor.md).`);
+    }
+  });
   const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
   for (const hole of holes) {
     warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
@@ -1227,8 +1300,9 @@ const sceneEdits = (dir, mutate) => {
   const result = mutate(edited);
   // A template named in a patch or an added scene is rendered here, so what
   // is written is always a complete custom graphic.
-  const scenes = expandTemplates(edited, { format: projectFormat(dir) });
+  const scenes = expandPlan(edited, { format: projectFormat(dir) });
   validateScenes(scenes, words);
+  assertAssets(dir, scenes);
   config.scenes = scenes;
   config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
   if (!config.cutIdentity) delete config.cutIdentity;
@@ -1257,23 +1331,40 @@ const scenePatchShape = {
   layout: z.enum([...LAYOUTS]).nullable().optional(),
   corner: z.enum(["br", "bl", "tr", "tl"]).nullable().optional(),
   transition: z.enum([...TRANSITIONS]).nullable().optional(),
-  graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. To change a card's kind, give the whole graphic including kind."),
+  fromWordId: z.number().int().min(0).optional().describe("The same as from_word_id, as get_scenes spells it"),
+  toWordId: z.number().int().min(0).optional().describe("The same as to_word_id, as get_scenes spells it"),
+  graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. `params` merges too, one param at a time. A different kind or template is a new card: give the whole graphic, nothing of the old one carries over."),
 };
 
 const applyPatch = (scene, patch) => {
-  const { index, from_word_id, to_word_id, graphic, ...fields } = patch;
-  if (from_word_id !== undefined) scene.fromWordId = from_word_id;
-  if (to_word_id !== undefined) scene.toWordId = to_word_id;
+  const { index, from_word_id, to_word_id, fromWordId, toWordId, graphic, ...fields } = patch;
+  const first = from_word_id ?? fromWordId;
+  const last = to_word_id ?? toWordId;
+  if (first !== undefined) scene.fromWordId = first;
+  if (last !== undefined) scene.toWordId = last;
   for (const [key, value] of Object.entries(fields)) {
     if (value === null) delete scene[key];
     else if (value !== undefined) scene[key] = value;
   }
   if (graphic) {
-    scene.graphic = { ...(scene.graphic ?? {}) };
+    const current = scene.graphic ?? {};
+    // A different kind or template is a different card: the old one's
+    // fields — least of all a template's rendering — must not carry over.
+    const newKind = graphic.kind !== undefined && graphic.kind !== current.kind;
+    const newTemplate = graphic.template !== undefined && graphic.template !== current.template;
+    const next = newKind || newTemplate ? {} : { ...current };
+    if (newTemplate && graphic.kind === undefined) next.kind = "custom";
     for (const [key, value] of Object.entries(graphic)) {
-      if (value === null) delete scene.graphic[key];
-      else scene.graphic[key] = value;
+      if (value === null) delete next[key];
+      else if (key === "params" && value && typeof value === "object" && !Array.isArray(value) && next.params && !newTemplate) {
+        // One param at a time: tightening a line keeps the kicker.
+        next.params = { ...next.params };
+        for (const [name, param] of Object.entries(value)) {
+          if (param === null) delete next.params[name]; else next.params[name] = param;
+        }
+      } else next[key] = value;
     }
+    scene.graphic = next;
   }
 };
 
@@ -1287,8 +1378,9 @@ server.registerTool("check_scenes", {
 }, async ({ scenes, captions }) => {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
-  const shaped = expandTemplates(scenes.map(shapeScene), { format: projectFormat(dir) });
+  const shaped = expandPlan(scenes.map(shapeScene), { format: projectFormat(dir) });
   validateScenes(shaped, words);
+  assertAssets(dir, shaped);
   const config = readComposeConfig(dir);
   const read = readBackPlan(dir, shaped, words, config.theme, captions ?? config.captions);
   return ok({ scenes: shaped.length, valid: true, warnings: read.warnings, variety: read.variety, pacing: read.pacing, hint: "nothing was written; set_scenes writes it" });
@@ -1297,7 +1389,7 @@ server.registerTool("check_scenes", {
 server.registerTool("update_scenes", {
   description:
     "Change named fields on named scenes and leave every other scene, and every other field, exactly as it is. This is how to act on a note about the film — a punchier title, a different layout for one passage, a chart's numbers — without resending the plan. Indices come from get_scenes; read it first, because the person edits scenes in the window between your turns. Returns the fresh variety read of the whole plan.",
-  inputSchema: { patches: z.array(z.object(scenePatchShape)).min(1).max(60) },
+  inputSchema: { patches: z.array(z.object(scenePatchShape).strict()).min(1).max(60) },
 }, async ({ patches }) => {
   const dir = currentProjectDir();
   return sceneEdits(dir, (scenes) => {
@@ -1411,6 +1503,7 @@ server.registerTool("adopt_persona", {
   },
 }, async ({ persona }) => {
   const id = validatePersona(persona);
+  adoptedPersona = id;
   const chosen = PERSONAS[id];
   const guides = Object.fromEntries(chosen.reads.map((doc) => [doc, fs.readFileSync(path.join(REPO_ROOT, doc), "utf8")]));
   return ok({
@@ -1454,7 +1547,7 @@ server.registerTool("export_description", {
   inputSchema: {
     summary: z.string().min(20).max(1200).describe("What the film is, in the person's voice, for the description's first lines"),
     title: z.string().max(100).optional().describe("The upload's title; the project's title by default"),
-    links: z.array(z.object({ label: z.string().max(60), url: z.string().url() })).max(8).optional().describe("Links the description should carry, in order"),
+    links: z.array(z.object({ label: z.string().max(60), url: z.string().url() })).max(8).optional().describe("Links the description should carry, in order, each as { label, url }"),
   },
 }, async ({ summary, title, links }) => {
   const dir = currentProjectDir();
@@ -1490,7 +1583,7 @@ server.registerTool("describe_templates", {
   },
 }, async ({ persona }) => {
   const format = projectFormatSafe();
-  const who = persona ?? (PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : undefined);
+  const who = persona ?? adoptedPersona ?? (PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : undefined);
   return ok({
     format,
     persona: who ?? "all",
@@ -1535,7 +1628,7 @@ server.registerTool("film_sheet", {
   const dir = currentProjectDir();
   const leaf = (file ?? "final.mp4").replace(/[^a-z0-9._-]/gi, "_");
   const video = path.join(dir, "out", leaf);
-  if (!fs.existsSync(video)) throw new Error(`no ${leaf} in out/; render_final first`);
+  if (!fs.existsSync(video)) throw new Error(`no ${file ?? "final.mp4"} in out/; render_final first${file ? ", or film_sheet without file for the film" : ""}`);
   const duration = probeDuration(video);
   const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
   // fps=1/N emits a frame at 0, N, 2N… while the source lasts; the last one
@@ -1687,7 +1780,7 @@ server.registerTool("set_theme", {
   inputSchema: {
     ...themeShape,
     reset: z.boolean().optional().describe("Drop all overrides first"),
-    use: z.string().optional().describe("Start from a saved theme (id from list_themes); other fields then apply on top"),
+    use: z.string().optional().describe("Start from a saved theme (id from list_themes): it REPLACES the current look whole — fonts, radius, glow and all — and the other fields then apply on top"),
     save_as: z.string().max(40).optional().describe("Save the resulting theme under this name for other projects"),
   },
 }, async ({ reset, use, save_as, ...args }) => {
@@ -1697,7 +1790,12 @@ server.registerTool("set_theme", {
   let theme = use ? { ...loadTheme(mediaRoot(), use) } : reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete theme[key];
-    else if (key === "fonts") theme.fonts = { ...(theme.fonts ?? {}), ...value };
+    else if (key === "fonts") {
+      for (const face of Object.values(value ?? {})) {
+        if (face != null && !VENDORED_FONTS.includes(face)) throw new Error(`"${face}" is not a vendored face; the film can only draw ${VENDORED_FONTS.join(", ")}`);
+      }
+      theme.fonts = { ...(theme.fonts ?? {}), ...value };
+    }
     else theme[key] = value;
   }
   if (theme.logo?.src && !fs.existsSync(path.join(dir, theme.logo.src))) throw new Error(`no such asset ${theme.logo.src}; fetch_image or list_assets first`);
@@ -1780,6 +1878,10 @@ server.registerTool("reanchor_scenes", {
   const paths = projectPaths(dir);
   if (!fs.existsSync(paths.compose)) throw new Error("no compose.json; nothing to re-anchor");
   if (!fs.existsSync(paths.previousCleanTranscript)) {
+    const stale = staleness(dir).map((s) => s.next);
+    if (stale.includes("render_clean") || stale.includes("retranscribe_clean")) {
+      throw new Error(`nothing to re-anchor to yet: the cut changed but the clean cut has not been re-rendered. render_clean, then retranscribe_clean (which keeps the previous transcript), then reanchor_scenes — the plan follows the words across.`);
+    }
     throw new Error("no clean.previous.json: the previous transcript is kept by retranscribe_clean from now on; place the scenes with list_clean_words and set_scenes this once");
   }
   const oldWords = flattenWords(readJson(paths.previousCleanTranscript));
@@ -1862,8 +1964,15 @@ server.registerTool("wait_render", {
   inputSchema: { wait_seconds: waitSchema },
 }, async ({ wait_seconds }) => {
   const dir = currentProjectDir();
-  const stage = runningJob(dir)?.stage ?? readProgress(dir)?.stage ?? lastJobStage(dir);
-  if (!stage) return ok({ done: true, hint: "no job has run in this project" });
+  const live = runningJob(dir);
+  const stage = live?.stage ?? readProgress(dir)?.stage ?? lastJobStage(dir);
+  if (!stage) return ok({ done: true, running: false, hint: "no job has run in this project" });
+  if (!live) {
+    // Nothing is running: what follows is how the LAST job ended, which is
+    // not the same as its output being current.
+    const stale = staleness(dir);
+    return ok({ done: true, running: false, ...describeFinished(dir, stage), note: `no job is running now; this is how the last one (${stage}) ended.${stale.length ? ` status says ${stale.map((s) => `${s.artifact} is stale (${s.next})`).join(", ")}.` : " Nothing is stale."}` });
+  }
   return settle(dir, wait_seconds, () => describeFinished(dir, stage));
 });
 
@@ -1873,6 +1982,7 @@ server.registerTool("status", {
 }, async () => {
   if (!fs.existsSync(pointerFile())) return ok({ project: null, root: mediaRoot(), hint: "no project is open: list_projects shows what exists, switch_project opens one, open_project starts one from a recording" });
   const pointer = readJson(pointerFile());
+  answeredProject = pointer.dir; // status is the read that takes a switch up
   const dir = path.join(mediaRoot(), pointer.dir);
   const paths = projectPaths(dir);
   const running = runningJob(dir);
@@ -1903,8 +2013,9 @@ server.registerTool("status", {
   state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
   state.clean = cleanSummary(dir, { measure: true });
   state.stale = staleness(dir);
-  // Who this session was started as, when the launcher said.
-  state.persona = PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : null;
+  // Who this session is working as: adopted in the session, else what the
+  // launcher said.
+  state.persona = adoptedPersona ?? (PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : null);
   // What is in out/ that a person would hand over: the film, previews, the
   // caption files, the thumbnail, the chapter list, the credits.
   state.deliverables = outputs(dir).map(({ name, kind, bytes }) => ({ name, kind, bytes }));

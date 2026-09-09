@@ -112,7 +112,7 @@ export function createShort(parentDir, { fromWordId, toWordId, title, format = "
     title: shown,
     format: shape.id,
     derivedFrom: path.basename(parentDir),
-    span,
+    span: Object.fromEntries(Object.entries(span).filter(([key]) => key !== "warnings")),
     rawSpan: { start: Number(rawSpan.start.toFixed(2)), end: Number(rawSpan.end.toFixed(2)) },
     seconds: span.seconds,
     warnings: span.warnings,

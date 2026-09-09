@@ -25,6 +25,7 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 // Footage is referenced where it lives (source.json); a raw.<ext> copy is the
 // older staging and still honoured.
 export function stagedVideo(dir) {
+  if (!fs.existsSync(dir)) return null; // a project not yet made has no footage
   const raw = fs.readdirSync(dir).find((name) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(name));
   if (raw) return path.join(dir, raw);
   try {

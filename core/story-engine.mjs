@@ -54,7 +54,9 @@ export function paragraphs(words, { pauseSeconds = PARAGRAPH_PAUSE } = {}) {
       end: last.end,
       seconds: Number((last.end - first.start).toFixed(1)),
       sentences: current.length,
-      opening: first.text,
+      // A one-word first "sentence" is a false start with a full stop on
+      // it; the opening is what follows.
+      opening: openingSentence(current),
       signpost: SIGNPOSTS.some((re) => re.test(openingOf(first.text))),
       conclusion: CONCLUSION.test(openingOf(first.text)),
     });
@@ -71,6 +73,14 @@ export function paragraphs(words, { pauseSeconds = PARAGRAPH_PAUSE } = {}) {
   return out;
 }
 
+const openingSentence = (sentences) => {
+  const parts = [];
+  for (const sentence of sentences) {
+    parts.push(sentence.text);
+    if (parts.join(" ").split(/\s+/).filter(Boolean).length >= 3) break;
+  }
+  return parts.join(" ");
+};
 const openingOf = (text) => lower(text).replace(/^[^a-z0-9]+/, "").replace(/^(um|uh|erm|yeah|well|and|but)\s+/, "");
 
 // Where the film turns. A paragraph that opens on a signpost is a boundary;
@@ -132,7 +142,14 @@ function headingFrom(sentence) {
     text = text.replace(/^(i (want|wanted|also want) to (talk|mention|say|cover|show|explain)( about| you)?)[,:\s]+/i, "");
     if (before === text) break;
   }
-  const trimmed = text.split(" ").slice(0, 7).join(" ");
+  // Cut at the first pause if one comes early, else at seven words, and
+  // never end on a word that leaves the phrase hanging.
+  const pause = text.search(/[,;:—–-]\s/);
+  if (pause > 0 && text.slice(0, pause).split(/\s+/).length <= 10) text = text.slice(0, pause);
+  const HANGING = new Set(["a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or", "but", "that", "which", "who", "is", "was", "are", "were", "be", "as", "with", "by", "from", "into", "than", "so", "if", "it", "its", "this", "these", "those", "very", "really", "just", "designed", "called", "made", "used"]);
+  const words = text.split(/\s+/).filter(Boolean).slice(0, 7);
+  while (words.length > 1 && HANGING.has(words.at(-1).toLowerCase().replace(/[^a-z']/g, ""))) words.pop();
+  const trimmed = words.join(" ");
   return trimmed.length ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : sentence;
 }
 

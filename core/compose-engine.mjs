@@ -19,6 +19,8 @@ export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "screen"
 // What a custom graphic may not carry: anything that runs, loads, or
 // navigates. Motion comes from the --p and --t variables the painter sets.
 const CUSTOM_FORBIDDEN = [/<\s*script/i, /<\s*iframe/i, /<\s*object/i, /<\s*embed/i, /<\s*link/i, /@import/i, /javascript:/i, /\bon[a-z]+\s*=/i, /https?:\/\//i, /expression\s*\(/i];
+// The same rules, in words, for the error text.
+const CUSTOM_FORBIDDEN_NAMES = ["a <script> tag", "an <iframe>", "an <object>", "an <embed>", "a <link>", "an @import", "a javascript: URL", "an on* event handler", "an http(s) URL (assets go under assets/)", "a CSS expression()"];
 export const IMAGE_MOTIONS = new Set(["tilt", "kenburns", "pop"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -86,7 +88,7 @@ function validateGraphic(graphic, at) {
     if (typeof graphic.html !== "string" || graphic.html.length === 0 || graphic.html.length > 20000) throw new Error(`${at}: custom needs html up to 20000 characters`);
     if (graphic.css !== undefined && (typeof graphic.css !== "string" || graphic.css.length > 10000)) throw new Error(`${at}: custom css is at most 10000 characters`);
     for (const rule of CUSTOM_FORBIDDEN) {
-      if (rule.test(graphic.html) || rule.test(graphic.css ?? "")) throw new Error(`${at}: custom graphics may not contain ${rule.source.replace(/\\/g, "")}; no scripts, frames, external loads or handlers`);
+      if (rule.test(graphic.html) || rule.test(graphic.css ?? "")) throw new Error(`${at}: custom graphics may not carry ${CUSTOM_FORBIDDEN_NAMES[CUSTOM_FORBIDDEN.indexOf(rule)]}; no scripts, frames, external loads or handlers`);
     }
     return;
   }
@@ -121,11 +123,16 @@ export function validateScenes(scenes, words) {
       throw new Error(`${at}: word ids must be 0–${words.length - 1}`);
     }
     if (byId.get(scene.toWordId).start < byId.get(scene.fromWordId).start) {
-      throw new Error(`${at}: toWordId precedes fromWordId`);
+      throw new Error(`${at}: the last word (${scene.toWordId}) comes before the first (${scene.fromWordId})`);
     }
     if (scene.accent !== undefined && !ACCENT_RE.test(scene.accent)) {
       throw new Error(`${at}: accent must be #rrggbb`);
     }
+    // Fields that belong to another kind of scene are a mistake, not a
+    // no-op: a layout on a graphic scene or a card on a title would sit in
+    // the file doing nothing and read as if it did.
+    if (scene.type !== "graphic" && scene.graphic !== undefined) throw new Error(`${at}: a ${scene.type} scene does not carry a graphic; a card is a graphic scene`);
+    if (scene.type !== "stage" && (scene.layout !== undefined || scene.corner !== undefined)) throw new Error(`${at}: layout belongs on a stage scene; a ${scene.type} scene takes none (add a stage scene over the same words)`);
     if (scene.type === "graphic") validateGraphic(scene.graphic, at);
     else if (scene.type === "title") {
       if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
@@ -473,8 +480,12 @@ function runsOfSame(items, valueOf) {
 // is a fault; this one is at least reported before it renders.
 export function uncoveredCutaways(scenes, durationSeconds = 0, options = {}) {
   const timeline = resolveLayoutTimeline(scenes, durationSeconds, options);
+  // A card on the film's first or last words reaches the film's edge (the
+  // painter holds it there); the word pad and the tail are not holes.
+  const EDGE = 0.5;
   const covering = scenes
     .filter((scene) => scene.type === "graphic" || scene.type === "kinetic")
+    .map((scene) => ({ ...scene, start: scene.start <= EDGE ? 0 : scene.start, end: durationSeconds > 0 && scene.end >= durationSeconds - EDGE ? durationSeconds : scene.end }))
     .sort((a, b) => a.start - b.start);
   const holes = [];
   for (const span of timeline.filter((s) => s.layout === "cutaway")) {
@@ -579,7 +590,7 @@ export function describeVariety(scenes, durationSeconds = 0) {
   }
   if (durationSeconds - previousEnd >= 90) quiet.push([previousEnd, durationSeconds]);
   for (const [from, to] of quiet) {
-    notes.push(`Nothing but the head from ${at(from)} to ${at(to)} (${Math.round((to - from) / 60)} min).`);
+    notes.push(`Nothing but the head from ${at(from)} to ${at(to)} (${Math.round(to - from)}s).`);
   }
   return notes;
 }
