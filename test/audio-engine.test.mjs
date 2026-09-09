@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, bedGainDb, parseLoudness, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, bedGainDb, parseLoudness, MUSIC_DEFAULTS, VOICE_CLEAN } from "../core/audio-engine.mjs";
 import { evaluateExpression } from "../core/render-plan.mjs";
 
 const words = [
@@ -143,4 +143,19 @@ test("a preview span outside every music span gets a silent bed, and the bed's r
   const g = audioGraph({ audio: { music: { src: "assets/bed.mp3", level: -18, loudness: -10 }, voice: { loudness: -16, measured: -24 } }, words, span: 8, musicPath: "m" });
   assert.ok(g.filter.includes(`volume=${Math.pow(10, -24 / 20).toFixed(4).replace(/0+$/, "")}`) || g.filter.includes("volume=0.0631"), g.filter.split("\n")[2]);
   assert.equal(describeAudio({ music: { src: "assets/bed.mp3", level: -18, loudness: -10 }, voice: { loudness: -16, measured: -24 } }, words, 8).music.gainDb, -24);
+});
+
+test("the voice can be cleaned before it is levelled, and the graph says so in order", () => {
+  assert.deepEqual([...VOICE_CLEAN], ["off", "light", "strong"]);
+  assert.throws(() => validateAudio({ voice: { clean: "lots" } }), /off, light, strong/);
+  assert.equal(audioGraph({ audio: { voice: { clean: "off" } }, words: [], span: 10 }), null, "off and no target is the voice as recorded");
+  const light = audioGraph({ audio: { voice: { clean: "light", loudness: -16 } }, words: [], span: 10, voiceLoudness: -30 });
+  assert.match(light.filter, /highpass=f=80.*afftdn=nf=-30:nr=8.*\[v0\]/s, "the clean-up is on the voice input");
+  assert.ok(light.filter.indexOf("afftdn") < light.filter.indexOf("volume=14dB"), "before the gain");
+  assert.ok(!light.filter.includes("deesser"));
+  const strong = audioGraph({ audio: { voice: { clean: "strong" } }, words: [], span: 10 });
+  assert.match(strong.filter, /highpass=f=100.*afftdn=nf=-25:nr=16.*deesser/s);
+  assert.equal(strong.map, "[v0]", "a clean-up alone still maps the cleaned voice");
+  assert.match(describeAudio({ voice: { clean: "light" } }, [], 0).voice.cleanAbout, /rumble below 80 Hz/);
+  assert.equal(resolveAudio({}).voice.clean, "off");
 });

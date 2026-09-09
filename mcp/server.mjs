@@ -847,8 +847,9 @@ server.registerTool("set_audio", {
         .describe("Confine the bed to these word spans on the clean transcript — the opening, the section marks, the ending — faded at each edge; omit for the whole film; an empty list lifts a confinement"),
     }).nullable().optional().describe("The bed; null removes it; omit to keep the current one"),
     voice_loudness: z.number().min(-30).max(-8).nullable().optional().describe("Integrated LUFS target for the voice; null leaves it as recorded; omit to keep"),
+    voice_clean: z.enum(["off", "light", "strong"]).optional().describe("Clean the voice before it is levelled: light takes the room's hum and the desk's rumble down and keeps the voice's air (most recordings); strong is for a poor microphone in a live room and softens sibilance too; off leaves it as recorded. Omit to keep."),
   },
-}, async ({ music, voice_loudness }) => {
+}, async ({ music, voice_loudness, voice_clean }) => {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
   const audio = { ...(config.audio ?? {}) };
@@ -871,9 +872,15 @@ server.registerTool("set_audio", {
     }
   }
   if (voice_loudness !== undefined) {
-    if (voice_loudness === null) delete audio.voice;
-    else audio.voice = { loudness: voice_loudness };
+    audio.voice = { ...(audio.voice ?? {}) };
+    if (voice_loudness === null) { delete audio.voice.loudness; delete audio.voice.measured; }
+    else audio.voice.loudness = voice_loudness;
   }
+  if (voice_clean !== undefined) {
+    audio.voice = { ...(audio.voice ?? {}) };
+    if (voice_clean === "off") delete audio.voice.clean; else audio.voice.clean = voice_clean;
+  }
+  if (audio.voice && Object.keys(audio.voice).length === 0) delete audio.voice;
   if ((audio.music || audio.voice?.loudness != null) && fs.existsSync(projectPaths(dir).clean)) {
     const measured = measureLoudness(projectPaths(dir).clean);
     if (typeof measured === "number") audio.voice = { ...(audio.voice ?? {}), measured };

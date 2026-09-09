@@ -58,6 +58,14 @@ export never captures the clip's frames as plates. One clip at a time; the read-
 when a scene outruns its clip or two clips overlap. Verified on a rendered span: the clip's
 counter reads the offset asked for.
 
+## The voice, cleaned (2026-09-10)
+
+`set_audio` takes `voice_clean`: `light` (a high-pass at 80 Hz and an FFT denoiser taking the
+floor down 8 dB, tracking the noise) or `strong` (100 Hz, 16 dB, and a de-esser), run before
+the level is set so a loudness target is met on the cleaned voice. Measured on eight seconds
+of the reference short: the noise floor from -63 dB to -81 dB with the voice's RMS within half
+a decibel of where it was. Opt-in, because a floor taken too far down sounds like a booth.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

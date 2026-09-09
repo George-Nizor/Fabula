@@ -336,6 +336,11 @@ the stitch and therefore in seconds, never re-rendering a chunk:
   film, -14 for a short, null to leave it as recorded. With the voice measured it is an exact
   gain under a true-peak ceiling, so the voice keeps its own dynamics. Platforms normalise on upload; this
   makes the film sound the same everywhere before they do.
+- **Voice clean-up** (`set_audio` with `voice_clean`): `light` takes the room's hum and the desk's
+  rumble down and keeps the voice's air — most recordings want it; `strong` is for a poor
+  microphone in a live room and softens sibilance too; `off` leaves it as recorded. It runs before
+  the level is set, so a target is met on the cleaned voice. Listen to a `render_final` span
+  before choosing strong: a floor taken down too far sounds like a booth.
 
 `get_scenes` carries the `audio` block; `music: null` removes the bed. Ask before adding
 music to a film that did not ask for it — a bed is a tone, and the wrong tone is worse than

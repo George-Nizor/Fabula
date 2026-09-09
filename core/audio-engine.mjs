@@ -53,8 +53,20 @@ export function validateAudio(audio) {
     if (typeof voice !== "object") throw new Error("audio.voice must be an object");
     if (voice.loudness !== undefined && voice.loudness !== null && !between(voice.loudness, -30, -8)) throw new Error("audio.voice.loudness is integrated LUFS from -30 to -8 (-16 for a film, -14 for a short)");
     if (voice.measured !== undefined && voice.measured !== null && !between(voice.measured, -70, 0)) throw new Error("audio.voice.measured is the clean cut's integrated LUFS");
+    if (voice.clean !== undefined && voice.clean !== null && !VOICE_CLEAN.has(voice.clean)) throw new Error(`audio.voice.clean is one of ${[...VOICE_CLEAN].join(", ")}`);
   }
 }
+
+// The clean-up a talking-head recording usually wants and rarely gets: the
+// room's hum and hiss under the words, the desk's rumble below them. Light
+// takes the floor down without touching the voice's air; strong is for a
+// laptop microphone in a kitchen. Both run before the level is set, so the
+// target is met on the cleaned voice.
+export const VOICE_CLEAN = new Set(["off", "light", "strong"]);
+const CLEAN_CHAINS = {
+  light: "highpass=f=80:poles=2,afftdn=nf=-30:nr=8:tn=1",
+  strong: "highpass=f=100:poles=2,afftdn=nf=-25:nr=16:tn=1,deesser=i=0.35:m=0.5",
+};
 
 // The bed's gain in dB. When both loudnesses are known — the music file's
 // and the voice's, measured — `level` is LU below the voice, so -18 means
@@ -77,7 +89,7 @@ export function parseLoudness(text) {
 export function resolveAudio(audio) {
   validateAudio(audio);
   const music = audio?.music ? { ...MUSIC_DEFAULTS, ...audio.music } : null;
-  const voice = { loudness: audio?.voice?.loudness ?? null, measured: audio?.voice?.measured ?? null };
+  const voice = { loudness: audio?.voice?.loudness ?? null, measured: audio?.voice?.measured ?? null, clean: audio?.voice?.clean ?? "off" };
   return { music, voice };
 }
 
@@ -152,9 +164,11 @@ export function spanPresenceExpression(spans, fade, T = "t") {
 
 export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0 }) {
   const { music, voice } = resolveAudio(audio);
-  if (!music && voice.loudness === null) return null;
+  if (!music && voice.loudness === null && voice.clean === "off") return null;
   const lines = [];
-  lines.push("[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[v0]");
+  // The clean-up comes first, so a loudness target is met on the voice as it
+  // will be heard.
+  lines.push(`[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo${voice.clean !== "off" ? `,${CLEAN_CHAINS[voice.clean]}` : ""}[v0]`);
   let voiceLabel = "v0";
   if (voice.loudness !== null) {
     // With the voice measured, the target is a plain gain and a true-peak
@@ -215,6 +229,7 @@ export function describeAudio(audio, words, duration) {
   const out = { music: null, voice: { ...voice } };
   // A voice far below where platforms sit is worth saying once, here, where
   // the level of everything else is being decided.
+  if (voice.clean !== "off") out.voice.cleanAbout = voice.clean === "light" ? "rumble below 80 Hz and the room's floor taken down 8 dB, the voice's air kept" : "rumble below 100 Hz out, the floor taken down 16 dB, sibilance softened — for a poor microphone in a live room";
   if (typeof voice.measured === "number" && voice.loudness === null && voice.measured < -24) {
     out.voice.note = `the voice measures ${voice.measured} LUFS; platforms sit near -14 to -16, so viewers will turn it up and hear the room. voice_loudness -16 (a film) or -14 (a short) normalises it.`;
   }
