@@ -496,12 +496,12 @@ export const TEMPLATES = {
 .t-cta { gap: 2.2cqh; align-items: ${portrait ? "center" : "flex-start"}; text-align: ${portrait ? "center" : "left"}; ${portrait ? "justify-content: flex-end;" : ""} }
 .t-cta > :not(.t-shade) { position: relative; }
 .t-shade { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,${p.shade.toFixed(2)}) 0%, rgba(0,0,0,${(p.shade * 0.75).toFixed(2)}) 40%, rgba(0,0,0,0) 75%); opacity: ${wake(0, { from: 0, dur: 0.3 })}; }
-${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cqh rgba(0,0,0,0.5); }` : ""}
 .t-line { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "6.4cqh, 10cqi" : "9cqh, 7cqi"}); line-height: 1.02; letter-spacing: -0.02em; text-wrap: balance; opacity: ${wake(0, { from: 0.02, dur: 0.3 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.02, dur: 0.3 })}) * 2cqh)); }
 .t-where { font-size: min(3.2cqh, 4.6cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.3, dur: 0.3 })}; }
 .t-row { display: flex; align-items: center; gap: 2cqi; margin-top: 1cqh; }
 .t-pill { padding: 1.6cqh 4cqi; font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(3.6cqh, 5cqi); color: ${INK}; background: ${ACCENT}; border-radius: 999px; transform: scale(calc(0.8 + ${wake(0, { from: 0.45, dur: 0.35 })} * 0.2)); opacity: ${wake(0, { from: 0.45, dur: 0.35 })}; }
-.t-arrow { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(8cqh, 11cqi); color: ${ACCENT}; line-height: 1; opacity: ${wake(0, { from: 0.6, dur: 0.3 })}; transform: translateY(calc(sin(var(--p) * 12.566) * 0.4cqh)); }`;
+.t-arrow { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(8cqh, 11cqi); color: ${ACCENT}; line-height: 1; opacity: ${wake(0, { from: 0.6, dur: 0.3 })}; transform: translateY(calc(sin(var(--p) * 12.566) * 0.4cqh)); }
+${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cqh rgba(0,0,0,0.55); }` : ""}`;
       return { html, css };
     },
   },
