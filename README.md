@@ -130,7 +130,9 @@ credits, all listed in the Export step with the film.
    give it a name. The clip is referenced where it lives — nothing is copied, a 19 GB recording
    included — and the window says what to ask for next.
 2. **The first pass runs by itself.** Creating the project starts it: the recording is
-   transcribed on the GPU, the frame is scanned for where the head sits, and cuts are proposed.
+   transcribed on the GPU, the frame is scanned for where the head sits, and cuts are proposed —
+   the pauses and fillers, and the cuts an editor makes from reading: the preamble before the
+   film promises anything, a false start, a stutter, a retake.
    The window shows each step as it lands. Review the cuts in the Cut step: click a struck word
    or pause to keep it, drag across words and cut them by hand. When the cut is right, press
    **Approve the cut and compose** at the top of the inspector: the clean cut renders and the

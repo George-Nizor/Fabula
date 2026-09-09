@@ -1342,7 +1342,7 @@ server.registerTool("describe_kit", {
     screen: "the recording's own screen track, in sync; only inside get_framing's screenSpans",
     cover: "WHOLE STAGE: a still edge to edge with title, subtitle, optional tint",
     section: "WHOLE STAGE: a chapter heading — number, title, subtitle",
-    custom: "WHOLE STAGE: your own html + css for one moment; scoped, no scripts or external loads. Animate from --q (0→1 over 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh measure the stage; pictures as assets/name.png",
+    custom: "WHOLE STAGE by default (full: false for the content rect; over: true to draw it over the head — the thumbnail and the shaded cta are made for that): a named template from describe_templates, or your own html + css for one moment; scoped, no scripts or external loads. Animate from --q (0→1 over 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh measure the stage; pictures as assets/name.png",
   },
   sceneTypes: [...SCENE_TYPES],
   titleStyles: [...TITLE_STYLES],
