@@ -934,7 +934,9 @@ window.FabulaStage = {
     overlayEl.style.setProperty("--ov-accent", theme.accent);
     // A tall frame places its captions and titles above the platform's own
     // controls; the stylesheet reads the shape off the frame.
-    const frame = overlayEl.closest(".stage-frame");
+    // The same element the theme goes on: the export page's frame, the
+    // window's videoframe, a gallery stamp's preview frame.
+    const frame = overlayEl.parentElement;
     if (frame && stage) frame.classList.toggle("is-tall", stage.height > stage.width);
     const parts = only ? plan.parts.filter((part) => part.layer === only) : plan.parts;
     const key = `${only ?? "all"}|${parts.map((part) => part.sigText).join("|")}`;

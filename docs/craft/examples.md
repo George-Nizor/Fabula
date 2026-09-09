@@ -50,17 +50,18 @@ straight upward…” — a promise — and closed on a full stop. 37 s against 
 
 | Words | Layout | On the stage | Why |
 | --- | --- | --- | --- |
-| 0–11 | cutaway | `hook`: “Fly straight up, and you come straight back down.” | Something on the screen at frame one; the speaker’s own line compressed. |
+| 0–11 | focus | `thumbnail`, `over: true`: “Straight up, straight back down” on the face | Something on the screen at frame one — the face with the words on it, which is the feed’s own frame. First made as a `hook` over a cutaway; the blank field at frame one was the weaker opening. |
 | 12–18 | focus | kinetic | “gravity will eventually pull it back down”, the head filling the frame. |
 | 24–30 | cutaway | `word`: “Turn sideways.” | The pattern interrupt on the answer. |
 | 31–55 | cutaway | `flow` (span-paced): accelerate sideways → gravity pulls down → the ground curves away → it falls around the planet | The mechanism, built with the sentences, in the four-item ceiling a tall frame allows. |
 | 56–68 | side | `definition`: orbit | The head across the top half, the card under it. |
 | 69–75 | focus | callout “Stages” | A beat marked. |
-| 76–102 | cutaway | `before-after`: burning / discarded | The change. A callout planned over it collided with its kicker — the over-full-stage warning now exists because of this. |
-| 103–106 | cutaway | `cta`: “That is how rockets work” — full explainer on the channel | A funnel short ends on the ask. First planned without a stage scene, so it sat behind the head; the hidden-full-stage warning exists because of this. |
+| 76–102 | cutaway | `before-after` (span-paced): burning / discarded | The change, its sweep waiting for the speaker. A callout planned over it collided with its kicker — the over-full-stage warning now exists because of this. |
+| 103–106 | focus | `cta`, `over: true` with a `shade`: “That is how rockets work” — full explainer on the channel | A funnel short ends on the ask, on the face. First planned as a full-stage card without a stage scene, so it sat behind the head; the hidden-full-stage warning exists because of this, and `over` because a 1.2 s cutaway at the end was under the dwell floor. |
 
-Captions open with `auto` emphasis; karaoke was not used because the mono look reads calmer.
-A music bed was tried with a tone and measured, not kept.
+Captions open with `auto` emphasis, above the bottom eighth where the platform’s controls
+are; karaoke was not used because the mono look reads calmer. The voice, recorded at -45 LUFS,
+is brought to -14 in the stitch. A music bed was tried with a tone and measured, not kept.
 
 **What the reads caught.** Two holes at seams (closed by extending spans one word), one card
 hidden behind the head, one callout on a card, an 8.6 s still inside the flow (span pacing

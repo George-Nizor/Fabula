@@ -1,5 +1,17 @@
 # Fabula — product brief
 
+## The viewer's eye (2026-09-09)
+
+The owner asked for every element to be judged against the vision. Two reference films were
+looked at as a viewer would see them and the belt was corrected where they fell short: a custom
+graphic may sit over the head (`over: true`) so a short opens on the face with the words on it;
+a tall frame keeps its captions and titles above the bottom eighth where Shorts and Reels draw
+their own controls, and the layouts' floor moved to match; the before-after develops across its
+span; the voice is measured and landed on its target by a stitch that checks itself; every custom
+card scopes its CSS to itself (a collision found by putting all the templates on one page). The
+checks that found these — the window photographing itself, the template probe, the film sheet —
+are in the repo, because that is where the next such fault will be found.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

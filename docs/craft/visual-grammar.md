@@ -60,7 +60,8 @@ draws a custom graphic over the head rather than under it; only `thumbnail` and 
 ## Two frames, one plan
 
 A tall frame is a phone. The head fills it; there is no column beside the head; text sits in
-the lower third; captions and platform chrome take the bottom sixth. Every template lays
+the lower third; the platform's own controls take the bottom eighth, and the captions sit just
+above them. Every template lays
 itself out for the shape it is rendered in, and the layouts resolve differently
 (`describe_kit` says how). What does not change by itself is what you *write*: a title of nine
 words in a wide frame is a title of four in a tall one, a chart of six bars is a stat of one
