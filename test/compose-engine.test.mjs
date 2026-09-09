@@ -8,7 +8,7 @@ import {
   renderSchedule,
   activeAt,
 } from "../core/compose-engine.mjs";
-import { describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, absorbedStages, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
+import { describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, emphasisFor, captionEmphasis } from "../core/compose-engine.mjs";
 
 const words = [
   { id: 0, text: "one", start: 0.0, end: 0.4 },
@@ -331,4 +331,21 @@ test("a clip is B-roll the project holds, read from an offset, one at a time in 
   bad({ kind: "clip", src: "assets/still.png" }, /import_clip/);
   bad({ kind: "clip", src: "assets/b-roll.mp4", in: -1 }, /seconds into the clip/);
   bad({ kind: "clip", src: "assets/b-roll.mp4", fit: "stretch" }, /cover or contain/);
+});
+
+test("a placed layout with nothing in the room it makes is reported, by the second", () => {
+  const side = (start, end) => ({ type: "stage", layout: "side", start, end });
+  const cutaway = (start, end) => ({ type: "stage", layout: "cutaway", start, end });
+  const card = (start, end) => ({ type: "graphic", start, end, graphic: { kind: "stat", value: 1, label: "x" } });
+  // A 1.7 s card in a side layout, then 1.9 s of head before a cutaway: the
+  // return is bridged away and the side layout holds with an empty strip.
+  const holes = emptyPlacedLayouts([side(3.8, 5.5), card(3.8, 5.5), cutaway(7.4, 12), card(7.4, 12)], 20);
+  assert.equal(holes.length, 1);
+  assert.equal(holes[0].layout, "side");
+  assert.ok(holes[0].start >= 5.4 && holes[0].end <= 7.5, JSON.stringify(holes));
+  assert.deepEqual(emptyPlacedLayouts([side(10, 30), card(10, 30)], 60), []);
+  assert.deepEqual(emptyPlacedLayouts([side(10, 30), card(10, 29.95)], 60), [], "a couple of frames is rounding");
+  assert.deepEqual(emptyPlacedLayouts([side(10, 30), { type: "title", text: "t", start: 10, end: 30 }], 60), [], "a title takes the free column");
+  assert.deepEqual(emptyPlacedLayouts([cutaway(10, 30)], 60), [], "a cutaway is uncoveredCutaways' business");
+  assert.equal(emptyPlacedLayouts([side(10, 30)], 60)[0].layout, "side");
 });

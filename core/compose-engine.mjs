@@ -514,6 +514,33 @@ export function uncoveredCutaways(scenes, durationSeconds = 0, options = {}) {
   return holes.filter(([from, to]) => to - from > 0.12).map(([from, to]) => ({ start: Number(from.toFixed(2)), end: Number(to.toFixed(2)) }));
 }
 
+// Placed layouts with nothing in the place they make. A side, pip, band or
+// full layout shrinks or moves the head to make room; room with nothing in
+// it is the head made small for nothing. It happens the same way a cutaway
+// hole does — a card ends and the dwell rule bridges the return to camera
+// away, so the layout holds — and is reported the same way, by the second.
+// Titles and callouts count: a free column is where they go.
+export function emptyPlacedLayouts(scenes, durationSeconds = 0, options = {}) {
+  const timeline = resolveLayoutTimeline(scenes, durationSeconds, options);
+  const EDGE = 0.5;
+  const covering = scenes
+    .filter((scene) => scene.type !== "stage")
+    .map((scene) => ({ ...scene, start: scene.start <= EDGE ? 0 : scene.start, end: durationSeconds > 0 && scene.end >= durationSeconds - EDGE ? durationSeconds : scene.end }))
+    .sort((a, b) => a.start - b.start);
+  const holes = [];
+  for (const span of timeline.filter((s) => s.layout !== "focus" && s.layout !== "cutaway")) {
+    let cursor = span.start;
+    for (const scene of covering) {
+      if (scene.end <= cursor || scene.start >= span.end) continue;
+      if (scene.start > cursor) holes.push([span.layout, cursor, Math.min(scene.start, span.end)]);
+      cursor = Math.max(cursor, scene.end);
+      if (cursor >= span.end) break;
+    }
+    if (cursor < span.end) holes.push([span.layout, cursor, span.end]);
+  }
+  return holes.filter(([, from, to]) => to - from > 0.12).map(([layout, from, to]) => ({ layout, start: Number(from.toFixed(2)), end: Number(to.toFixed(2)) }));
+}
+
 // Full-stage graphics that the head is standing in front of.
 //
 // A cover, a section or a full-stage custom graphic is drawn under the head.

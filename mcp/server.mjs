@@ -62,7 +62,7 @@ import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -1300,6 +1300,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
   for (const hole of holes) {
     warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
+  }
+  for (const empty of emptyPlacedLayouts(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
+    warnings.push(`the ${empty.layout} layout holds from ${empty.start}s to ${empty.end}s with nothing in the room it makes: the head is made small for nothing. Extend the card to the layout's end, or end the stage scene with the card (a short return to the head before the next layout is bridged away, so the layout stays).`);
   }
   return { resolved, warnings, holes, variety: describeVariety(resolved, duration), pacing };
 }

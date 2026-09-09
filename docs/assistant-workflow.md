@@ -442,7 +442,9 @@ timeline from the film's own length, so what the stage shows is what the film do
 **Which makes covering a cutaway your job.** With the flash bridged away, a gap between two
 cards inside one cutaway is an empty stage. `set_scenes`, `update_scenes`, `add_scenes` and
 `remove_scenes` all report those gaps by the second in `warnings`; close them by extending the
-card either side, or drop the cutaway there.
+card either side, or drop the cutaway there. The same read covers every placed layout: a
+`side`, `pip`, `band` or `full` that holds with nothing in the room it makes is the head made
+small for nothing, and is reported the same way.
 
 ## How the picture changes at a boundary
 
