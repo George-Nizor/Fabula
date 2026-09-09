@@ -321,3 +321,13 @@ test("a clip placement reads the file from its own offset and waits, transparent
   const contained = chunkGraph({ chunk: { start: 105, end: 130, frames: 750 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [clipPlacements([{ ...scene, fit: "contain" }], { start: 105, end: 130 })[0]] });
   assert.ok(contained.includes("force_original_aspect_ratio=decrease") && !contained.includes("tpad"), "contain letterboxes; a scene already running does not wait");
 });
+
+test("a grade goes on the footage before it is shaped, and the vignette after, on both head routes", () => {
+  const chunk = { start: 0, end: 12, frames: 360 };
+  const plain = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [] });
+  assert.ok(!plain.includes("eq=") && !plain.includes("vignette"), "no grade is no filter");
+  const graded = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], grade: { contrast: 1.2, vignette: 0.5 } });
+  inOrder(graded, ["[2:v]eq=contrast=1.2:saturation=1:brightness=0,format=rgba[h0]", "alphamerge,scale=", ",vignette=angle=", "[head]"]);
+  const punched = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], punch, grade: { warmth: 0.3 } });
+  inOrder(punched, ["[2:v]colortemperature=temperature=7040:mix=1,format=rgba,scale=w=", "[hz]"]);
+});

@@ -471,6 +471,13 @@ the sharpest.
 
 Duration is separate from style, because "too fast" and "wrong technique" are different
 complaints: `set_theme transitionSeconds` takes 0.3–1.8 and overrides the style's own pace.
+
+The grade on the footage is the theme's too: `set_theme grade` takes `contrast` (0.7–1.5),
+`saturation` (0–2), `lift` (-0.2–0.2), `warmth` (cool -1 to warm 1) and `vignette` (0–1),
+neutral by default, each field `null` to return it to neutral. It goes on the head before
+anything is laid over it — eq, a colour temperature and a vignette in the film, the nearest
+CSS in the window's Footage sliders — and a change re-renders every chunk, like the field.
+Grade lightly: a talking head wants to look like a person in a room, not a poster.
 The Look step has both, with a card for each style that plays it.
 
 A dissolve between two visible layouts splits its time either side of the boundary, so the

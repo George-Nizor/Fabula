@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PRESETS, resolveTheme, validateTheme, describePresets } from "../core/themes.mjs";
+import * as themes from "../core/themes.mjs";
 import { describeLook } from "../core/themes.mjs";
 
 test("an empty theme is the studio preset with every token present", () => {
@@ -80,4 +81,21 @@ test("an inherited object key is not a preset, null fonts are refused, and the p
   assert.equal(plain.transitionSeconds, null, "nothing explicit: every boundary takes its style's pace");
   assert.equal(plain.transitionSecondsDefault, 0, "cut has no pace to show");
   assert.equal(resolveTheme({ preset: "studio", transitionSeconds: 1.2 }).transitionSeconds, 1.2);
+});
+
+test("the grade is neutral by default, bounded, and speaks ffmpeg and CSS", () => {
+  const { GRADE_DEFAULTS, gradeFilters, resolveTheme, validateTheme } = themes;
+  assert.deepEqual(resolveTheme({}).grade, GRADE_DEFAULTS);
+  assert.deepEqual(gradeFilters(null), { pre: "", post: "", css: "none", vignette: 0 });
+  assert.throws(() => validateTheme({ grade: { contrast: 3 } }), /0\.7 to 1\.5/);
+  assert.throws(() => validateTheme({ grade: { tint: 1 } }), /no "tint"/);
+  const warm = gradeFilters({ contrast: 1.1, warmth: 0.5, vignette: 0.4 });
+  assert.match(warm.pre, /^eq=contrast=1\.1:saturation=1:brightness=0,colortemperature=temperature=7400:mix=1,$/);
+  assert.match(warm.post, /^,vignette=angle=0\.2513:mode=forward$/);
+  assert.equal(warm.css, "contrast(1.1) sepia(0.175)");
+  assert.equal(warm.vignette, 0.4);
+  const cool = gradeFilters({ warmth: -1 });
+  assert.match(cool.pre, /temperature=4700/);
+  assert.equal(cool.css, "hue-rotate(-12deg)");
+  assert.deepEqual(resolveTheme({ grade: { saturation: null, lift: 0.1 } }).grade, { ...GRADE_DEFAULTS, lift: 0.1 }, "null returns a field to neutral");
 });

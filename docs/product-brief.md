@@ -66,6 +66,14 @@ the level is set so a loudness target is met on the cleaned voice. Measured on e
 of the reference short: the noise floor from -63 dB to -81 dB with the voice's RMS within half
 a decibel of where it was. Opt-in, because a floor taken too far down sounds like a booth.
 
+## The grade (2026-09-10)
+
+The theme carries a grade on the footage: contrast, saturation, lift, warmth and vignette,
+neutral by default. The render applies it exactly — eq and a colour temperature on the source
+before it is shaped, the vignette after the scale so it sits on the card — and the window
+shows the nearest CSS can do through the Look page's Footage sliders. It is part of the theme
+so a brand carries it, and part of every chunk's identity so a change re-renders the film.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

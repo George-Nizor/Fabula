@@ -332,7 +332,7 @@ async function main() {
     };
 
     const encodeChunk = async (chunk, tag, work, screens) => {
-      const graph = plan.chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch: punchSpans, fps: FPS });
+      const graph = plan.chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch: punchSpans, fps: FPS, grade: theme.grade });
       const graphFile = path.join(work, "graph.txt");
       fs.writeFileSync(graphFile, graph);
       const D = String(chunk.frames / FPS);

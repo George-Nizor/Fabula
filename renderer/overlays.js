@@ -76,12 +76,28 @@ const stack = (family, fallback) => `"${family}", ${fallback}`;
 
 // The theme as CSS custom properties and classes on the frame — the
 // container every cq unit and every colour below reads from.
+// Mirrors core/themes.mjs gradeFilters' css branch; the painter has no import path.
+function gradeCss(g) {
+  const contrast = g.contrast ?? 1, saturation = g.saturation ?? 1, lift = g.lift ?? 0, warmth = g.warmth ?? 0, vignette = g.vignette ?? 0;
+  const css = [
+    contrast !== 1 ? `contrast(${contrast})` : "",
+    saturation !== 1 ? `saturate(${saturation})` : "",
+    lift !== 0 ? `brightness(${(1 + lift).toFixed(3)})` : "",
+    warmth > 0 ? `sepia(${(warmth * 0.35).toFixed(3)})` : warmth < 0 ? `hue-rotate(${Math.round(warmth * 12)}deg)` : "",
+  ].filter(Boolean).join(" ");
+  return { css: css || "none", vignette };
+}
+
 function applyTheme(frameEl, theme) {
   const key = JSON.stringify(theme);
   if (frameEl.dataset.theme === key) return;
   frameEl.dataset.theme = key;
   const s = frameEl.style;
   s.setProperty("--ov-accent", theme.accent);
+  // The footage's grade, as near as CSS gets to the film's; the film's is exact.
+  const graded = theme.grade ? gradeCss(theme.grade) : { css: "none", vignette: 0 };
+  s.setProperty("--ov-grade", graded.css);
+  s.setProperty("--ov-vignette", String(graded.vignette));
   s.setProperty("--ov-accent2", theme.accent2);
   s.setProperty("--ov-on-accent", luminance(theme.accent) > 0.5 ? "#111111" : "#ffffff");
   s.setProperty("--ov-text", theme.text);

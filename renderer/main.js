@@ -62,6 +62,10 @@ const els = {
   themeFontDisplay: $("theme-font-display"), themeFontBody: $("theme-font-body"), themeFontSerif: $("theme-font-serif"),
   themeTitleCase: $("theme-title-case"), themeRadius: $("theme-radius"), themeRadiusValue: $("theme-radius-value"),
   themeGlow: $("theme-glow"), themeGlowValue: $("theme-glow-value"),
+  gradeContrast: $("grade-contrast"), gradeContrastValue: $("grade-contrast-value"),
+  gradeSaturation: $("grade-saturation"), gradeSaturationValue: $("grade-saturation-value"),
+  gradeWarmth: $("grade-warmth"), gradeWarmthValue: $("grade-warmth-value"),
+  gradeVignette: $("grade-vignette"), gradeVignetteValue: $("grade-vignette-value"),
   themeTransitionSeconds: $("theme-transition-seconds"), themeTransitionSecondsValue: $("theme-transition-seconds-value"),
   themeCaptions: $("theme-captions"), captionsNote: $("captions-note"),
   themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
@@ -983,6 +987,12 @@ function renderLookPage() {
   els.themeRadiusValue.textContent = theme.radius === 0 ? "square" : `${theme.radius.toFixed(1)}×`;
   if (!held(els.themeGlow)) els.themeGlow.value = String(theme.glow);
   els.themeGlowValue.textContent = theme.glow === 0 ? "none" : `${Math.round(theme.glow * 100)}%`;
+  const grade = theme.grade ?? {};
+  const show = (el, out, value, text) => { if (!held(el)) el.value = String(value); out.textContent = text; };
+  show(els.gradeContrast, els.gradeContrastValue, grade.contrast ?? 1, (grade.contrast ?? 1) === 1 ? "as shot" : `${(grade.contrast ?? 1).toFixed(2)}×`);
+  show(els.gradeSaturation, els.gradeSaturationValue, grade.saturation ?? 1, (grade.saturation ?? 1) === 1 ? "as shot" : `${(grade.saturation ?? 1).toFixed(2)}×`);
+  show(els.gradeWarmth, els.gradeWarmthValue, grade.warmth ?? 0, (grade.warmth ?? 0) === 0 ? "as shot" : (grade.warmth > 0 ? `warm ${Math.round(grade.warmth * 100)}%` : `cool ${Math.round(-grade.warmth * 100)}%`));
+  show(els.gradeVignette, els.gradeVignetteValue, grade.vignette ?? 0, (grade.vignette ?? 0) === 0 ? "none" : `${Math.round(grade.vignette * 100)}%`);
   const seconds = theme.transitionSeconds ?? theme.transitionSecondsDefault ?? 0;
   if (!held(els.themeTransitionSeconds)) els.themeTransitionSeconds.value = String(seconds);
   els.themeTransitionSecondsValue.textContent = theme.transition === "cut" ? "n/a" : `${seconds.toFixed(1)} s`;
@@ -2031,6 +2041,17 @@ const themeNumber = (el, key, show) => {
 };
 themeNumber(els.themeRadius, "radius", (v) => { els.themeRadiusValue.textContent = v === 0 ? "square" : `${v.toFixed(1)}×`; });
 themeNumber(els.themeGlow, "glow", (v) => { els.themeGlowValue.textContent = v === 0 ? "none" : `${Math.round(v * 100)}%`; });
+// The grade's sliders write one field each; the neutral value clears it.
+const gradeNumber = (el, key, neutral, show) => {
+  let pending = null;
+  const apply = () => { pending = null; const v = Number(el.value); setTheme({ grade: { [key]: Math.abs(v - neutral) < 1e-6 ? null : v } }); };
+  el.addEventListener("input", () => { show(Number(el.value)); if (pending === null) pending = setTimeout(apply, 120); });
+  el.addEventListener("change", () => { clearTimeout(pending); apply(); });
+};
+gradeNumber(els.gradeContrast, "contrast", 1, (v) => { els.gradeContrastValue.textContent = v === 1 ? "as shot" : `${v.toFixed(2)}×`; });
+gradeNumber(els.gradeSaturation, "saturation", 1, (v) => { els.gradeSaturationValue.textContent = v === 1 ? "as shot" : `${v.toFixed(2)}×`; });
+gradeNumber(els.gradeWarmth, "warmth", 0, (v) => { els.gradeWarmthValue.textContent = v === 0 ? "as shot" : (v > 0 ? `warm ${Math.round(v * 100)}%` : `cool ${Math.round(-v * 100)}%`); });
+gradeNumber(els.gradeVignette, "vignette", 0, (v) => { els.gradeVignetteValue.textContent = v === 0 ? "none" : `${Math.round(v * 100)}%`; });
 themeNumber(els.themeTransitionSeconds, "transitionSeconds", (v) => { els.themeTransitionSecondsValue.textContent = `${v.toFixed(1)} s`; });
 els.themeTitleCase.addEventListener("change", () => setTheme({ titleCase: els.themeTitleCase.value }));
 for (const [el, key] of [[els.themeFontDisplay, "display"], [els.themeFontBody, "body"], [els.themeFontSerif, "serif"]]) {

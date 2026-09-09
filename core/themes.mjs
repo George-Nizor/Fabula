@@ -171,6 +171,7 @@ export function validateTheme(theme) {
       if (theme.fonts[key] !== undefined && (typeof theme.fonts[key] !== "string" || theme.fonts[key].length === 0)) throw new Error(`theme fonts.${key} must be a font family name`);
     }
   }
+  validateGrade(theme.grade);
   if (theme.titleStyle !== undefined && !TITLE_STYLES.has(theme.titleStyle)) throw new Error(`theme titleStyle must be one of ${[...TITLE_STYLES].join(", ")}`);
   if (theme.calloutStyle !== undefined && !CALLOUT_STYLES.has(theme.calloutStyle)) throw new Error(`theme calloutStyle must be one of ${[...CALLOUT_STYLES].join(", ")}`);
   if (theme.captionStyle !== undefined && !CAPTION_STYLES.has(theme.captionStyle)) throw new Error(`theme captionStyle must be one of ${[...CAPTION_STYLES].join(", ")}`);
@@ -195,6 +196,56 @@ export function validateTheme(theme) {
 
 // Preset plus overrides, every token present. What the stage, the export
 // and the cache key consume.
+// The grade on the footage: what every editor reaches for before anything
+// is laid over the picture. Contrast and saturation as multipliers, lift as
+// a brightness offset, warmth from cool (-1) to warm (1), vignette 0–1.
+// Neutral is no filter at all, so a film with no grade renders as before.
+export const GRADE_DEFAULTS = Object.freeze({ contrast: 1, saturation: 1, lift: 0, warmth: 0, vignette: 0 });
+export const GRADE_RANGES = Object.freeze({ contrast: [0.7, 1.5], saturation: [0, 2], lift: [-0.2, 0.2], warmth: [-1, 1], vignette: [0, 1] });
+
+export function validateGrade(grade) {
+  if (grade === undefined || grade === null) return;
+  if (typeof grade !== "object" || Array.isArray(grade)) throw new Error("theme grade must be { contrast?, saturation?, lift?, warmth?, vignette? }");
+  for (const [key, value] of Object.entries(grade)) {
+    const range = GRADE_RANGES[key];
+    if (!range) throw new Error(`theme grade has no "${key}"; the fields are ${Object.keys(GRADE_RANGES).join(", ")}`);
+    if (value !== null && !(typeof value === "number" && value >= range[0] && value <= range[1])) throw new Error(`theme grade.${key} is a number from ${range[0]} to ${range[1]}`);
+  }
+}
+
+export function resolveGrade(grade) {
+  const out = { ...GRADE_DEFAULTS };
+  for (const [key, value] of Object.entries(grade ?? {})) if (value !== null && value !== undefined) out[key] = value;
+  return out;
+}
+
+export const gradeIsNeutral = (grade) => Object.entries(GRADE_DEFAULTS).every(([key, value]) => Math.abs((grade?.[key] ?? value) - value) < 1e-6);
+
+// The same grade in ffmpeg's words (the render) and the browser's (the
+// window). eq's contrast and saturation are multipliers like CSS's; lift is
+// eq's brightness offset, CSS's brightness factor; warmth is a colour
+// temperature in the film and, as near as CSS gets, a touch of sepia or a
+// cooling hue turn in the window — the film's is the exact one.
+export function gradeFilters(grade) {
+  const g = resolveGrade(grade);
+  if (gradeIsNeutral(g)) return { pre: "", post: "", css: "none", vignette: 0 };
+  const parts = [];
+  if (g.contrast !== 1 || g.saturation !== 1 || g.lift !== 0) parts.push(`eq=contrast=${g.contrast}:saturation=${g.saturation}:brightness=${g.lift}`);
+  if (g.warmth !== 0) parts.push(`colortemperature=temperature=${Math.round(6500 + g.warmth * 1800)}:mix=1`);
+  const css = [
+    g.contrast !== 1 ? `contrast(${g.contrast})` : "",
+    g.saturation !== 1 ? `saturate(${g.saturation})` : "",
+    g.lift !== 0 ? `brightness(${(1 + g.lift).toFixed(3)})` : "",
+    g.warmth > 0 ? `sepia(${(g.warmth * 0.35).toFixed(3)})` : g.warmth < 0 ? `hue-rotate(${Math.round(g.warmth * 12)}deg)` : "",
+  ].filter(Boolean).join(" ");
+  return {
+    pre: parts.length ? `${parts.join(",")},` : "",
+    post: g.vignette > 0 ? `,vignette=angle=${(Math.PI / 5 * g.vignette).toFixed(4)}:mode=forward` : "",
+    css: css || "none",
+    vignette: g.vignette,
+  };
+}
+
 export function resolveTheme(theme) {
   validateTheme(theme);
   const preset = Object.hasOwn(PRESETS, theme?.preset ?? "studio") ? PRESETS[theme?.preset ?? "studio"] : PRESETS.studio;
@@ -212,6 +263,7 @@ export function resolveTheme(theme) {
     cardBlur: preset.cardBlur,
     radius: theme?.radius ?? preset.radius,
     glow: theme?.glow ?? preset.glow,
+    grade: resolveGrade(theme?.grade),
     fonts: { ...preset.fonts, ...(theme?.fonts ?? {}) },
     titleStyle: theme?.titleStyle ?? preset.titleStyle,
     calloutStyle: theme?.calloutStyle ?? preset.calloutStyle,

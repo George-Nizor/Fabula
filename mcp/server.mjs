@@ -1760,6 +1760,13 @@ const themeShape = {
     .describe(`How the picture changes at every layout boundary: dissolve (${TRANSITION_SECONDS.dissolve}s — the head fades out, the arrangement changes, it fades back; nothing slides), glide (${TRANSITION_SECONDS.glide}s — the head travels between rectangles), cut (one frame). A boundary a cutaway touches always dissolves: there is nothing to fly to.`),
   transitionSeconds: z.number().min(0.3).max(1.8).nullable().optional().describe("How long every layout boundary takes, 0.3–1.8 s, overriding the style's own pace (glide 0.9, dissolve 0.5); null restores the style's own"),
   glow: z.number().min(0).max(0.4).optional().describe("Strength of the accent light on the field, 0 off"),
+  grade: z.object({
+    contrast: z.number().min(0.7).max(1.5).nullable().optional(),
+    saturation: z.number().min(0).max(2).nullable().optional(),
+    lift: z.number().min(-0.2).max(0.2).nullable().optional().describe("Brightness offset"),
+    warmth: z.number().min(-1).max(1).nullable().optional().describe("Cool (-1) to warm (1); a colour temperature in the film"),
+    vignette: z.number().min(0).max(1).nullable().optional(),
+  }).optional().describe("The grade on the footage itself, before anything is laid over it: multipliers of 1 and offsets of 0 are neutral; null returns a field to neutral. The film's grade is exact (eq, colour temperature, vignette); the window shows the nearest CSS has."),
   radius: z.number().min(0).max(2).optional().describe("Corner rounding multiplier, 0 square"),
   logo: z.object({
     src: z.string().describe("project-relative png/jpg/webp, e.g. assets/logo.png (fetch_image or the inspector puts it there)"),
@@ -1812,6 +1819,11 @@ server.registerTool("set_theme", {
   let theme = use ? { ...loadTheme(mediaRoot(), use) } : reset ? (config.theme?.preset ? { preset: config.theme.preset } : {}) : { ...(config.theme ?? {}) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete theme[key];
+    else if (key === "grade") {
+      theme.grade = { ...(theme.grade ?? {}) };
+      for (const [name, number] of Object.entries(value ?? {})) { if (number === null) delete theme.grade[name]; else theme.grade[name] = number; }
+      if (Object.keys(theme.grade).length === 0) delete theme.grade;
+    }
     else if (key === "fonts") {
       for (const face of Object.values(value ?? {})) {
         if (face != null && !VENDORED_FONTS.includes(face)) throw new Error(`"${face}" is not a vendored face; the film can only draw ${VENDORED_FONTS.join(", ")}`);

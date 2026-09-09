@@ -6,6 +6,7 @@
 
 import { layoutRects, layoutAt, transitionAt, headDrawRect, MAX_TRANSITION_SECONDS } from "./stage-engine.mjs";
 import { punchScaleAt } from "./shot-engine.mjs";
+import { gradeFilters } from "./themes.mjs";
 
 export const RENDERER_VERSION = "layered-3"; // 2: punch-ins placed here; 3: themed, time-driven painter
 export const DEFAULT_CHUNK_SECONDS = 120;
@@ -341,7 +342,10 @@ function maskLines(head, canvas, fade) {
   return lines;
 }
 
-export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch = [], fps = 30 }) {
+export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch = [], fps = 30, grade = null }) {
+  // The grade goes on the footage before it is shaped: eq and temperature
+  // on the source, the vignette after the scale so it sits on the card.
+  const graded = grade ? gradeFilters(grade) : { pre: "", post: "" };
   const head = headExpressions(timeline, videoAspect, stage, chunk.start);
   const glow = glowExpressions(stage, glowSize, chunk.start);
   const punched = punchPlacements(punch, chunk);
@@ -383,9 +387,9 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     // Nothing crops and nothing zooms: the head and its mask are the same
     // rectangle, so they scale together in one filter and land in one
     // overlay. Every landscape film takes this path.
-    lines.push("[2:v]format=rgba[h0]");
+    lines.push(`[2:v]${graded.pre}format=rgba[h0]`);
     lines.push(`[3:v]format=gray${fade}[hm]`);
-    lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[head]`);
+    lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic${graded.post}[head]`);
     lines.push(`[bu][head]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto[bh]`);
   } else {
     // The head is drawn at one rectangle and seen through another. A punch-in
@@ -400,7 +404,7 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     const dh = flat ? draw.h : `(${draw.h})*(${S})`;
     const dx = flat ? draw.x : `(${draw.x})-((${draw.w})*(${S})-(${draw.w}))/2`;
     const dy = flat ? draw.y : `(${draw.y})-((${draw.h})*(${S})-(${draw.h}))/2`;
-    lines.push(`[2:v]format=rgba,scale=w='${dw}':h='${dh}':eval=frame:flags=bicubic[hz]`);
+    lines.push(`[2:v]${graded.pre}format=rgba,scale=w='${dw}':h='${dh}':eval=frame:flags=bicubic${graded.post}[hz]`);
     lines.push(`color=c=black@0:${canvas},format=rgba[hbase]`);
     lines.push(`[hbase][hz]overlay=x='${dx}':y='${dy}':eval=frame:format=auto[hc]`);
     lines.push(...maskLines(head, canvas, fade));

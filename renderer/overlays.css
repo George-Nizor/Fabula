@@ -869,3 +869,15 @@
    captions — in the middle only when the stage is the word's alone. */
 .ov-kinetic.is-low { top: 68cqh; }
 .is-tall .ov-kinetic.is-low { top: 62cqh; font-size: 14cqmin; }
+
+/* ---- The grade on the footage ---- */
+
+.stage-head video { filter: var(--ov-grade, none); }
+.stage-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 calc(18cqmin * var(--ov-vignette, 0)) calc(4cqmin * var(--ov-vignette, 0)) rgba(0, 0, 0, calc(0.75 * var(--ov-vignette, 0)));
+}
