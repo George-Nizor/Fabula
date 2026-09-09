@@ -12,6 +12,15 @@ card scopes its CSS to itself (a collision found by putting all the templates on
 checks that found these — the window photographing itself, the template probe, the film sheet —
 are in the repo, because that is where the next such fault will be found.
 
+The same day, five fresh readers were put over the code in turn — the new core modules, the
+painter and scripts, the docs against the schemas, the older engines, the server and the app —
+and found fifty-three real defects between them, every one fixed with a test where one could be
+written. Two are worth naming as decisions: `set_scenes` now spreads the previous compose.json
+under what it was given, so nothing a sibling tool wrote is ever dropped by a rewrite; and both
+processes write review.json and compose.json beside and rename, so the other side's poll never
+reads a truncated file. The lesson recorded for next time: after any large burst of authoring,
+the readings come before the claim of done.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
