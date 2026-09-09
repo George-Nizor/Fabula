@@ -900,13 +900,13 @@ window.FabulaStage = {
         // with the shade its template draws — rather than under it.
         parts.push({ key, kind: "graphic", layer: scene.graphic.over ? "over" : "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
         if (scene.graphic.kind === "screen" && rect && stage) {
-          screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end };
+          screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, edgeIn: Boolean(scene.edgeIn), edgeOut: Boolean(scene.edgeOut) };
         }
         // B-roll: one clip at a time is placed as media in the card's rect,
         // the way the screen track is; a second one showing at once is the
         // plan's fault and the read-back says so.
         if (scene.graphic.kind === "clip" && rect && stage && !clip) {
-          clip = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, src: scene.graphic.src, url: scene.graphic.url ?? scene.graphic.src, in: scene.graphic.in ?? 0, fit: scene.graphic.fit ?? "cover" };
+          clip = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, edgeIn: Boolean(scene.edgeIn), edgeOut: Boolean(scene.edgeOut), src: scene.graphic.src, url: scene.graphic.url ?? scene.graphic.src, in: scene.graphic.in ?? 0, fit: scene.graphic.fit ?? "cover" };
         }
       } else if (scene.type === "kinetic") {
         // Giant word-by-word type, riding the per-word spans; the caption

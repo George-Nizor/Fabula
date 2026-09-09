@@ -264,7 +264,8 @@ export function screenPlacements(screenScenes, chunk) {
     .map((scene) => {
       const span = scene.end - scene.start;
       const fade = Math.max(span * 0.07, 0.05);
-      return { rect: scene.rect, start: scene.start - chunk.start, end: scene.end - chunk.start, fade };
+      // Whole at the film's edges, as the painter draws it (edged()).
+      return { rect: scene.rect, start: scene.start - chunk.start, end: scene.end - chunk.start, fade, fadeIn: !scene.edgeIn, fadeOut: !scene.edgeOut };
     });
 }
 
@@ -280,10 +281,12 @@ export function clipPlacements(clipScenes, chunk) {
       const fade = Math.max(span * 0.07, 0.05);
       const start = scene.start - chunk.start;
       return {
-        rect: scene.rect, start, end: scene.end - chunk.start, fade,
+        rect: scene.rect, start, end: scene.end - chunk.start, fade, fadeIn: !scene.edgeIn, fadeOut: !scene.edgeOut,
         src: scene.src, fit: scene.fit ?? "cover",
         offset: Number(((scene.in ?? 0) + Math.max(0, -start)).toFixed(3)),
         delay: Number(Math.max(0, start).toFixed(3)),
+        // A clip shorter than its card holds its last frame to the card's end.
+        hold: Number(Math.max(0.1, scene.end - Math.max(scene.start, chunk.start)).toFixed(3)),
       };
     });
 }
@@ -370,13 +373,17 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     // A scene already in progress when the chunk starts has faded in
     // already; fading it in again at the boundary would replay the fade
     // every two minutes of a long screen scene.
-    const fadeIn = screen.start >= 0 ? `fade=t=in:st=${num(screen.start)}:d=${num(screen.fade)}:alpha=1,` : "";
+    const fadeIn = screen.start >= 0 && screen.fadeIn !== false ? `fade=t=in:st=${num(screen.start)}:d=${num(screen.fade)}:alpha=1,` : "";
+    const fadeOut = screen.fadeOut !== false ? `fade=t=out:st=${num(fadeOutAt)}:d=${num(screen.fade)}:alpha=1` : "null";
     // A clip whose scene begins inside the chunk waits, transparent, until
-    // it does: its input was read from the clip's own start.
+    // it does: its input was read from the clip's own start. One shorter
+    // than its card clones its last frame to the card's end, so the fade
+    // out still happens on a picture.
+    const hold = screen.src && screen.hold ? `tpad=stop_mode=clone:stop_duration=${num(screen.hold)},` : "";
     const delay = screen.delay > 0 ? `tpad=start_duration=${num(screen.delay)}:color=black@0,` : "";
     lines.push(
-      `[sc${k}][sm${k}]alphamerge,${delay}${fadeIn}` +
-      `fade=t=out:st=${num(fadeOutAt)}:d=${num(screen.fade)}:alpha=1[scr${k}]`,
+      `[sc${k}][sm${k}]alphamerge,${hold}${delay}${fadeIn}` +
+      `${fadeOut}[scr${k}]`,
     );
     lines.push(`[${base}][scr${k}]overlay=x=${rect.x}:y=${rect.y}:enable='between(t,${num(screen.start)},${num(screen.end)})':format=auto[bs${k}]`);
     base = `bs${k}`;
@@ -387,9 +394,14 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     // Nothing crops and nothing zooms: the head and its mask are the same
     // rectangle, so they scale together in one filter and land in one
     // overlay. Every landscape film takes this path.
-    lines.push(`[2:v]${graded.pre}format=rgba[h0]`);
+    // The vignette goes on the footage before its alpha exists (vignette
+    // takes yuv or grey and drops an alpha plane). On this route the card
+    // shows the whole frame, so a vignette in source space IS the card's;
+    // splitting after the scale to re-attach the alpha was tried and tore,
+    // the two branches landing a frame apart while a glide changed the size.
+    lines.push(`[2:v]${graded.pre}${graded.post ? `${graded.post},` : ""}format=rgba[h0]`);
     lines.push(`[3:v]format=gray${fade}[hm]`);
-    lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic${graded.post}[head]`);
+    lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[head]`);
     lines.push(`[bu][head]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto[bh]`);
   } else {
     // The head is drawn at one rectangle and seen through another. A punch-in
@@ -404,7 +416,9 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     const dh = flat ? draw.h : `(${draw.h})*(${S})`;
     const dx = flat ? draw.x : `(${draw.x})-((${draw.w})*(${S})-(${draw.w}))/2`;
     const dy = flat ? draw.y : `(${draw.y})-((${draw.h})*(${S})-(${draw.h}))/2`;
-    lines.push(`[2:v]${graded.pre}format=rgba,scale=w='${dw}':h='${dh}':eval=frame:flags=bicubic${graded.post}[hz]`);
+    // On the zoomed route the vignette goes on the footage before its alpha
+    // exists (source space, before format=rgba); the card's mask comes later.
+    lines.push(`[2:v]${graded.pre}${graded.post ? `${graded.post},` : ""}format=rgba,scale=w='${dw}':h='${dh}':eval=frame:flags=bicubic[hz]`);
     lines.push(`color=c=black@0:${canvas},format=rgba[hbase]`);
     lines.push(`[hbase][hz]overlay=x='${dx}':y='${dy}':eval=frame:format=auto[hc]`);
     lines.push(...maskLines(head, canvas, fade));

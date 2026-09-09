@@ -341,7 +341,8 @@ the stitch and therefore in seconds, never re-rendering a chunk:
 - **Voice clean-up** (`set_audio` with `voice_clean`): `light` takes the room's hum and the desk's
   rumble down and keeps the voice's air — most recordings want it; `strong` is for a poor
   microphone in a live room and softens sibilance too; `off` leaves it as recorded. It runs before
-  the level is set, so a target is met on the cleaned voice. Listen to a `render_final` span
+  the level is set; the level was measured on the voice as recorded, and the floor cut moves it
+  by a fraction of a decibel, which the stitch's own re-measure takes up. Listen to a `render_final` span
   before choosing strong: a floor taken down too far sounds like a booth.
 
 `get_scenes` carries the `audio` block; `music: null` removes the bed. Ask before adding

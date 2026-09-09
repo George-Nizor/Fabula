@@ -94,7 +94,10 @@ const READ_TOOLS = new Set([
   "adopt_persona", "read_craft", "read_story", "review_plan", "review_film", "check_scenes", "preview_frame", "preview_sheet", "film_sheet",
   "list_clean_words", "list_themes", "list_assets", "list_music", "search_images", "suggest_clips", "wait_render", "wait_for_input",
 ]);
-const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project", "create_short", "rename_project"]);
+const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project"]);
+// Tools that leave the pointer somewhere else than they found it; the
+// project they answered for is read back off the file when they finish.
+const MOVES_POINTER = new Set([...POINTER_TOOLS, "create_short", "rename_project"]);
 let adoptedPersona = null; // adopt_persona in this session; status reports it
 // Jobs are launched from the shared specs (scripts/project-state.mjs), the
 // same ones the window uses, so the two never drift in arguments.
@@ -216,7 +219,12 @@ function cleanWords(dir) {
 }
 
 function ok(payload) {
-  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
+  // Every answer names the project it is about, so a switch the person made
+  // in the window is never taken up silently by a read.
+  const named = payload && typeof payload === "object" && !Array.isArray(payload) && payload.project === undefined && answeredProject !== null
+    ? { project: answeredProject, ...payload }
+    : payload;
+  return { content: [{ type: "text", text: JSON.stringify(named, null, 2) }] };
 }
 
 function describeCut(cut, index, wordText) {
@@ -288,7 +296,12 @@ The first pass (transcript, framing scan, cut proposals) runs by itself when the
   const register = server.registerTool.bind(server);
   server.registerTool = (name, spec, handler) => register(name, spec, async (...args) => {
     activeTool = name;
-    try { return await handler(...args); } finally { activeTool = null; }
+    try { return await handler(...args); } finally {
+      activeTool = null;
+      if (MOVES_POINTER.has(name)) {
+        try { answeredProject = fs.existsSync(pointerFile()) ? JSON.parse(fs.readFileSync(pointerFile(), "utf8")).dir : null; } catch { /* the next read takes it up */ }
+      }
+    }
   });
 }
 
@@ -545,8 +558,10 @@ server.registerTool("set_framing", {
   const dir = currentProjectDir();
   const paths = projectPaths(dir);
   if (!segments || segments.length === 0) {
+    const had = fs.existsSync(paths.framing);
     fs.rmSync(paths.framing, { force: true });
-    return ok({ framing: null, stale: ["clean"], hint: "the clean cut was framed by the segments just removed; render_clean re-renders it unframed" });
+    const rendered = had && fs.existsSync(paths.clean);
+    return ok({ framing: null, ...(rendered ? { stale: ["clean"], hint: "the clean cut was framed by the segments just removed; render_clean re-renders it unframed" } : { hint: had ? "framing removed; nothing rendered depends on it yet" : "there was no framing to remove" }) });
   }
   const dims = probeDimensions(paths.video);
   const duration = probeDuration(paths.video);
@@ -1081,6 +1096,7 @@ server.registerTool("set_scenes", {
     ...(scene.insert_id ? { insertId: scene.insert_id } : {}),
   })), { format: projectFormat(dir) });
   validateScenes(shaped, words);
+  assertAssets(dir, shaped);
   const previous = readComposeConfig(dir);
   const mergedTheme = theme ? { ...(previous.theme ?? {}), ...theme } : previous.theme;
   validateTheme(mergedTheme);
@@ -1357,7 +1373,7 @@ const scenePatchShape = {
   transition: z.enum([...TRANSITIONS]).nullable().optional(),
   fromWordId: z.number().int().min(0).optional().describe("The same as from_word_id, as get_scenes spells it"),
   toWordId: z.number().int().min(0).optional().describe("The same as to_word_id, as get_scenes spells it"),
-  graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. `params` merges too, one param at a time. A different kind or template is a new card: give the whole graphic, nothing of the old one carries over."),
+  graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. `params` merges too, one param at a time. A different kind or template, or hand-written html in place of a template, is a new card: give the whole graphic, nothing of the old one carries over."),
 };
 
 const applyPatch = (scene, patch) => {
@@ -1376,7 +1392,11 @@ const applyPatch = (scene, patch) => {
     // fields — least of all a template's rendering — must not carry over.
     const newKind = graphic.kind !== undefined && graphic.kind !== current.kind;
     const newTemplate = graphic.template !== undefined && graphic.template !== current.template;
-    const next = newKind || newTemplate ? {} : { ...current };
+    // Hand-written html on a template card is a new card too: the template
+    // would otherwise re-render over it and the html never land.
+    const handWritten = graphic.html !== undefined && graphic.template === undefined && current.template !== undefined;
+    const next = newKind || newTemplate || handWritten ? {} : { ...current };
+    if (handWritten && graphic.kind === undefined) next.kind = "custom";
     if (newTemplate && graphic.kind === undefined) next.kind = "custom";
     for (const [key, value] of Object.entries(graphic)) {
       if (value === null) delete next[key];
@@ -1957,7 +1977,7 @@ server.registerTool("import_clip", {
 });
 
 server.registerTool("list_assets", {
-  description: "Pictures already in the project's assets/ (fetched, or chosen in the inspector), as project-relative srcs.",
+  description: "Pictures and clips already in the project's assets/ (fetched, imported, or chosen in the inspector), as project-relative srcs; a clip carries its length in seconds.",
   inputSchema: {},
 }, async () => {
   const dir = currentProjectDir();

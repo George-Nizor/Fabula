@@ -316,14 +316,14 @@ async function main() {
         const s = keys[i].screen;
         if (!s) continue;
         const known = screenScenes.find((x) => x.start === s.start && x.end === s.end);
-        if (!known) screenScenes.push({ start: s.start, end: s.end, rect: s.rect });
+        if (!known) screenScenes.push({ start: s.start, end: s.end, rect: s.rect, edgeIn: s.edgeIn, edgeOut: s.edgeOut });
       }
       // Clip (B-roll) scenes likewise, each with its file and offset.
       const clipScenes = [];
       for (let i = 0; i < chunk.frames; i += 1) {
         const c = keys[i].clip;
         if (!c) continue;
-        if (!clipScenes.find((x) => x.start === c.start && x.end === c.end && x.src === c.src)) clipScenes.push({ start: c.start, end: c.end, rect: c.rect, src: c.src, in: c.in, fit: c.fit });
+        if (!clipScenes.find((x) => x.start === c.start && x.end === c.end && x.src === c.src)) clipScenes.push({ start: c.start, end: c.end, rect: c.rect, src: c.src, in: c.in, fit: c.fit, edgeIn: c.edgeIn, edgeOut: c.edgeOut });
       }
       const screens = [...(hasScreen ? plan.screenPlacements(screenScenes, chunk) : []), ...plan.clipPlacements(clipScenes, chunk)];
       const captured = states.under.length + states.over.length;

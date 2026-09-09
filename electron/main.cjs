@@ -1086,6 +1086,13 @@ app.whenReady().then(() => {
         const theme = { ...(config.theme ?? {}) };
         for (const [key, value] of Object.entries(patch.theme)) {
           if (key === "logoCorner") { if (theme.logo) theme.logo = { ...theme.logo, corner: value }; continue; }
+          if (key === "grade" && value && typeof value === "object") {
+            // One slider, one field; the others stay.
+            const grade = { ...(theme.grade ?? {}) };
+            for (const [name, number] of Object.entries(value)) { if (number === null) delete grade[name]; else grade[name] = number; }
+            if (Object.keys(grade).length) theme.grade = grade; else delete theme.grade;
+            continue;
+          }
           if (value === null || value === "") delete theme[key];
           else theme[key] = value;
         }

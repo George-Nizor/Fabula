@@ -317,9 +317,16 @@ test("a clip placement reads the file from its own offset and waits, transparent
   assert.equal(straddling.delay, 0);
   assert.equal(straddling.offset, 8, "in plus the five seconds already played");
   const graph = chunkGraph({ chunk: { start: 96, end: 120, frames: 720 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [inside] });
-  inOrder(graph, ["[6:v]scale=400:300:force_original_aspect_ratio=increase", "crop=400:300", "alphamerge,tpad=start_duration=4:color=black@0,fade=t=in", "enable='between(t,4,14)'"]);
+  inOrder(graph, ["[6:v]scale=400:300:force_original_aspect_ratio=increase", "crop=400:300", "alphamerge,tpad=stop_mode=clone:stop_duration=10,tpad=start_duration=4:color=black@0,fade=t=in", "fade=t=out", "enable='between(t,4,14)'"]);
+  // A clip on the film's first or last words is whole at the edge, as the painter draws it.
+  const edged = clipPlacements([{ ...scene, start: 0.04, end: 12, edgeIn: true }], { start: 0, end: 30 })[0];
+  assert.equal(edged.fadeIn, false);
+  const edgedGraph = chunkGraph({ chunk: { start: 0, end: 30, frames: 900 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [edged] });
+  assert.ok(!edgedGraph.includes("fade=t=in:st=0.04"), "no fade in at the film's first frame");
+  const last = clipPlacements([{ ...scene, start: 20, end: 30, edgeOut: true }], { start: 0, end: 30 })[0];
+  assert.ok(!chunkGraph({ chunk: { start: 0, end: 30, frames: 900 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [last] }).includes("fade=t=out"), "nor a fade out at the last");
   const contained = chunkGraph({ chunk: { start: 105, end: 130, frames: 750 }, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [clipPlacements([{ ...scene, fit: "contain" }], { start: 105, end: 130 })[0]] });
-  assert.ok(contained.includes("force_original_aspect_ratio=decrease") && !contained.includes("tpad"), "contain letterboxes; a scene already running does not wait");
+  assert.ok(contained.includes("force_original_aspect_ratio=decrease") && !contained.includes("tpad=start_duration"), "contain letterboxes; a scene already running does not wait");
 });
 
 test("a grade goes on the footage before it is shaped, and the vignette after, on both head routes", () => {
@@ -327,7 +334,13 @@ test("a grade goes on the footage before it is shaped, and the vignette after, o
   const plain = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [] });
   assert.ok(!plain.includes("eq=") && !plain.includes("vignette"), "no grade is no filter");
   const graded = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], grade: { contrast: 1.2, vignette: 0.5 } });
-  inOrder(graded, ["[2:v]eq=contrast=1.2:saturation=1:brightness=0,format=rgba[h0]", "alphamerge,scale=", ",vignette=angle=", "[head]"]);
+  // The vignette drops alpha, so it goes on the footage before format=rgba on both routes;
+  // on the flat route the card shows the whole frame, so source space is the card's.
+  inOrder(graded, ["[2:v]eq=contrast=1.2:saturation=1:brightness=0,vignette=angle=", ",format=rgba[h0]", "alphamerge,scale=", "[head]"]);
+  assert.ok(!graded.includes("alphaextract"), "no split after the scale: it tears under a glide");
+  const zoomed = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], punch, grade: { vignette: 0.5 } });
+  inOrder(zoomed, ["[2:v]vignette=angle=", ",format=rgba,scale=w=", "[hz]"]);
+  assert.ok(!zoomed.includes("alphaextract"), "on the zoomed route the vignette goes on the footage before its alpha exists");
   const punched = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], punch, grade: { warmth: 0.3 } });
   inOrder(punched, ["[2:v]colortemperature=temperature=7040:mix=1,format=rgba,scale=w=", "[hz]"]);
 });

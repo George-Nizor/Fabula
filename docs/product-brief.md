@@ -82,6 +82,19 @@ YouTube's last twenty seconds with a heading and three empty frames where the pl
 its elements; and `render_thumbnail` `variants`, two to four lines rendered side by side at
 the size a feed shows them, which is the size to choose at.
 
+An eighth reader went over the day's additions before any were called done and found seven.
+The one worth remembering: ffmpeg's `vignette` takes only yuv or grey and silently drops an
+alpha plane, so a vignette placed after the head's mask made the head an opaque rectangle in
+every landscape film — over the cutaways too — while the window showed the right picture.
+Splitting after the scale to take the alpha off and put it back was tried and tore under a
+glide, the two branches landing a frame apart as the size changed; the vignette now goes on
+the footage before its alpha exists, on both routes, which on the flat route is the card's
+own space because the card shows the whole frame. The others: the window's Footage sliders replaced the whole
+grade on each move, `set_scenes` alone skipped the asset check, a project switch could be
+taken up by a read that never named the project (every answer now carries `project`), a clip
+on the film's edge faded in the film but not the window, and hand-written html patched onto a
+template card never landed.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

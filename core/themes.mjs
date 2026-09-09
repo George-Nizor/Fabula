@@ -240,7 +240,9 @@ export function gradeFilters(grade) {
   ].filter(Boolean).join(" ");
   return {
     pre: parts.length ? `${parts.join(",")},` : "",
-    post: g.vignette > 0 ? `,vignette=angle=${(Math.PI / 5 * g.vignette).toFixed(4)}:mode=forward` : "",
+    // vignette takes yuv or gray only and DROPS an alpha plane; the render
+    // attaches it where no alpha is at stake (see render-plan's head routes).
+    post: g.vignette > 0 ? `vignette=angle=${(Math.PI / 5 * g.vignette).toFixed(4)}:mode=forward` : "",
     css: css || "none",
     vignette: g.vignette,
   };

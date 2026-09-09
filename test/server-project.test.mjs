@@ -55,7 +55,9 @@ test("a write refuses when the open project moved under it, and a read takes the
       fs.writeFileSync(path.join(root, "current-project.json"), JSON.stringify({ dir: "one" }));
       assert.match(errorOf(await call(client, "set_captions", { mode: "open" })) ?? "", /changed from "two" to "one"/);
       assert.match(errorOf(await call(client, "set_captions", { mode: "open" })) ?? "", /changed from "two" to "one"/, "still refused until a read or a switch");
-      assert.equal(text(await call(client, "get_scenes")).scenes.length, 0);
+      const read = text(await call(client, "get_scenes"));
+      assert.equal(read.scenes.length, 0);
+      assert.equal(read.project, "one", "every answer names the project it is about");
       assert.equal(errorOf(await call(client, "set_captions", { mode: "open" })), null);
     });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -90,6 +92,12 @@ test("update_scenes merges params, replaces a card whose kind changes, takes get
       assert.match(errorOf(await call(client, "update_scenes", { patches: [{ index: 1, colour: "red" }] })) ?? "", /Unrecognized key/);
       // A missing picture is refused before it is written, with the scene named.
       assert.match(errorOf(await call(client, "check_scenes", { scenes: [{ type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "image", src: "assets/nope.png" } }] })) ?? "", /scene 0: no such asset assets\/nope.png/);
+      assert.match(errorOf(await call(client, "set_scenes", { scenes: [{ type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "image", src: "assets/nope.png" } }] })) ?? "", /scene 0: no such asset/, "the write refuses it too");
+      // Hand-written html in place of a template is a new card.
+      assert.equal(errorOf(await call(client, "update_scenes", { patches: [{ index: 1, graphic: { kind: "custom", html: "<div class=\"hand\">by hand</div>", css: ".hand{color:red}" } }] })), null);
+      const hand = text(await call(client, "get_scenes")).scenes[1].graphic;
+      assert.equal(hand.template, undefined);
+      assert.ok(hand.html.includes("by hand"));
       assert.equal(errorOf(await call(client, "check_scenes", { scenes: [{ type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "image", src: "assets/real.png" } }] })), null);
       // A template refusal names the scene.
       assert.match(errorOf(await call(client, "check_scenes", { scenes: [{ type: "title", text: "x", from_word_id: 0, to_word_id: 1 }, { type: "graphic", from_word_id: 2, to_word_id: 6, graphic: { kind: "custom", template: "flow", params: { items: [{ label: "one" }] } } }] })) ?? "", /^scene 1: /);
