@@ -303,3 +303,10 @@ test("a card hangs through a short seam to the next card, and a stage span under
   assert.equal(short.length, 1);
   assert.deepEqual(short[0], { index: 3, layout: "side", seconds: 0.9, floor: 3 });
 });
+
+test("a custom graphic over the head is valid and is never reported as hidden behind it", () => {
+  const over = { type: "graphic", start: 0, end: 4, fromWordId: 0, toWordId: 1, graphic: { kind: "custom", template: "thumbnail", html: "x", over: true } };
+  validateScenes([over], words);
+  assert.deepEqual(hiddenFullStage([over], 10), []);
+  assert.throws(() => validateScenes([{ ...over, graphic: { ...over.graphic, over: "yes" } }], words), /over is true or false/);
+});

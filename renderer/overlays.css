@@ -70,6 +70,9 @@
 
 .ov-title, .ov-callout, .ov-caption, .ov-kinetic, .ov-brand { z-index: 4; }
 .ov-graphic { z-index: 2; }
+/* A custom graphic drawn over the head: above the head (3), with the
+   titles and captions (4) still above it. */
+.ov-graphic.is-over { z-index: 4; }
 
 /* ---- Titles ---- */
 
@@ -853,3 +856,11 @@
   .ov-title { left: 6cqw; right: 6cqw; }
   .ov-section { max-width: 88cqw; }
 }
+
+/* ---- A tall frame ----
+   Shorts and Reels draw their own controls over the bottom eighth of the
+   picture and a column of buttons down the right. Captions and titles sit
+   above that band, and the layouts stop their cards at the same floor. */
+.is-tall .ov-caption { bottom: 13cqh; font-size: 6cqmin; max-width: 86cqw; white-space: normal; text-align: center; line-height: 1.15; }
+.is-tall .ov-caption.style-band { bottom: 11cqh; }
+.is-tall .ov-title { bottom: 22cqh; }

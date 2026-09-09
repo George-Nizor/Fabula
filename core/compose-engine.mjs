@@ -82,6 +82,7 @@ function validateGraphic(graphic, at) {
     return;
   }
   if (graphic.kind === "custom") {
+    if (graphic.over !== undefined && typeof graphic.over !== "boolean") throw new Error(`${at}: custom over is true or false`);
     if (typeof graphic.html !== "string" || graphic.html.length === 0 || graphic.html.length > 20000) throw new Error(`${at}: custom needs html up to 20000 characters`);
     if (graphic.css !== undefined && (typeof graphic.css !== "string" || graphic.css.length > 10000)) throw new Error(`${at}: custom css is at most 10000 characters`);
     for (const rule of CUSTOM_FORBIDDEN) {
@@ -500,7 +501,7 @@ export function hiddenFullStage(scenes, durationSeconds = 0, options = {}) {
   scenes.forEach((scene, index) => {
     if (scene.type !== "graphic" || !scene.graphic) return;
     const fullStage = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;
-    if (!fullStage) return;
+    if (!fullStage || scene.graphic.over) return; // over the head, it is never behind it
     const covering = timeline.filter((segment) => segment.start < scene.end && segment.end > scene.start && !["full", "cutaway"].includes(segment.layout));
     if (!covering.length) return;
     const seconds = covering.reduce((sum, segment) => sum + Math.min(segment.end, scene.end) - Math.max(segment.start, scene.start), 0);
@@ -548,7 +549,7 @@ export function describeVariety(scenes, durationSeconds = 0) {
     for (const card of cards) counts.set(kindOf(card), (counts.get(kindOf(card)) ?? 0) + 1);
     const [kind, count] = [...counts].sort((a, b) => b[1] - a[1])[0];
     if (count / cards.length > 0.5) {
-      notes.push(`${count} of ${cards.length} cards are ${kind}. The kit has chart, stat, list, image, quote, compare, steps, ring, logos, and custom for anything it has no shape for.`);
+      notes.push(`${count} of ${cards.length} cards are ${kind}. The kit has chart, stat, list, image, quote, compare, steps, ring, logos, the named templates (describe_templates), and custom for what none of them fit.`);
     }
   }
   // Judge the actual screen arrangement, not just the names of cards.

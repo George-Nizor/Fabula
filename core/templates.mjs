@@ -61,7 +61,7 @@ const CARD = `var(--ov-card, rgba(11, 14, 18, 0.88))`;
 // The stage's own padding. A tall frame keeps its bottom clear for captions
 // and platform chrome; a wide one only needs margins.
 const frame = (portrait) => portrait
-  ? `padding: 10cqh 7cqw 16cqh 7cqw;`
+  ? `padding: 10cqh 7cqw 21cqh 7cqw;`
   : `padding: 9cqh 7cqw 12cqh 7cqw;`;
 
 // A field description does two jobs: it validates the params, and it is what
@@ -268,11 +268,13 @@ export const TEMPLATES = {
     when: "A change with a clear before and after. Use compare for two lists; this is for two states.",
     persona: ["editor", "farmer"],
     full: true,
-    fields: { before: text("The old state", 60), after: text("The new state", 60), beforeLabel: text("Label for the first panel", 16, { required: false }), afterLabel: text("Label for the second", 16, { required: false }) },
+    fields: { before: text("The old state", 60), after: text("The new state", 60), beforeLabel: text("Label for the first panel", 16, { required: false }), afterLabel: text("Label for the second", 16, { required: false }), pace: PACE },
     example: { beforeLabel: "Before", before: "16 minutes a render", afterLabel: "After", after: "6 minutes a render" },
     render: (p, { portrait }) => {
       const html = `<div class="t t-ba"><div class="t-pane t-before"><div class="t-tag">${esc(p.beforeLabel || "Before")}</div><div class="t-body">${esc(p.before)}</div></div><div class="t-pane t-after"><div class="t-tag">${esc(p.afterLabel || "After")}</div><div class="t-body">${esc(p.after)}</div></div><div class="t-divider"></div></div>`;
-      const sweep = wake(0, { from: 0.3, dur: 0.55 });
+      // Span-paced, the sweep waits for the speaker: the after state arrives
+      // around the middle of the card's time rather than in its first second.
+      const sweep = p.pace === "span" ? "clamp(0, calc((var(--p) - 0.4) / 0.25), 1)" : wake(0, { from: 0.3, dur: 0.55 });
       const css = `${base(portrait)}
 .t-ba { padding: 0; flex-direction: ${portrait ? "column" : "row"}; position: absolute; inset: 0; }
 .t-pane { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 2cqh; ${frame(portrait)} }
@@ -485,13 +487,16 @@ export const TEMPLATES = {
     when: "The last two seconds of a short that exists to send people to the long film. Never in the long film itself.",
     persona: ["farmer"],
     full: true,
-    fields: { line: text("The ask", 48), where: text("Where the rest is", 60, { required: false }), button: text("The pill's text", 24, { required: false }), arrow: field("choice", "Where the arrow points", { options: ["none", "down", "up", "right", "left"], default: "down" }) },
+    fields: { line: text("The ask", 48), where: text("Where the rest is", 60, { required: false }), button: text("The pill's text", 24, { required: false }), arrow: field("choice", "Where the arrow points", { options: ["none", "down", "up", "right", "left"], default: "down" }), shade: field("number", "A shade behind the words, 0 to 1, for when the card sits over the face (over: true)", { min: 0, max: 1, default: 0, required: false }) },
     example: { line: "The whole story is 12 minutes", where: "Full video on the channel", button: "Watch it", arrow: "down" },
     render: (p, { portrait }) => {
       const arrows = { none: "", down: "↓", up: "↑", right: "→", left: "←" };
-      const html = `<div class="t t-cta"><div class="t-line">${esc(p.line)}</div>${p.where ? `<div class="t-where">${esc(p.where)}</div>` : ""}<div class="t-row">${p.button ? `<div class="t-pill">${esc(p.button)}</div>` : ""}${p.arrow !== "none" ? `<div class="t-arrow">${arrows[p.arrow]}</div>` : ""}</div></div>`;
+      const html = `<div class="t t-cta">${p.shade > 0 ? `<div class="t-shade"></div>` : ""}<div class="t-line">${esc(p.line)}</div>${p.where ? `<div class="t-where">${esc(p.where)}</div>` : ""}<div class="t-row">${p.button ? `<div class="t-pill">${esc(p.button)}</div>` : ""}${p.arrow !== "none" ? `<div class="t-arrow">${arrows[p.arrow]}</div>` : ""}</div></div>`;
       const css = `${base(portrait)}
-.t-cta { gap: 2.2cqh; align-items: ${portrait ? "center" : "flex-start"}; text-align: ${portrait ? "center" : "left"}; }
+.t-cta { gap: 2.2cqh; align-items: ${portrait ? "center" : "flex-start"}; text-align: ${portrait ? "center" : "left"}; ${portrait ? "justify-content: flex-end;" : ""} }
+.t-cta > :not(.t-shade) { position: relative; }
+.t-shade { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,${p.shade.toFixed(2)}) 0%, rgba(0,0,0,${(p.shade * 0.75).toFixed(2)}) 40%, rgba(0,0,0,0) 75%); opacity: ${wake(0, { from: 0, dur: 0.3 })}; }
+${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cqh rgba(0,0,0,0.5); }` : ""}
 .t-line { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "6.4cqh, 10cqi" : "9cqh, 7cqi"}); line-height: 1.02; letter-spacing: -0.02em; text-wrap: balance; opacity: ${wake(0, { from: 0.02, dur: 0.3 })}; transform: translateY(calc((1 - ${wake(0, { from: 0.02, dur: 0.3 })}) * 2cqh)); }
 .t-where { font-size: min(3.2cqh, 4.6cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.3, dur: 0.3 })}; }
 .t-row { display: flex; align-items: center; gap: 2cqi; margin-top: 1cqh; }
@@ -689,6 +694,8 @@ export const PACED_TEMPLATES = TEMPLATE_IDS.filter((id) => TEMPLATES[id].fields.
 // How many things a rendered template reveals, for the pacing read.
 export function revealCount(graphic) {
   if (!graphic?.template || graphic.params?.pace !== "span") return 0;
+  // A before-after's one arrival is its sweep, near the middle of the card.
+  if (graphic.template === "before-after") return 1;
   const n = graphic.params?.items?.length ?? 0;
   return graphic.template === "receipt" && graphic.params?.total ? n + 1 : n;
 }
@@ -741,7 +748,8 @@ export function renderTemplate(id, params = {}, { format = "landscape", full } =
 // wins over the template's own default.
 export function expandTemplate(graphic, context) {
   if (!graphic || graphic.kind !== "custom" || !graphic.template) return graphic;
-  return renderTemplate(graphic.template, graphic.params ?? {}, { ...context, full: graphic.full });
+  const rendered = renderTemplate(graphic.template, graphic.params ?? {}, { ...context, full: graphic.full });
+  return graphic.over === undefined ? rendered : { ...rendered, over: graphic.over };
 }
 
 export function expandTemplates(scenes, context) {

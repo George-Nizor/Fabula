@@ -76,3 +76,9 @@ test("a span-paced template counts each arrival as a change", () => {
   assert.ok(!after.notes.some((n) => n.includes("Nothing changes from 2.0s")), after.notes.join("\n"));
   assert.ok(after.stats.longestStill.seconds < 6);
 });
+
+test("a span-paced before-after counts its sweep as a change", () => {
+  const still = [scene("stage", 2, 14, { layout: "cutaway" }), scene("graphic", 2, 14, { graphic: { kind: "custom", template: "before-after", params: { before: "a", after: "b", pace: "span" } } })];
+  const { stats } = describePacing(still, { duration: 16, format: "vertical", shortForm: true, captions: "open" });
+  assert.ok(stats.longestStill.seconds < 8, JSON.stringify(stats.longestStill));
+});

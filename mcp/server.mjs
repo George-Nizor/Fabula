@@ -953,6 +953,7 @@ server.registerTool("set_scenes", {
         html: z.string().max(20000).optional().describe("custom only: the markup"),
         css: z.string().max(10000).optional().describe("custom only: styles, scoped to the card"),
         full: z.boolean().optional().describe("custom only: false keeps it inside the layout's content rect instead of the whole stage"),
+        over: z.boolean().optional().describe("custom only: draw it OVER the head rather than under — words on the face, with the shade the thumbnail template draws; the first frame of a short, a line over a focus shot. Under a cutaway it makes no difference."),
         template: z.enum([...TEMPLATE_IDS]).optional().describe("custom only: a named graphic from describe_templates, filled in from params; html and css are generated"),
         params: z.record(z.any()).optional().describe("custom only: the template's fields"),
         left: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
@@ -1448,7 +1449,7 @@ server.registerTool("describe_templates", {
   return ok({
     format,
     persona: who ?? "all",
-    note: "full: true takes the whole stage (pair it with a cutaway or full layout; over focus it covers the face); full: false sits in the layout's content rect beside the head. A template's own default is the right one unless you have a reason. The example on each is a complete params object.",
+    note: "full: true takes the whole stage (pair it with a cutaway or full layout; over focus it hides behind the face — unless over: true, which draws it on the face: the thumbnail template with its shade is made for that, the first frame of a short especially); full: false sits in the layout's content rect beside the head. A template's own default is the right one unless you have a reason. The example on each is a complete params object.",
     templates: describeTemplates({ persona: who }),
   });
 });
@@ -1763,7 +1764,7 @@ server.registerTool("reanchor_scenes", {
 
 server.registerTool("render_final", {
   description:
-    "The composited render, as a background job: the head and screen tracks are placed on the 1080p stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached two-minute chunks — a tweak re-renders the chunks it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range, or out/draft.mp4 at half size with draft: true. A whole film is minutes, a draft a fraction of that; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
+    "The composited render, as a background job: the head and screen tracks are placed on the film's stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached two-minute chunks — a tweak re-renders the chunks it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range, or out/draft.mp4 at half size with draft: true. A whole film is minutes, a draft a fraction of that; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
   inputSchema: {
     from_word_id: z.number().int().min(0).optional().describe("Render only from this clean word…"),
     to_word_id: z.number().int().min(0).optional().describe("…to this clean word (inclusive)"),

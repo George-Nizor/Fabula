@@ -53,7 +53,9 @@ Column (sit in `side`, `pip` or `full`'s content rect beside the head): `big-num
 `definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`.
 
 Any template takes `full: true|false` to override its default, but a full-stage design
-squeezed into a column or a column card blown up to the stage rarely reads well.
+squeezed into a column or a column card blown up to the stage rarely reads well. `over: true`
+draws a custom graphic over the head rather than under it; only `thumbnail` and `cta` (with a
+`shade`) are made for that — a few words on the face, the opening or the ending of a short.
 
 ## Two frames, one plan
 

@@ -29,8 +29,10 @@ Nothing else matters if this fails.
   starts weakly, move `from_word_id` one sentence in and let a `hook` template say what the
   speaker is about to say.
 - **Something on the screen at frame one.** The head alone at 0.0 s is a person about to
-  talk. A `hook` line over the opening words, or the big `word`, or a `cutaway` to the thing
-  itself, is a reason to stay. The first visual belongs at word zero.
+  talk. The feed's own frame is the face with the words on it: the `thumbnail` template with
+  `over: true`, a few words over the head with its shade, at word zero. A `hook` over a
+  cutaway or the big `word` are the other openings; either way the first visual belongs at
+  word zero.
 - **The head fills the frame.** `focus` in a tall frame crops to the face; that is the shot
   for a short. Use `band` only for the moment a crop would ruin — a screen, two people, a wide
   gesture — and `preview_frame` to check the crop took what you think it took.

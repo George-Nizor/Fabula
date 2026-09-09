@@ -773,6 +773,7 @@ function build(part, stage) {
     case "brand": return buildBrand(part);
     case "graphic": {
       const card = buildGraphic(part);
+      if (part.graphic.over) card.classList.add("is-over");
       if (part.rect && stage) {
         card.style.inset = "auto";
         card.style.left = pct(part.rect.x, stage.width);
@@ -853,7 +854,9 @@ window.FabulaStage = {
         const sig = graphicSignature(scene.graphic, p, t, scene);
         const full = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;
         const rect = full && stage ? { x: 0, y: 0, w: stage.width, h: stage.height } : (contentRect ? roundRect(contentRect) : null);
-        parts.push({ key, kind: "graphic", layer: "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
+        // A custom graphic may ask to sit OVER the head — words on the face,
+        // with the shade its template draws — rather than under it.
+        parts.push({ key, kind: "graphic", layer: scene.graphic.over ? "over" : "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
         if (scene.graphic.kind === "screen" && rect && stage) {
           screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end };
         }
@@ -929,6 +932,10 @@ window.FabulaStage = {
   paint(overlayEl, plan, only = null) {
     const { stage, theme } = plan;
     overlayEl.style.setProperty("--ov-accent", theme.accent);
+    // A tall frame places its captions and titles above the platform's own
+    // controls; the stylesheet reads the shape off the frame.
+    const frame = overlayEl.closest(".stage-frame");
+    if (frame && stage) frame.classList.toggle("is-tall", stage.height > stage.width);
     const parts = only ? plan.parts.filter((part) => part.layer === only) : plan.parts;
     const key = `${only ?? "all"}|${parts.map((part) => part.sigText).join("|")}`;
     if (overlayEl.dataset.state === key) return;

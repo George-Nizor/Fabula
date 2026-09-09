@@ -337,7 +337,9 @@ function portraitRects(layout, corner, videoAspect, stage) {
   // A tall film is watched with captions on, so the bottom of the frame is
   // spoken for. Cards stop above it rather than being drawn under two lines
   // of type — the one place a portrait content rect is not simply "the rest".
-  const captionFloor = H * 0.86;
+  // Captions sit above the bottom eighth, where the platform's own controls
+  // are; cards stop above the captions.
+  const captionFloor = H * 0.80;
   if (layout === "band") {
     // The head whole, in its own aspect, across the width — the shot for a
     // wide moment a crop would ruin, with the visual under it.

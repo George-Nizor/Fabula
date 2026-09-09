@@ -49,7 +49,11 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
     // A span-paced template keeps arriving across its time; each arrival is
     // a change the viewer sees.
     const reveals = revealCount(scene.graphic);
-    if (reveals > 0) for (const share of revealShares(reveals)) changes.add(scene.start + share * (scene.end - scene.start));
+    if (reveals > 0) {
+      // A before-after's one arrival is its sweep, near the middle of the card.
+      const shares = scene.graphic.template === "before-after" ? [0.5] : revealShares(reveals);
+      for (const share of shares) changes.add(scene.start + share * (scene.end - scene.start));
+    }
   }
   for (const segment of timeline) changes.add(segment.start);
   const ticks = [...changes].filter((t) => t >= 0 && t <= duration).sort((a, b) => a - b);

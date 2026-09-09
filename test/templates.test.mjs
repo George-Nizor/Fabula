@@ -75,6 +75,7 @@ test("a scene naming a template is expanded and everything else passes through",
   assert.ok(expanded[1].graphic.html.includes("Why?"));
   assert.equal(expanded[1].graphic.full, true, "full given beside the template wins over its default");
   assert.equal(expandTemplate({ kind: "custom", html: "<p>mine</p>" }).html, "<p>mine</p>");
+  assert.equal(expandTemplate({ kind: "custom", template: "thumbnail", params: { line: "Hi" }, over: true }, { format: "vertical" }).over, true, "over travels with the template");
   validateScenes(expanded, words);
 });
 
