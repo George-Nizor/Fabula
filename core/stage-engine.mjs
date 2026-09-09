@@ -299,7 +299,7 @@ function portraitRects(layout, corner, videoAspect, stage) {
   // A tall film is watched with captions on, above the bottom eighth where
   // the platform's own controls are, so every content rect stops at one
   // floor — the same floor renderer/overlays.css puts the captions above.
-  const captionFloor = H * 0.80;
+  const captionFloor = H * 0.78;
   // The window a cropped head fills, with the safe band the visuals get.
   if (layout === "cutaway") {
     return {
