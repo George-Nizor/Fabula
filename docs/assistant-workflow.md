@@ -133,7 +133,12 @@ judgment calls it cannot make (a tangent, a repetition ten sentences apart).
 
 ## Before you compose
 
-Two tools to know before the first `set_scenes`:
+Three tools to know before the first `set_scenes`:
+
+- `list_clean_words` — every word of the clean transcript with its id and its seconds (`words`,
+  each `{ id, text, start, end }`, and the same as one `text` line). Word ids are how every
+  scene, cut and span is anchored; `get_scenes` spells them `fromWordId`/`toWordId` and the
+  write tools take that spelling or `from_word_id`/`to_word_id`, whichever you send.
 
 - `describe_kit` — every layout, transition, graphic kind and the fields it needs, every title,
   callout and caption style, the presets and the fonts, in one call. Read it once instead of
@@ -142,7 +147,9 @@ Two tools to know before the first `set_scenes`:
   render gate. **Look at it.** A scene plan does not tell you that a title is unreadable over
   that footage, that a card is crowded, or that the picture you fetched is the wrong one. Give
   a `word_id` (the frame lands a beat after that word, so entrances have played) or an
-  `at_seconds`. Use it freely; it costs seconds, not minutes.
+  `at_seconds`. What comes back is the PNG's path; open it. Use it freely; it costs seconds,
+  not minutes. Every tool's fields are in its description and schema; the prose here says what
+  they are for, not their names — read the schema before the first call of a tool.
 
 `read_story` marks the transcript up the way an editor marks a script (`transcript: "raw"` reads
 the recording's own transcript before the clean render, with word ids for `add_cut`, so a
@@ -217,8 +224,8 @@ narration could otherwise imply they depict a specific event. No paid API is nee
 
 Pictures the person already has — screenshots, product shots, an exported still — come in
 through `import_image` from a path on the pipeline host. Footage they have — a phone clip, a
-screen capture, stock they own — comes in through `import_clip`, cut to the seconds wanted and
-re-encoded with its sound kept, for a `clip` graphic: B-roll that plays in the card while the
+screen capture, stock they own — comes in through `import_clip` (`from` and `seconds` cut the
+part wanted; the response's `hint` is the graphic to write), re-encoded with its sound kept, for a `clip` graphic: B-roll that plays in the card while the
 voice carries on, beside the head in a `side` layout or as the whole picture in a `cutaway`.
 It is read from `in` seconds into the clip; a scene longer than the clip holds the last frame,
 and the read-back says so. Two clips over the same words: only the first is drawn and the
@@ -305,7 +312,10 @@ card either side, or drop the cutaway there. The same read covers every placed l
 `side`, `pip`, `band` or `full` that holds with nothing in the room it makes is the head made
 small for nothing, and is reported the same way. A card whose layout is held past its last
 word — a breath, up to the dwell floor — hangs with the layout, so a seam of a second between
-a card and the next stage scene is not a fault; three seconds and more is yours to close.
+a card and the next stage scene is not a fault; three seconds and more is yours to close. A
+card also hangs through a seam of up to half a second to the next card — but never out of its
+own layout, so a full-stage card in a cutaway ends with the cutaway even when the next card
+starts a breath later under the head.
 
 ## The look
 
@@ -375,9 +385,10 @@ set):
   film, -14 for a short, null to leave it as recorded. With the voice measured it is an exact
   gain under a true-peak ceiling, so the voice keeps its own dynamics. Platforms normalise on upload; this
   makes the film sound the same everywhere before they do.
-- **Voice clean-up** (`set_audio` with `voice_clean`): `light` takes the room's hum and the desk's
-  rumble down and keeps the voice's air — most recordings want it; `strong` is for a poor
-  microphone in a live room and softens sibilance too; `off` leaves it as recorded. It runs before
+- **Voice clean-up** (`set_audio` with `voice_clean`): `light` takes the rumble below 80 Hz out
+  and the room's floor down 8 dB, keeping the voice's air — most recordings want it; `strong`
+  cuts below 100 Hz, takes the floor down 16 dB and softens sibilance, for a poor microphone in
+  a live room; `off` leaves it as recorded. It runs before
   the level is set; the level was measured on the voice as recorded, and the floor cut moves it
   by a fraction of a decibel, which the stitch's own re-measure takes up. Listen to a `render_final` span
   before choosing strong: a floor taken down too far sounds like a booth.

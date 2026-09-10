@@ -143,6 +143,15 @@ are, the session, projects, the shape, the loop, what to read before composing, 
 patching, the look, sound, captions and deliverables, the gates, shorts — with the notes for
 whoever edits the code at the end, and every disagreement settled on the code's side.
 
+Then a first reader — a fresh assistant given only what a session reads — worked the film
+through the rewritten workflow and came back with thirteen notes. Three were the code's: a
+card hanging through a seam could follow a cutaway's full-stage card under the head (the hang
+now stops at the card's own layout), the lower third's plate took its colour from a light
+preset (it is dark whatever the look), and `status` kept recommending a voice target already
+set. The rest were the documents' silences — no tool named for the transcript's word ids, the
+two spellings unexplained, a field guessed for want of a sentence — each now a sentence where
+the reader needed it, and `describe_templates` says what a persona's list leaves out.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

@@ -1741,6 +1741,9 @@ server.registerTool("describe_templates", {
     persona: who ?? "all",
     note: "full: true takes the whole stage (pair it with a cutaway or full layout; over focus it hides behind the face — unless over: true, which draws it on the face: the thumbnail template with its shade is made for that, the first frame of a short especially); full: false sits in the layout's content rect beside the head. A template's own default is the right one unless you have a reason. The example on each is a complete params object.",
     templates: describeTemplates({ persona: who }),
+    // Narrowed lists say what they left out, so a template the examples use
+    // is never taken for one that does not exist.
+    omitted: who ? TEMPLATE_IDS.filter((id) => !describeTemplates({ persona: who }).some((t) => t.id === id)) : [],
   });
 });
 
@@ -2258,6 +2261,10 @@ server.registerTool("status", {
   state.punch = readPunch(dir);
   state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
   state.clean = cleanSummary(dir, { measure: true });
+  {
+    const target = readComposeConfig(dir).audio?.voice?.loudness;
+    if (state.clean?.voiceNote && typeof target === "number") state.clean.voiceNote = `the voice measures ${state.clean.voiceLoudness} LUFS as recorded; the stitch brings it to the ${target} LUFS target already set`;
+  }
   state.stale = staleness(dir);
   // Who this session is working as: adopted in the session, else what the
   // launcher said.

@@ -191,9 +191,19 @@ export function resolveScenes(scenes, words, { durationSeconds = 0 } = {}) {
     end: byId.get(scene.toWordId).end,
   }));
   const cards = resolved.filter((scene) => scene.type === "graphic").sort((a, b) => a.start - b.start);
+  // A card hangs through a seam to the next card — but not out of its own
+  // layout: a full-stage card that hung from its cutaway into the focus
+  // segment after it would be drawn under the head for the seam. With the
+  // film's length the timeline says where the layout ends; without it the
+  // seam is assumed to be inside one layout.
+  const seamTimeline = durationSeconds > 0 ? resolveLayoutTimeline(resolved, durationSeconds) : null;
   for (let i = 0; i + 1 < cards.length; i += 1) {
     const gap = cards[i + 1].start - cards[i].end;
-    if (gap > 0 && gap <= GRAPHIC_HANG_SECONDS) cards[i].end = cards[i + 1].start;
+    if (!(gap > 0 && gap <= GRAPHIC_HANG_SECONDS)) continue;
+    let to = cards[i + 1].start;
+    const segment = seamTimeline?.find((s) => s.start <= cards[i].end - 0.01 && cards[i].end - 0.01 < s.end);
+    if (segment && segment.layout !== "focus" && segment.end < to) to = segment.end;
+    if (to > cards[i].end) cards[i].end = to;
   }
   // A card hangs with its layout. The dwell rule bridges a return to the
   // head shorter than three seconds between two placed layouts, so the

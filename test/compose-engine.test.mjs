@@ -369,3 +369,24 @@ test("a card hangs with its layout when the return to the head after it is bridg
   assert.equal(wide[1].end, 6.45);
   assert.equal(emptyPlacedLayouts(wide, 20).length, 1);
 });
+
+test("a card hangs through a seam only inside its own layout: a cutaway's card does not follow into the head's focus", () => {
+  const words = Array.from({ length: 30 }, (_, id) => ({ id, text: "w", start: id * 0.5, end: id * 0.5 + 0.4 }));
+  // Words 0–11 are a cutaway with a full-stage card; the next card starts at word 12, 0.1 s after the cutaway ends.
+  const scenes = [
+    { type: "stage", fromWordId: 0, toWordId: 11, layout: "cutaway" },
+    { type: "graphic", fromWordId: 0, toWordId: 11, graphic: { kind: "cover", title: "Hook" } },
+    { type: "graphic", fromWordId: 12, toWordId: 20, graphic: { kind: "stat", value: 1, label: "one" } },
+  ];
+  const resolved = resolveScenes(scenes, words, { durationSeconds: 15 });
+  const hook = resolved[1];
+  assert.ok(hook.end <= words[11].end + 0.001, `the hook ends with its cutaway (${hook.end}), not at the next card's start`);
+  assert.deepEqual(hiddenFullStage(resolved, 15), [], "nothing is drawn under the head");
+  // Inside one layout the hang still closes the seam.
+  const inside = resolveScenes([
+    { type: "stage", fromWordId: 0, toWordId: 20, layout: "cutaway" },
+    { type: "graphic", fromWordId: 0, toWordId: 11, graphic: { kind: "cover", title: "Hook" } },
+    { type: "graphic", fromWordId: 12, toWordId: 20, graphic: { kind: "cover", title: "Next" } },
+  ], words, { durationSeconds: 15 });
+  assert.equal(inside[1].end, inside[2].start);
+});

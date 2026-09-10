@@ -674,7 +674,7 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
 TEMPLATES["lower-third"] = {
   label: "Lower third",
   about: "A name plate at the foot of the frame, over the face: the name in the display face, what they are under it, and an accent bar that arrives first. The plate a viewer reads without looking away from the person.",
-  when: "When the speaker is introduced or a guest joins — once, in the first ten seconds, four to six seconds long. Give it over: true; it belongs on the face, not under it.",
+  when: "When the speaker is introduced or a guest joins — once, early, for the head moment it sits on (four to six seconds when the head has them; shorter fits the moment rather than moving the plan). Give it over: true; it belongs on the face, not under it.",
   persona: ["editor", "farmer"],
   full: true,
   fields: {
@@ -688,7 +688,7 @@ TEMPLATES["lower-third"] = {
     const slide = wake(0, { from: 0.05, dur: 0.4 });
     const css = `${base(portrait)}
 .t-lt { padding: 0 ${portrait ? "6cqw" : "5cqw"} ${portrait ? "26cqh" : "13cqh"}; justify-content: flex-end; align-items: ${p.side === "right" ? "flex-end" : "flex-start"}; }
-.t-plate { display: flex; gap: ${portrait ? "2cqw" : "1.2cqw"}; align-items: stretch; max-width: ${portrait ? "88%" : "46%"}; padding: ${portrait ? "1.4cqh 3.2cqw 1.4cqh 2.4cqw" : "1.6cqh 2.2cqw 1.6cqh 1.6cqw"}; background: color-mix(in srgb, ${INK} 78%, transparent); border-radius: calc(${portrait ? "1.6cqw" : "0.9cqw"} * var(--ov-radius, 1)); opacity: ${slide}; transform: translateX(calc((1 - ${slide}) * ${p.side === "right" ? "" : "-"}12%)); }
+.t-plate { display: flex; gap: ${portrait ? "2cqw" : "1.2cqw"}; align-items: stretch; max-width: ${portrait ? "88%" : "46%"}; padding: ${portrait ? "1.4cqh 3.2cqw 1.4cqh 2.4cqw" : "1.6cqh 2.2cqw 1.6cqh 1.6cqw"}; background: rgba(11, 14, 18, 0.78); border-radius: calc(${portrait ? "1.6cqw" : "0.9cqw"} * var(--ov-radius, 1)); opacity: ${slide}; transform: translateX(calc((1 - ${slide}) * ${p.side === "right" ? "" : "-"}12%)); }
 .t-bar { flex: none; width: ${portrait ? "1cqw" : "0.6cqw"}; border-radius: 999px; background: ${ACCENT}; transform: scaleY(${wake(0, { from: 0.02, dur: 0.3 })}); transform-origin: bottom; }
 .t-text { display: flex; flex-direction: column; gap: 0.4cqh; ${p.side === "right" ? "text-align: right;" : ""} }
 .t-name { font-family: ${FONT_DISPLAY}; font-weight: 800; font-size: min(${portrait ? "4.2cqh" : "5.2cqh"}, ${portrait ? "6.2cqi" : "5.4cqi"}); line-height: 1.05; letter-spacing: -0.01em; color: #ffffff; }

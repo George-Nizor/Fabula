@@ -71,6 +71,7 @@ export const ceilingOf = (value) => resolveFormat(value).ceiling;
 export function describeFormats() {
   return FORMAT_IDS.map((id) => {
     const { label, about, stage, shortForm, duration } = FORMATS[id];
-    return { id, label, about, stage, aspect: Number((stage.width / stage.height).toFixed(4)), shortForm, duration };
+    // The range a film of this shape is cut to (a short's), not a film's length.
+    return { id, label, about, stage, aspect: Number((stage.width / stage.height).toFixed(4)), shortForm, lengthRange: duration ?? null };
   });
 }
