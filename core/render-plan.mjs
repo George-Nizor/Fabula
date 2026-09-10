@@ -347,7 +347,10 @@ function maskLines(head, canvas, fade) {
 
 export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, screens, punch = [], fps = 30, grade = null }) {
   // The grade goes on the footage before it is shaped: eq and temperature
-  // on the source, the vignette after the scale so it sits on the card.
+  // on the source, and so the vignette: in source space, before the alpha
+  // exists — on the flat route the card shows the whole frame, so that is
+  // the card's space; on the zoomed or cropped route it sits on the footage
+  // and the crop takes part of it, which the window does not show.
   const graded = grade ? gradeFilters(grade) : { pre: "", post: "" };
   const head = headExpressions(timeline, videoAspect, stage, chunk.start);
   const glow = glowExpressions(stage, glowSize, chunk.start);

@@ -171,12 +171,15 @@ export function clipSounds(scenes, { from = 0, span }) {
     .filter((scene) => scene.type === "graphic" && scene.graphic?.kind === "clip" && scene.graphic.sound && scene.graphic.src)
     .filter((scene) => scene.end > from && scene.start < from + span)
     .map((scene) => {
-      const start = Math.max(scene.start, from);
+      // A card on the film's first words is drawn from frame one (the
+      // painter's edge rule); its sound starts with its picture.
+      const sceneStart = scene.start <= 0.5 ? 0 : scene.start;
+      const start = Math.max(sceneStart, from);
       const end = Math.min(scene.end, from + span);
       const level = typeof scene.graphic.sound === "object" && typeof scene.graphic.sound.level === "number" ? scene.graphic.sound.level : NAT_SOUND_DEFAULT_DB;
       return {
         src: scene.graphic.src,
-        offset: Number(((scene.graphic.in ?? 0) + (start - scene.start)).toFixed(3)),
+        offset: Number(((scene.graphic.in ?? 0) + (start - sceneStart)).toFixed(3)),
         at: Number((start - from).toFixed(3)),
         seconds: Number((end - start).toFixed(3)),
         level,
@@ -218,10 +221,12 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
       .map((w) => ({ start: w.start - from, end: w.end - from }))
       .filter((w) => w.end > 0 && w.start < span)
       .map((w) => ({ start: Number(Math.max(w.start, 0).toFixed(3)), end: Number(Math.min(w.end, span).toFixed(3)) }));
-    const duck = bedGainExpression(natWindows, music ?? MUSIC_DEFAULTS);
     nats.forEach((nat, k) => {
       const index = 2 + (music ? 1 : 0) + k;
       const delayMs = Math.round(nat.at * 1000);
+      // The duck reads t on the clip's own clock (the filter sits before
+      // adelay), so the windows are read at t plus where the clip lands.
+      const duck = bedGainExpression(natWindows, music ?? MUSIC_DEFAULTS, { offset: nat.at });
       lines.push(`[${index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=N/SR/TB,atrim=duration=${num(nat.seconds)},volume=${num(nat.level)}dB,volume=volume='${duck}':eval=frame,afade=t=in:st=0:d=0.25,afade=t=out:st=${num(Math.max(nat.seconds - 0.35, 0))}:d=0.35${delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : ""}[nat${k}]`);
       natInputs.push("-ss", num(nat.offset), "-t", num(nat.seconds), "-i", clipPath(nat.src));
       natLabels.push(`[nat${k}]`);

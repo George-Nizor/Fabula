@@ -99,7 +99,7 @@ const READ_TOOLS = new Set([
 const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project"]);
 // Tools that leave the pointer somewhere else than they found it; the
 // project they answered for is read back off the file when they finish.
-const MOVES_POINTER = new Set([...POINTER_TOOLS, "create_short", "rename_project"]);
+const MOVES_POINTER = new Set([...POINTER_TOOLS, "create_short"]);
 let adoptedPersona = null; // adopt_persona in this session; status reports it
 // Jobs are launched from the shared specs (scripts/project-state.mjs), the
 // same ones the window uses, so the two never drift in arguments.
@@ -298,12 +298,15 @@ The first pass (transcript, framing scan, cut proposals) runs by itself when the
   const register = server.registerTool.bind(server);
   server.registerTool = (name, spec, handler) => register(name, spec, async (...args) => {
     activeTool = name;
-    try { return await handler(...args); } finally {
-      activeTool = null;
+    try {
+      const answer = await handler(...args);
+      // Only a tool that finished takes the pointer up: one that failed
+      // moved nothing, and a switch it did not report stays unacknowledged.
       if (MOVES_POINTER.has(name)) {
         try { answeredProject = fs.existsSync(pointerFile()) ? JSON.parse(fs.readFileSync(pointerFile(), "utf8")).dir : null; } catch { /* the next read takes it up */ }
       }
-    }
+      return answer;
+    } finally { activeTool = null; }
   });
 }
 
@@ -324,6 +327,7 @@ function assertAssets(dir, scenes) {
     const graphic = scene.graphic;
     if (!graphic) return;
     if (missing(graphic.src)) throw new Error(`scene ${index}: no such asset ${graphic.src}; list_assets shows what exists, fetch_image / import_image / search_images bring one in`);
+    if (graphic.kind === "clip" && graphic.sound && !probeHasAudio(path.join(dir, graphic.src))) throw new Error(`scene ${index}: ${graphic.src} has no sound track, so sound: true has nothing to play; drop sound, or import_clip the source again (imports before today were made without one)`);
     for (const item of graphic.items ?? []) {
       if (item && typeof item === "object" && missing(item.src)) throw new Error(`scene ${index}: no such asset ${item.src}; list_assets shows what exists`);
     }
@@ -1209,17 +1213,27 @@ server.registerTool("review_film", {
     captions: { mode: captionMode(config.captions), emphasis: config.captionEmphasis ?? "none" },
   };
   // The film as it sounds, measured — the one sense the sheet cannot give.
-  const heard = ["final.mp4", "draft.mp4"].map((name) => path.join(dir, "out", name)).find((file) => fs.existsSync(file));
+  // The newer of the film and its draft; and whether the plan moved since.
+  const heard = ["final.mp4", "draft.mp4"].map((name) => path.join(dir, "out", name)).filter((file) => fs.existsSync(file))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
   if (heard) {
     const measured = measureSound(heard);
     const notes = [];
-    const target = config.audio?.voice?.loudness ?? null;
+    const voice = config.audio?.voice ?? {};
+    const target = voice.loudness ?? null;
+    const planMoved = fs.existsSync(projectPaths(dir).compose) && fs.statSync(projectPaths(dir).compose).mtimeMs > fs.statSync(heard).mtimeMs;
+    if (planMoved) notes.push(`${path.basename(heard)} predates the plan's last change; what follows measures the film as it was`);
     if (typeof measured.integrated === "number") {
-      if (target !== null && Math.abs(measured.integrated - target) > 1) notes.push(`the film measures ${measured.integrated} LUFS against a ${target} target; render_final again (the stitch re-measures and trims)`);
+      if (target !== null && Math.abs(measured.integrated - target) > 1) notes.push(typeof voice.measured === "number"
+        ? `the film measures ${measured.integrated} LUFS against a ${target} target; render_final again (the stitch re-measures and trims)`
+        : `the film measures ${measured.integrated} LUFS against a ${target} target; set_audio again so the clean cut is measured and the stitch can hit it exactly`);
       if (target === null && measured.integrated < -20) notes.push(`the film measures ${measured.integrated} LUFS with no target set; platforms sit near -14 to -16 — set_audio voice_loudness`);
     }
     if (typeof measured.truePeak === "number" && measured.truePeak > -1) notes.push(`true peak ${measured.truePeak} dBFS is over the -1 dBFS platforms want; a lower voice target or the limiter's ceiling`);
-    if (typeof measured.noiseFloor === "number" && measured.noiseFloor > -55 && (config.audio?.voice?.clean ?? "off") === "off") notes.push(`the noise floor is ${measured.noiseFloor} dB — a room is audible under the words; set_audio voice_clean light`);
+    // The floor is the room only when nothing else is under the voice.
+    const underneath = Boolean(config.audio?.music) || scenes.some((scene) => scene.graphic?.kind === "clip" && scene.graphic.sound);
+    if (typeof measured.noiseFloor === "number" && measured.noiseFloor > -55 && !underneath && (voice.clean ?? "off") === "off") notes.push(`the noise floor is ${measured.noiseFloor} dB — a room is audible under the words; set_audio voice_clean light`);
+    if (underneath) notes.push("the floor measured is the bed or a clip's sound, not the room");
     out.sound.measured = { file: path.basename(heard), ...measured, notes };
   }
   if (sheet !== false && fs.existsSync(projectPaths(dir).clean) && duration > 0) {
@@ -1321,7 +1335,7 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
     try { length = probeDuration(path.join(dir, scene.graphic.src)); } catch { length = null; }
     const needed = (scene.graphic.in ?? 0) + (scene.end - scene.start);
     if (length !== null && needed > length + 0.05) {
-      warnings.push(`scene ${index}: the clip ${scene.graphic.src} is ${length.toFixed(1)}s and the card asks for ${needed.toFixed(1)}s from ${(scene.graphic.in ?? 0).toFixed(1)}s in; it holds its last frame for the rest. Shorten the scene, or start it earlier in the clip.`);
+      warnings.push(`scene ${index}: the clip ${scene.graphic.src} is ${length.toFixed(1)}s and the card asks for ${needed.toFixed(1)}s from ${(scene.graphic.in ?? 0).toFixed(1)}s in; it holds its last frame for the rest${scene.graphic.sound ? ", and its sound stops dead where the file ends" : ""}. Shorten the scene, or start it earlier in the clip.`);
     }
     const other = clips.find((c) => c.index > index && c.scene.start < scene.end && scene.start < c.scene.end);
     if (other) warnings.push(`scene ${index} and scene ${other.index}: two clips at once; only the first is drawn. Give them different words.`);

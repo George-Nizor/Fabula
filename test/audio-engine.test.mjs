@@ -175,6 +175,11 @@ test("a clip's own sound is read from its offset, placed at its second, ducked f
   const voiceOnly = audioGraph({ audio: {}, words, span: 10, clips: scenes, clipPath: (src) => `/p/${src}` });
   assert.deepEqual(voiceOnly.inputs, ["-ss", "1.5", "-t", "3", "-i", "/p/assets/demo.mp4"]);
   assert.match(voiceOnly.filter, /\[2:a\]aformat.*volume=-14dB,volume=volume='.*':eval=frame,afade=t=in.*adelay=2000\|2000\[nat0\]/s);
+  // The duck is read on the clip's own clock: t plus where the clip lands.
+  assert.ok(voiceOnly.filter.includes("(t+2)"), "the windows are read at t plus the clip's second");
+  const edge = clipSounds([{ type: "graphic", start: 0.04, end: 3, graphic: { kind: "clip", src: "assets/a.mp4", in: 1, sound: true } }], { from: 0, span: 10 })[0];
+  assert.equal(edge.at, 0, "a clip on the first words sounds from frame one, as it is drawn");
+  assert.equal(edge.offset, 1);
   assert.match(voiceOnly.filter, /\[v0\]\[nat0\]amix=inputs=2/);
   assert.equal(voiceOnly.map, "[mix]");
   const withBed = audioGraph({ audio: { music: { src: "assets/bed.mp3" } }, words, span: 10, musicPath: "/p/assets/bed.mp3", clips: scenes, clipPath: (src) => `/p/${src}` });

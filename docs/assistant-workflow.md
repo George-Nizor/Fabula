@@ -486,6 +486,9 @@ The grade on the footage is the theme's too: `set_theme grade` takes `contrast` 
 neutral by default, each field `null` to return it to neutral. It goes on the head before
 anything is laid over it — eq, a colour temperature and a vignette in the film, the nearest
 CSS in the window's Footage sliders — and a change re-renders every chunk, like the field.
+The vignette is on the footage: on a head shown whole it is the card's; on a cropped tall
+head or under a punch-in the crop takes part of it, so it reads lighter in the film than in
+the window there.
 Grade lightly: a talking head wants to look like a person in a room, not a poster.
 The Look step has both, with a card for each style that plays it.
 

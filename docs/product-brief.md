@@ -95,6 +95,15 @@ taken up by a read that never named the project (every answer now carries `proje
 on the film's edge faded in the film but not the window, and hand-written html patched onto a
 template card never landed.
 
+A ninth reader took the natural-sound commits and found the duck on the wrong clock: the
+gain expression sits before the clip's delay, so `t` in it is the clip's own time, and the
+windows were read as if it were the span's — a clip never came up in the pause it sat in.
+The windows are now read at `t` plus where the clip lands. With it: `sound: true` on a clip
+without a sound track is refused before the render rather than failing the stitch minutes in;
+a tool that failed no longer takes a project switch up; `review_film` says when the floor it
+measured is the bed or a clip rather than the room, and measures the newer of the film and
+its draft; a clip on the first words sounds from frame one, as it is drawn.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
