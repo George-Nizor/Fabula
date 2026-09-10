@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenWords } from "../core/cut-engine.mjs";
+import * as storyModule from "../core/story-engine.mjs";
 import { paragraphs, sections, moments, opening, ending, readStory, falseStarts, stutters, preambleCuts, editorialCuts, retakes, numberIn } from "../core/story-engine.mjs";
 
 function transcriptOf(spec) {
@@ -178,4 +179,18 @@ test("a figure that ends a clause is still a figure", () => {
   assert.equal(numberIn("We made $4.2M, then more").shown, "$4.2M");
   assert.deepEqual([numberIn("It took sixteen minutes.").shown, numberIn("It took sixteen minutes.").unit], ["16 min", "minutes"]);
   assert.equal(numberIn("It took 25, maybe 30 minutes").shown, "25");
+});
+
+test("sections follow subject changes a monologue makes without signposting, and a short stays one", () => {
+  const { sections } = storyModule;
+  const talk = (text, at, pause = 0) => text.split(" ").map((w, i, all) => ({ text: i === all.length - 1 ? `${w}.` : w, start: at + pause + i * 0.4, end: at + pause + i * 0.4 + 0.35 }));
+  const p1 = "the engine burns fuel with oxidizer to make hot gas and the nozzle shapes the gas so the thrust pushes the rocket upward against gravity while the tanks empty and the whole machine gets lighter every second of the climb until the burn ends";
+  const p2 = "orbit means falling around the planet fast enough that the ground curves away beneath you so the rocket must turn sideways and accelerate horizontally until its speed matches what the altitude needs and then it coasts";
+  const p3 = "staging drops the empty tanks and spent engines so the remaining stage carries less weight and goes further on the same fuel which is why every large launcher is built in sections that separate in flight";
+  let words = [...talk(p1, 0), ...talk(p2, 24, 1.2), ...talk(p3, 48, 1.2)].map((w, id) => ({ ...w, id }));
+  const three = sections(words);
+  assert.equal(three.length, 3, three.map((x) => `${x.start}s ${x.heading}`).join(" | "));
+  assert.ok(three.every((x) => x.seconds >= 12), "each section is a stretch, not a sentence");
+  const one = sections(talk("if a rocket flies straight up it comes straight back down so it turns sideways as it climbs and falls around the planet which is what an orbit is", 0).map((w, id) => ({ ...w, id })));
+  assert.equal(one.length, 1);
 });

@@ -88,22 +88,31 @@ const openingOf = (text) => lower(text).replace(/^[^a-z0-9]+/, "").replace(/^(um
 // Each carries a heading drafted from its first sentence, trimmed of the
 // signpost itself, because "So the second thing is rendering" wants to be
 // read as "Rendering".
-export function sections(words, { minSeconds = 40 } = {}) {
+export function sections(words, { minSeconds } = {}) {
   const paras = paragraphs(words);
   if (paras.length === 0) return [];
+  // A section is worth at least a fifth of the film and never less than
+  // fifteen seconds; forty is the ceiling a long film keeps.
+  const total = paras.at(-1).end - paras[0].start;
+  const floor = minSeconds ?? Math.max(15, Math.min(40, total / 5));
   const bounds = [paras[0]];
   for (let i = 1; i < paras.length; i += 1) {
     const para = paras[i];
     const sinceLast = para.start - bounds.at(-1).start;
-    if (para.signpost && sinceLast >= minSeconds * 0.5) { bounds.push(para); continue; }
-    if (sinceLast < minSeconds) continue;
+    if (para.signpost && sinceLast >= floor * 0.5) { bounds.push(para); continue; }
+    if (sinceLast < floor) continue;
     // Vocabulary shift: how much of this paragraph's substance appeared in
-    // the previous two. Little overlap on a long stretch reads as a new topic.
+    // the previous two. Little overlap reads as a new topic — and a long
+    // paragraph on one subject shares more with its neighbours than a
+    // short one does, so the bar rises with its length; a breath of a
+    // second before it, with the words mostly new, is a change too.
     const before = new Set(vocabulary(words, paras[Math.max(i - 2, 0)].fromWordId, paras[i - 1].toWordId));
     const here = vocabulary(words, para.fromWordId, para.toWordId);
     if (here.length >= 8) {
       const shared = here.filter((word) => before.has(word)).length / here.length;
-      if (shared < 0.12) bounds.push(para);
+      const bar = para.seconds >= 30 ? 0.3 : para.seconds >= 20 ? 0.2 : 0.12;
+      const breath = para.start - paras[i - 1].end >= 1.0 && shared < 0.35;
+      if (shared < bar || breath) bounds.push(para);
     }
   }
   return bounds.map((para, index) => {

@@ -8,8 +8,10 @@ and once as a short.
 
 ## The film: “Rocket, the editor’s cut” (landscape, 1:46)
 
-**What the reading said.** One section by the vocabulary rule (a scripted monologue changes
-subject without signposting), no promise in the opening, a definition at the start, Newton
+**What the reading said.** Three sections by the vocabulary rule — the engine, the turn to
+orbit, staging — found where a scripted monologue changes subject without signposting (the
+rule scales its floor to the film's length and lets a long paragraph on new words count), no
+promise in the opening, a definition at the start, Newton
 named, thrust defined, orbit explained, staging as a change. Few text-carrying moments: this
 film is mechanism, not claims. `draft_scenes` gave a four-scene skeleton and said why.
 

@@ -189,7 +189,19 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
       scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout: "cutaway" });
       scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "cta", params: { line: charsTo(ending.cta.text.replace(/[.!?]+$/, ""), 48), arrow: "down" } } });
     } else notes.push(`the ask is at ${words.find((w) => w.id === ending.cta.fromWordId).start.toFixed(1)}s: “${ending.cta.text}” — a callout or the head alone; the cta template is for shorts`);
-  } else if (shortForm) todo.push("no ask in the last stretch: a funnel short ends on a cta template; a standalone one on the line that lands");
+  } else if (shortForm) {
+    // A funnel short ends on the ask whether or not the speaker made one:
+    // the cta goes over the face on the last words, with a placeholder line
+    // the assistant has to write — it knows where the rest is.
+    const lastId = words.at(-1).id;
+    const fromId = words.slice().reverse().find((w) => words.at(-1).end - w.start >= 2.2)?.id ?? Math.max(lastId - 4, 0);
+    const ctaStart = words.find((w) => w.id === fromId).start;
+    const busy = taken().some((t) => t.end > ctaStart);
+    if (!busy) {
+      scenes.push({ type: "graphic", fromWordId: fromId, toWordId: lastId, graphic: { kind: "custom", template: "cta", params: { line: "The full story is on the channel", button: "Watch it", arrow: "down", shade: 0.55 }, over: true } });
+      todo.push(`the ending cta's line is a placeholder — say where the rest is, in the speaker's words; over: true keeps the face under it`);
+    } else todo.push("no ask in the last stretch and a card already there: a funnel short ends on a cta template over the face");
+  }
 
   // Word order, stage scenes first at a shared start so the readback reads
   // like a plan.
