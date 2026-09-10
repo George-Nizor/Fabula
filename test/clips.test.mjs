@@ -261,3 +261,10 @@ test("a short cannot be cut from a film that has not been cut", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the shortlist is most promising first, as the tool promises", () => {
+  const words = "if a rocket flies straight up it comes straight back down. so it turns sideways as it climbs. that is what an orbit is. and it never lands. staging drops the empty tanks and the rest goes further on less. that is how rockets work.".split(" ").map((text, id) => ({ id, text, start: id * 0.5, end: id * 0.5 + 0.45 }));
+  const clips = findClips(words, { duration: { min: 3, max: 30, ideal: 12 }, limit: 6 });
+  for (let i = 1; i < clips.length; i += 1) assert.ok(clips[i - 1].score >= clips[i].score, "scores fall from first to last");
+  clips.forEach((clip, index) => assert.equal(clip.index, index));
+});

@@ -101,7 +101,7 @@ Footage is referenced where it lives, never copied. When a project was opened ou
 window (`open_project`), the same steps are yours: `transcribe` → `detect_framing` (which
 applies a plain pillarbox itself, as the first pass does, and says so) → look at the frames
 it saved, then `set_framing` when the head is not the whole frame and the scan could not tell
-(screen recordings with a camera inset, OBS scene switches) → `cut_pass` → cut review →
+(screen recordings with a camera inset, OBS scene switches) → `cut_pass` (on a project opened here there is no first pass, so `story_cuts` and `list_cuts` wait for it; `read_story` with `transcript: raw` reads the transcript before it) → cut review →
 `render_clean` → `retranscribe_clean` → `plan_shots` → `set_theme` (the look, a step of its own
 before any scene: see "The look" below) → `set_scenes` (your editorial judgment: layouts,
 titles with styles and subtitles, callouts, the graphic kit — chart, stat, list, image, clip,

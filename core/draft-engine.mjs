@@ -139,8 +139,8 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
     // there at frame one. The line is the promise cut to six words, which
     // the assistant rewrites — a draft can cut, not compress.
     const span = spanFor(words, { fromWordId: 0, toWordId: hook.toWordId }, 4);
-    scenes.push({ type: "graphic", fromWordId: 0, toWordId: span.toWordId, graphic: { kind: "custom", template: "thumbnail", params: { line: thumbLine(hook.text), side: "bottom", shade: 0.6, arrive: "instant", ...(title ? { kicker: charsTo(title, 24) } : {}) }, over: true } });
-    todo.push(`the opening thumbnail's line is the promise cut to six words (“${thumbLine(hook.text)}”); write it as the promise in six, the way a title reads`);
+    scenes.push({ type: "graphic", fromWordId: 0, toWordId: span.toWordId, graphic: { kind: "custom", template: "thumbnail", params: { line: thumbLine(hook.text), side: "bottom", shade: 0.6, arrive: "instant", ...(title && title.length <= 24 ? { kicker: title } : {}) }, over: true } });
+    todo.push(`the opening thumbnail's line is the promise cut to six words (“${thumbLine(hook.text)}”); write it as the promise in six, the way a title reads${title && title.length > 24 ? `; the kicker is empty because the project's title (“${title}”) is longer than a kicker holds — give it two or three words` : ""}`);
   } else if (hook) {
     const span = spanFor(words, { fromWordId: hook.fromWordId, toWordId: hook.toWordId }, 6);
     scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout: "cutaway" });
@@ -172,12 +172,17 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
   const wanted = story.moments.filter((m) => m.kind !== "cta" && m.kind !== "time");
   for (const moment of wanted) {
     if (cards >= density.maxCards) break;
-    const busy = taken().some((t) => moment.start < t.end + density.minGap && moment.end > t.start - density.minGap);
-    if (busy) {
-      // A moment under a scene already placed is not forgotten: the plan
-      // may want it once the earlier scene is trimmed.
+    const overlapping = taken().find((t) => moment.start < t.end && moment.end > t.start);
+    const crowding = overlapping ? null : taken().find((t) => moment.start < t.end + density.minGap && moment.end > t.start - density.minGap);
+    if (overlapping || crowding) {
+      // A moment not placed is not forgotten — and the reason is the true
+      // one: under a scene already there, or inside the persona's spacing
+      // of another, which the assistant may overrule.
       if (["definition", "number", "change", "quote", "question", "warning", "name", "sequence", "enumeration", "compare"].includes(moment.kind)) {
-        todo.push(`at ${moment.start.toFixed(1)}s (${moment.kind}): under another scene, so nothing was placed — ${moment.evidence?.length ? `“${moment.evidence.slice(0, 3).join(", ")}”` : "the sentence"} may want its own card once the scene over it ends`);
+        const what = moment.evidence?.length ? `“${moment.evidence.slice(0, 3).join(", ")}”` : "the sentence";
+        todo.push(overlapping
+          ? `at ${moment.start.toFixed(1)}s (${moment.kind}): under another scene, so nothing was placed — ${what} may want its own card once the scene over it ends`
+          : `at ${moment.start.toFixed(1)}s (${moment.kind}): within ${density.minGap}s of the scene at ${crowding.start.toFixed(1)}s, so the ${persona}'s spacing left it out — ${what} is a card if you judge it worth crowding`);
       }
       continue;
     }

@@ -1187,6 +1187,9 @@ server.registerTool("review_plan", {
     scenes: (config.scenes ?? []).length,
     format: projectFormat(dir),
     look: look.chosen ? "chosen" : "unchosen",
+    // Where each scene actually is in seconds, after the seams and the dwell
+    // rule: a card's layout may hold past its last word.
+    spans: read.resolved.map((scene, index) => ({ index, type: scene.type, layout: scene.layout, kind: scene.graphic?.template ?? scene.graphic?.kind, start: Number(scene.start.toFixed(2)), end: Number(scene.end.toFixed(2)) })),
     warnings: read.warnings,
     variety: read.variety,
     pacing: read.pacing,
@@ -1241,7 +1244,7 @@ server.registerTool("review_film", {
   const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
   const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
   const duration = filmDuration(dir, words);
-  const chapters = chapterList({ scenes, words, title: readProjectMeta(dir).title ?? "Introduction", duration });
+  const chapters = chapterList({ scenes, words, title: openingTitle(scenes) ?? readProjectMeta(dir).title ?? "Introduction", duration });
   const out = {
     format: projectFormat(dir), seconds: Number(duration.toFixed(1)), scenes: (config.scenes ?? []).length,
     warnings: read.warnings, variety: read.variety, pacing: read.pacing,
@@ -1292,9 +1295,13 @@ server.registerTool("read_story", {
   const raw = transcript === "raw";
   let words;
   if (raw) {
-    const review = readReview(dir);
-    if (!review?.words) throw new Error("no cut list yet: the raw transcript is read through review.json, which the first pass or cut_pass writes");
-    words = review.words;
+    // The recording's own words: through review.json when a cut list exists
+    // (the same ids add_cut takes), else straight from the transcript.
+    const paths = projectPaths(dir);
+    if (fs.existsSync(paths.review)) words = readJson(paths.review).words;
+    else if (fs.existsSync(paths.transcript)) words = flattenWords(readJson(paths.transcript));
+    else throw new Error("no transcript yet: transcribe first");
+    if (!words?.length) throw new Error("the raw transcript has no words");
   } else words = cleanWords(dir);
   const story = readStory(words, { limit: limit ?? 80 });
   return ok({
@@ -1314,6 +1321,13 @@ server.registerTool("read_story", {
 // These three touch what they name and carry the rest through untouched,
 // which is also what makes them safe against the person's own edits in the
 // window between turns.
+
+// The film's own title, when the plan opens on a title card: the 0:00 chapter
+// is that, not the project's working name.
+function openingTitle(scenes) {
+  const first = scenes.find((scene) => scene.type === "title" && scene.start <= 1.0 && typeof scene.text === "string" && scene.text.trim());
+  return first ? first.text.trim() : null;
+}
 
 // The film's length as the render measures it — the clean cut's, when it
 // exists — so every read of a plan settles the layout timeline the way the
@@ -1646,7 +1660,7 @@ server.registerTool("export_chapters", {
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
   const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
-  const list = chapterList({ scenes, words, title: title ?? readProjectMeta(dir).title ?? "Introduction", duration: words.at(-1)?.end });
+  const list = chapterList({ scenes, words, title: title ?? openingTitle(scenes) ?? readProjectMeta(dir).title ?? "Introduction", duration: words.at(-1)?.end });
   const file = path.join(dir, "out", "chapters.txt");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, list.text);
@@ -1705,7 +1719,7 @@ server.registerTool("export_description", {
   const config = readComposeConfig(dir);
   const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: filmDuration(dir, words) });
   const shown = title ?? readProjectMeta(dir).title ?? "Untitled";
-  const chapters = chapterList({ scenes, words, title: shown, duration: words.at(-1)?.end });
+  const chapters = chapterList({ scenes, words, title: title ?? openingTitle(scenes) ?? shown, duration: words.at(-1)?.end });
   const credits = listAssets(path.join(dir, "assets")).filter((asset) => asset.attribution?.author || asset.attribution?.license || asset.attribution?.pageUrl);
   const lines = [`# ${shown}`, "", summary.trim(), ""];
   if (links?.length) { for (const link of links) lines.push(`${link.label}: ${link.url}`); lines.push(""); }
@@ -1879,7 +1893,7 @@ server.registerTool("render_thumbnail", {
 
 server.registerTool("preview_sheet", {
   description:
-    "Several frames of the composed film tiled into ONE picture, in time order, so the rhythm of a whole passage — or the whole film — can be looked at at once: where the head is, where the cards are, how often the picture changes, whether two cards in a row look like the same card. Give every_seconds to walk the film at that interval (a 106 s film every 8 s is 14 tiles), or a list of at_seconds or word_ids for chosen moments. Tiles are 640 wide by default, which shows arrangement and colour rather than small type; use preview_frame for one moment at full size. Costs a few seconds per tile. The result lists what each tile holds.",
+    "Several frames of the composed film tiled into ONE picture, in time order, so the rhythm of a whole passage — or the whole film — can be looked at at once: where the head is, where the cards are, how often the picture changes, whether two cards in a row look like the same card. Give every_seconds to walk the film at that interval (a 106 s film every 8 s is 13 tiles: the walk starts a beat in and stops half a second short of the end), or a list of at_seconds or word_ids for chosen moments. Tiles are 640 wide by default, which shows arrangement and colour rather than small type; use preview_frame for one moment at full size. Costs a few seconds per tile. The result lists what each tile holds.",
   inputSchema: {
     every_seconds: z.number().min(1).max(120).optional().describe("Walk the film at this interval (at most 48 tiles; a longer film is thinned)"),
     at_seconds: z.array(z.number().min(0)).min(2).max(48).optional().describe("Or exact times on the clean timeline"),

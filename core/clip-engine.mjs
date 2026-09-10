@@ -193,7 +193,8 @@ export function findClips(words, { duration, limit = 8, overlap = 0.35 } = {}) {
     if (!clash) kept.push(candidate);
     if (kept.length >= limit) break;
   }
-  return kept.sort((a, b) => a.start - b.start).map((clip, index) => ({ ...clip, index }));
+  // Most promising first, as promised; each carries its start for the film's order.
+  return kept.map((clip, index) => ({ ...clip, index }));
 }
 
 // ---- A span someone chose ----

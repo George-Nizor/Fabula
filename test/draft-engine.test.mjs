@@ -133,3 +133,15 @@ test("a short with a spoken ask ends on the cta over the face, and a hook line n
     if (line) assert.ok(!/\b(over|with|of|the|and|to)$/.test(line), `no hanging word: ${line}`);
   }
 });
+
+test("a moment the persona's spacing left out is told so, not told it is under a scene", async () => {
+  const { draftScenes } = await import("../core/draft-engine.mjs");
+  const say = "the engine burns fuel with oxidizer to make hot gas and that pressure is called thrust which pushes the rocket up and here is the thing the tanks weigh more than the payload so staging drops them and the remaining stage goes further on less fuel".split(" ");
+  const words = say.map((text, id) => ({ id, text: id === say.length - 1 ? `${text}.` : text, start: id * 0.42, end: id * 0.42 + 0.38 }));
+  const draft = draftScenes(words, { format: "landscape", shortForm: false, persona: "editor", title: "Rockets" });
+  for (const note of draft.todo.filter((t) => /under another scene/.test(t))) {
+    const at = Number(note.match(/^at ([\d.]+)s/)[1]);
+    const covered = draft.scenes.some((s) => s.type !== "stage" && words[s.fromWordId].start <= at && at < words[s.toWordId].end);
+    assert.ok(covered, `"under another scene" only when a scene covers ${at}s: ${note}`);
+  }
+});

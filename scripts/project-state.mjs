@@ -155,7 +155,12 @@ function voiceLoudness(dir, map, measure) {
   } else if (!current) return {};
   if (typeof audio.voiceLoudness !== "number") return {};
   const out = { voiceLoudness: audio.voiceLoudness };
-  if (audio.voiceLoudness < -24) out.voiceNote = `the voice measures ${audio.voiceLoudness} LUFS, well under the -14 to -16 platforms play at; set_audio voice_loudness -16 (a film) or -14 (a short) normalises it in the stitch`;
+  if (audio.voiceLoudness < -24) {
+    const target = readComposeConfig(dir).audio?.voice?.loudness;
+    out.voiceNote = typeof target === "number"
+      ? `the voice measures ${audio.voiceLoudness} LUFS as recorded; the stitch brings it to the ${target} LUFS target already set`
+      : `the voice measures ${audio.voiceLoudness} LUFS, well under the -14 to -16 platforms play at; set_audio voice_loudness -16 (a film) or -14 (a short) normalises it in the stitch`;
+  }
   return out;
 }
 

@@ -159,6 +159,15 @@ joins that layout instead of writing a stage scene the timeline would ignore, a 
 are never under the dwell floor, a file the plan refused is not left in the assets, a
 translated caption line is one line, and an upper-case extension keeps its name.
 
+A second full journey, after the day's last changes, held on every mechanism — the round trip
+kept the clip's sound, the drop, the grade, the clean-up, the captions, the short's draft
+opening on the face and ending on the ask, the re-cut and the reanchor all true to disk in
+twenty minutes. What it caught was the tools' honesty again: the draft called a moment its
+spacing had skipped "under another scene", the shortlist was not most promising first though
+it said so, a long working title became a truncated kicker, no tool said where a scene's held
+layout actually starts and ends, the raw reading refused before a cut list existed, and the
+0:00 chapter was the project's working name when the plan opened on the film's own title.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
