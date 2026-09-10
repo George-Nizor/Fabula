@@ -110,7 +110,10 @@ function scoreSpan(span, { duration }) {
 
   // The opening. This is the half of a short that decides whether the rest is
   // watched at all, so it is weighted like it.
-  if (HOOK_OPENERS.some((re) => re.test(opening))) { score += 16; notes.push("opens on a promise"); }
+  // The shape is named, not judged: "if" is a hook's shape and also a
+  // conditional's, and only the reader can tell which this one is.
+  const hookShape = HOOK_OPENERS.map((re) => opening.match(re)?.[0]).find(Boolean);
+  if (hookShape) { score += 16; notes.push(`opens in a hook's shape (“${hookShape}…”) — a promise if the sentence keeps it`); }
   if (DANGLING_START.has(firstWords[0])) { score -= 14; notes.push(`opens on “${first.words[0].text}” — the viewer has to supply what it refers to`); }
   if (FILLER_START.test(first.text)) { score -= 6; notes.push("opens on a connective; trim the first word or two"); }
   if (/\?$/.test(first.text)) { score += 8; notes.push("opens on a question"); }

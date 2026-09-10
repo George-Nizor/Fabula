@@ -401,7 +401,7 @@ export function opening(words, { seconds = 20 } = {}) {
   const hookIndex = said.findIndex((sentence) => HOOKS.some((re) => re.test(openingOf(sentence.text))));
   if (hookIndex === -1) notes.push("nothing in the opening promises the viewer anything; consider a hook line drawn from later in the film, or a cold-open cut");
   else if (hookIndex > 0) notes.push(`the promise arrives at ${said[hookIndex].start.toFixed(1)}s, sentence ${hookIndex + 1}: “${said[hookIndex].text}”`);
-  else notes.push("opens on a promise");
+  else notes.push(`opens in a hook's shape (“${HOOKS.map((re) => openingOf(first.text).match(re)?.[0]).find(Boolean)}…”) — a promise if the sentence keeps it`);
   return {
     fromWordId: first.fromWordId,
     toWordId: said.at(-1).toWordId,

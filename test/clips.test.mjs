@@ -103,7 +103,7 @@ test("a clip that opens on a dangling pronoun is marked down and says why", () =
   const bad = clips.find((clip) => clip.fromWordId === said[dangling].fromWordId);
   if (bad) assert.ok(bad.notes.some((note) => note.includes("supply what it refers to")), bad.notes.join(" / "));
   // And the note is written for a person, not for a scoring function.
-  const promising = clips.find((clip) => clip.notes.includes("opens on a promise"));
+  const promising = clips.find((clip) => clip.notes.some((note) => note.startsWith("opens in a hook's shape")));
   assert.ok(promising, "the Here's-the-thing opening should be recognised");
 });
 
