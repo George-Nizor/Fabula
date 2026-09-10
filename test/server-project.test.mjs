@@ -112,6 +112,24 @@ test("update_scenes merges params, replaces a card whose kind changes, takes get
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test("a plan read back from get_scenes goes straight back into set_scenes", async () => {
+  const root = makeRoot();
+  try {
+    await withServer(root, async (client) => {
+      assert.equal(errorOf(await call(client, "set_scenes", { scenes: [{ type: "stage", from_word_id: 0, to_word_id: 8, layout: "side" }, { type: "title", text: "Hello", from_word_id: 0, to_word_id: 3 }] })), null);
+      const read = text(await call(client, "get_scenes")).scenes;
+      assert.equal(read[0].index, 0);
+      const back = await call(client, "set_scenes", { scenes: read });
+      assert.equal(errorOf(back), null, errorOf(back));
+      const again = JSON.parse(fs.readFileSync(path.join(root, "one", "compose.json"), "utf8")).scenes;
+      assert.equal(again.length, 2);
+      assert.equal(again[1].fromWordId, 0);
+      assert.equal(again[1].index, undefined, "get_scenes' numbering is not written back");
+      assert.equal(errorOf(await call(client, "check_scenes", { scenes: read })), null);
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("export_description carries hashtags cleanly and leaves out a chapter list a platform would not show", async () => {
   const root = makeRoot();
   try {

@@ -105,7 +105,9 @@ let adoptedPersona = null; // adopt_persona in this session; status reports it
 // same ones the window uses, so the two never drift in arguments.
 const RUNNER = { node: process.execPath };
 const DEFAULT_WAIT_SECONDS = 25;
-const MAX_WAIT_SECONDS = 1500;
+// Under the minute most MCP clients allow one request; a longer job is
+// waited for by calling again.
+const MAX_WAIT_SECONDS = 50;
 
 // One frame, through the export page, in its own short-lived Electron.
 // Electron is the only thing that can paint the overlay, and the render job
@@ -210,7 +212,7 @@ const rectSchema = z.object({
 }).describe("Pixels in the raw frame");
 
 const waitSchema = z.number().min(0).max(MAX_WAIT_SECONDS).optional()
-  .describe(`How long to wait for the job before reporting it as still running (default ${DEFAULT_WAIT_SECONDS}s)`);
+  .describe(`How long to wait for the job before reporting it as still running (default ${DEFAULT_WAIT_SECONDS}s, at most ${MAX_WAIT_SECONDS}s — a client's request timeout is usually a minute; call again until done)`);
 
 function cleanWords(dir) {
   const paths = projectPaths(dir);
@@ -546,7 +548,29 @@ server.registerTool("detect_framing", {
   if (!paths.video) throw new Error("project has no staged video");
   const scan = await withProgress(dir, "framing", "Scanning for the head in the frame", () =>
     scanFraming(paths.video, path.join(dir, "framing")));
-  return ok(scan);
+  fs.writeFileSync(path.join(dir, "framing-scan.json"), JSON.stringify(scan, null, 2));
+  // The scan's proposals as a framing where no judgment is needed — the rule
+  // the first pass applies (scripts/job.mjs autoFraming): a run the scan
+  // calls "full" may be a camera inset or a plain head, and only a look at
+  // the frames tells, so those are left; a plain pillarbox is applied.
+  let applied = null;
+  if (!fs.existsSync(paths.framing)) {
+    if (!scan.runs.some((run) => run.kind === "full" || run.proposal?.screen)) {
+      const segments = scan.runs.map((run) => ({ start: run.start, end: run.end, head: run.proposal.head, screen: null }));
+      try {
+        validateFraming({ segments }, scan.dims, scan.duration);
+        fs.writeFileSync(paths.framing, JSON.stringify({ segments }, null, 2));
+        applied = { segments: segments.length, stale: fs.existsSync(paths.clean) ? ["clean"] : [] };
+      } catch (error) { applied = { refused: error.message }; }
+    }
+  }
+  return ok({
+    ...scan,
+    applied,
+    hint: applied?.segments ? `the proposals were applied as framing.json (${applied.segments} segment(s)); render_clean crops to it. set_framing changes it.`
+      : fs.existsSync(paths.framing) ? "framing.json already exists and was kept; set_framing replaces it"
+        : "nothing applied: a run the scan calls full may be a camera inset or a plain head — look at the frames under framing/ and set_framing what you see",
+  });
 });
 
 server.registerTool("set_framing", {
@@ -759,7 +783,7 @@ server.registerTool("list_clean_words", {
   inputSchema: {},
 }, async () => {
   const words = cleanWords(currentProjectDir());
-  return ok(words.map((word) => `${word.id}:${word.text}`).join(" "));
+  return ok({ count: words.length, text: words.map((word) => `${word.id}:${word.text}`).join(" "), words: words.map((word) => ({ id: word.id, text: word.text, start: Number(word.start.toFixed(2)), end: Number(word.end.toFixed(2)) })) });
 });
 
 server.registerTool("get_scenes", {
@@ -919,8 +943,11 @@ server.registerTool("set_audio", {
 
 const optionSceneShape = z.object({
   type: z.enum([...SCENE_TYPES]),
-  from_word_id: z.number().int().min(0),
-  to_word_id: z.number().int().min(0),
+  from_word_id: z.number().int().min(0).optional(),
+  to_word_id: z.number().int().min(0).optional(),
+  fromWordId: z.number().int().min(0).optional().describe("the same, as get_scenes spells it"),
+  toWordId: z.number().int().min(0).optional(),
+  index: z.number().int().optional().describe("ignored: get_scenes' own numbering"),
   text: z.string().optional(), subtitle: z.string().optional(), style: z.string().optional(),
   accent: z.string().optional(), flair: z.boolean().optional(),
   layout: z.enum([...LAYOUTS]).optional(), corner: z.enum(["br", "bl", "tr", "tl"]).optional(),
@@ -928,8 +955,8 @@ const optionSceneShape = z.object({
 });
 
 const shapeScene = (scene) => {
-  const { from_word_id, to_word_id, ...rest } = scene;
-  const out = { ...rest, fromWordId: from_word_id, toWordId: to_word_id };
+  const { from_word_id, to_word_id, fromWordId, toWordId, index, ...rest } = scene;
+  const out = { ...rest, fromWordId: from_word_id ?? fromWordId, toWordId: to_word_id ?? toWordId };
   for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
   return out;
 };
@@ -1036,8 +1063,12 @@ server.registerTool("set_scenes", {
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
-      from_word_id: z.number().int().min(0),
-      to_word_id: z.number().int().min(0),
+      from_word_id: z.number().int().min(0).optional(),
+      to_word_id: z.number().int().min(0).optional(),
+      fromWordId: z.number().int().min(0).optional().describe("the same, as get_scenes spells it — a plan read back can be sent back as it is"),
+      toWordId: z.number().int().min(0).optional(),
+      insertId: z.string().optional(),
+      index: z.number().int().optional().describe("ignored: get_scenes' own numbering"),
       text: z.string().min(1).optional().describe("title/callout text"),
       subtitle: z.string().max(80).optional().describe("title only: a second line (the block style shows it on an ink strip)"),
       style: z.string().optional().describe(`title: ${[...TITLE_STYLES].join("/")}; callout: ${[...CALLOUT_STYLES].join("/")}; omit for the theme's default`),
@@ -1088,8 +1119,8 @@ server.registerTool("set_scenes", {
   const words = cleanWords(dir);
   const shaped = expandPlan(scenes.map((scene) => ({
     type: scene.type,
-    fromWordId: scene.from_word_id,
-    toWordId: scene.to_word_id,
+    fromWordId: scene.from_word_id ?? scene.fromWordId,
+    toWordId: scene.to_word_id ?? scene.toWordId,
     text: scene.text,
     subtitle: scene.subtitle,
     style: scene.style,
@@ -1233,7 +1264,7 @@ server.registerTool("review_film", {
     // The floor is the room only when nothing else is under the voice.
     const underneath = Boolean(config.audio?.music) || scenes.some((scene) => scene.graphic?.kind === "clip" && scene.graphic.sound);
     if (typeof measured.noiseFloor === "number" && measured.noiseFloor > -55 && !underneath && (voice.clean ?? "off") === "off") notes.push(`the noise floor is ${measured.noiseFloor} dB — a room is audible under the words; set_audio voice_clean light`);
-    if (underneath) notes.push("the floor measured is the bed or a clip's sound, not the room");
+    if (underneath) notes.push(`the floor measured includes ${config.audio?.music ? "the music bed" : "a clip's own sound"}, not only the room`);
     out.sound.measured = { file: path.basename(heard), ...measured, notes };
   }
   if (sheet !== false && fs.existsSync(projectPaths(dir).clean) && duration > 0) {
@@ -1705,14 +1736,19 @@ server.registerTool("film_sheet", {
   },
 }, async ({ every_seconds, file, columns }) => {
   const dir = currentProjectDir();
-  const leaf = (file ?? "final.mp4").replace(/[^a-z0-9._-]/gi, "_");
+  // Without a name: the newer of the film and its draft, which is the one
+  // just rendered.
+  const newest = ["final.mp4", "draft.mp4"].filter((name) => fs.existsSync(path.join(dir, "out", name)))
+    .sort((a, b) => fs.statSync(path.join(dir, "out", b)).mtimeMs - fs.statSync(path.join(dir, "out", a)).mtimeMs)[0];
+  const leaf = (file ?? newest ?? "final.mp4").replace(/[^a-z0-9._-]/gi, "_");
   const video = path.join(dir, "out", leaf);
-  if (!fs.existsSync(video)) throw new Error(`no ${file ?? "final.mp4"} in out/; render_final first${file ? ", or film_sheet without file for the film" : ""}`);
+  if (!fs.existsSync(video)) throw new Error(`no ${file ?? "final.mp4 or draft.mp4"} in out/; render_final first${file ? ", or film_sheet without file for the film" : ""}`);
   const duration = probeDuration(video);
   const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
-  // fps=1/N emits a frame at 0, N, 2N… while the source lasts; the last one
-  // needs a whole interval behind it, so the count is the floor.
-  const tiles = Math.max(1, Math.min(48, Math.floor(duration / every)));
+  // One frame at 0, N, 2N… picked by time (fps=1/N picks the frame nearest
+  // each slot, half an interval early), so tile k IS the second it is
+  // labelled with; the count is every start under the length.
+  const tiles = Math.max(1, Math.min(48, Math.ceil(duration / every)));
   const dims = probeDimensions(video);
   const tall = dims.height > dims.width;
   const cols = Math.max(1, Math.min(columns ?? (tall ? 6 : 4), tiles));
@@ -1722,7 +1758,7 @@ server.registerTool("film_sheet", {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const { execFileSync } = await import("node:child_process");
   execFileSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-i", video,
-    "-vf", `fps=1/${every},scale=${width}:-2,tile=${cols}x${rows}:padding=4:color=0x0b0e12`, "-frames:v", "1", out], { stdio: ["ignore", "ignore", "pipe"] });
+    "-vf", `select='isnan(prev_selected_t)+gte(t-prev_selected_t\,${every - 0.02})',scale=${width}:-2,tile=${cols}x${rows}:padding=4:color=0x0b0e12`, "-fps_mode", "passthrough", "-frames:v", "1", out], { stdio: ["ignore", "ignore", "pipe"] });
   const audio = (() => {
     try {
       const probe = execFileSync(FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", video]).toString().trim();
@@ -2070,7 +2106,8 @@ server.registerTool("reanchor_scenes", {
   }
   return ok({
     applied: apply,
-    moved: report.filter((r) => r.ok).length,
+    moved: report.filter((r) => r.ok && r.shiftSeconds !== 0).length,
+    unchanged: report.filter((r) => r.ok && r.shiftSeconds === 0).length,
     unresolved: unresolved.map((r) => ({ index: r.index, type: r.type, reason: r.reason, fromWordId: r.fromWordId, toWordId: r.toWordId })),
     scenes: report.map((r) => (r.ok
       ? { index: r.index, type: r.type, fromWordId: r.fromWordId, toWordId: r.toWordId, shiftSeconds: r.shiftSeconds, confidence: r.confidence, text: r.text.length > 90 ? `${r.text.slice(0, 87)}…` : r.text }

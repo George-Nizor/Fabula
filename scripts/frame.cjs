@@ -60,6 +60,8 @@ async function main() {
   // anchor here too: the frame lands where that word is spoken, a beat in so
   // an entrance has played rather than caught mid-flight.
   const clampT = (t) => Math.min(Math.max(t, 0), Math.max(duration - 0.05, 0));
+  // The word being said at t (the last one begun), so a tile names its moment.
+  const wordIdAt = (t) => { let id = null; for (const word of words) { if (word.start <= t) id = word.id; else break; } return id; };
   const wordAt = (id) => {
     const word = words.find((w) => w.id === id);
     if (!word) throw new Error(`no word ${id}; the clean transcript has 0–${words.length - 1}`);
@@ -76,13 +78,13 @@ async function main() {
     instants = [];
     // The walk stops short of the last half second: the final frames of a
     // clean cut decode black on some seeks, and a black tile says nothing.
-    for (let t = Math.min(0.8, duration); t < duration - 0.5; t += every) instants.push({ t: clampT(t), wordId: null });
-    if (instants.length === 0) instants.push({ t: clampT(Math.min(0.8, duration / 2)), wordId: null }); // a film shorter than a breath: one tile
+    for (let t = Math.min(0.8, duration); t < duration - 0.5; t += every) instants.push({ t: clampT(t), wordId: wordIdAt(t) });
+    if (instants.length === 0) instants.push({ t: clampT(Math.min(0.8, duration / 2)), wordId: wordIdAt(0.8) }); // a film shorter than a breath: one tile
     if (instants.length > 48) instants = instants.filter((_, i) => i % Math.ceil(instants.length / 48) === 0);
   } else if (flag("word") !== undefined) {
     instants = String(flag("word")).split(",").map((s) => wordAt(Number(s))).map((word) => ({ t: clampT(word.start + 0.35), wordId: word.id }));
   } else {
-    instants = String(flag("at") ?? "0.8").split(",").map((s) => ({ t: clampT(Number(s)), wordId: null }));
+    instants = String(flag("at") ?? "0.8").split(",").map((s) => ({ t: clampT(Number(s)), wordId: wordIdAt(Number(s)) }));
   }
   const T = instants[0].t;
   const word = instants[0].wordId === null ? null : wordAt(instants[0].wordId);

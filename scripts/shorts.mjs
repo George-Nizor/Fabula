@@ -98,7 +98,10 @@ export function createShort(parentDir, { fromWordId, toWordId, title, format = "
   // Read more than heard: a short's captions lean on their numbers and absolutes.
   if (shape.shortForm) compose.captionEmphasis = "auto";
   // And with the voice where a feed plays it; the recording is rarely there.
-  if (shape.shortForm) compose.audio = { voice: { loudness: -14 } };
+  if (shape.shortForm) {
+    const clean = readComposeOf(parentDir).audio?.voice?.clean;
+    compose.audio = { voice: { loudness: -14, ...(clean && clean !== "off" ? { clean } : {}) } };
+  }
   fs.writeFileSync(path.join(dir, "compose.json"), JSON.stringify(compose, null, 2));
 
   writeProjectTitle(dir, shown);

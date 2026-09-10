@@ -450,7 +450,7 @@ async function main() {
       const got = pipeline.measureLoudness(partial);
       if (typeof got !== "number" || Math.abs(got - sound.voiceTarget) <= 0.3) { if (pass) say(`voice now ${got} LUFS`); break; }
       trim += sound.voiceTarget - got;
-      say(`voice measured ${got} LUFS against ${sound.voiceTarget}; stitching again with ${trim.toFixed(1)} dB trimmed in`);
+      say(`voice measured ${got} LUFS against ${sound.voiceTarget}; stitching again with the gain ${trim >= 0 ? "up" : "down"} ${Math.abs(trim).toFixed(1)} dB`);
       await stitch(trim);
     }
   }

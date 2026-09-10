@@ -35,6 +35,17 @@ const calloutOrNote = (sentence, span, max, style, todo) => {
   if (words.length <= max) return { type: "callout", ...span, text: words.join(" "), style, ...(todo ? { todo } : {}) };
   return { type: "note", ...span, todo: `${todo ? `${todo}; ` : ""}the sentence is ${words.length} words, more than a callout holds — write the phrase yourself, or leave the head to say it` };
 };
+// A hook line is twelve words at most: the first clause when the sentence
+// runs on, cut at a pause rather than mid-phrase, never with an ellipsis.
+const hookLine = (text) => {
+  const clean = String(text).replace(/[.!?]+$/, "").trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length <= 12) return charsTo(clean, 90);
+  const pause = clean.search(/[,;:—–-]\s/);
+  const clause = pause > 0 ? clean.slice(0, pause) : clean;
+  const kept = clause.split(/\s+/).filter(Boolean).slice(0, 12).join(" ");
+  return charsTo(kept, 90);
+};
 const charsTo = (text, max) => (String(text).length <= max ? String(text) : `${String(text).slice(0, max - 1).trim()}…`);
 
 // The word ids a card covers: from the moment's first word, for about
@@ -116,9 +127,10 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
   if (hook) {
     const span = spanFor(words, { fromWordId: hook.fromWordId, toWordId: hook.toWordId }, 6);
     scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout: "cutaway" });
-    scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "hook", params: { line: charsTo(hook.text.replace(/[.!?]+$/, ""), 90), ...(title ? { kicker: charsTo(title, 32) } : {}) } } });
+    scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "hook", params: { line: hookLine(hook.text), ...(title ? { kicker: charsTo(title, 32) } : {}) } } });
     if (opening.preamble.length) todo.push(`the promise arrives at ${hook.at.toFixed(1)}s after ${opening.preamble.length} sentence(s) of preamble; consider striking the preamble as a cut (read_story transcript: raw, add_cut) so the film opens on it`);
   } else if (title) {
+    todo.push(`the opening title carries the project's name (“${title}”); write the film's title, or put a hook line over the sentence that makes the promise`);
     const first = words.slice(0, Math.min(8, words.length));
     scenes.push({ type: "title", fromWordId: first[0].id, toWordId: first.at(-1).id, text: charsTo(title, 60) });
     notes.push("nothing in the opening promises the viewer anything, so the draft opens on the title; a hook line drawn from later in the film would be stronger");

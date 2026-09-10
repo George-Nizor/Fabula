@@ -206,7 +206,7 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
       // `voiceTrimDb` is the stitch's second pass: what the ceiling took off
       // the first time, added back.
       const gain = voice.loudness - measured + voiceTrimDb;
-      lines.push(`[v0]volume=${num(gain)}dB,alimiter=limit=0.8414:attack=5:release=50:level=false[v1]`);
+      lines.push(`[v0]volume=${num(gain)}dB,alimiter=limit=0.7943:attack=5:release=50:level=false[v1]`);
     } else lines.push(`[v0]loudnorm=I=${num(voice.loudness)}:TP=-1.5:LRA=11[v1]`);
     voiceLabel = "v1";
   }
