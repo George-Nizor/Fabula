@@ -199,3 +199,23 @@ test("import_clip files B-roll as a muted mp4, list_assets says how long it is, 
     });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("captions can be read as timed phrases and written back in another language with the film's timings", async () => {
+  const root = makeRoot();
+  try {
+    await withServer(root, async (client) => {
+      const got = text(await call(client, "get_captions"));
+      assert.ok(got.count >= 1 && got.phrases.length === got.count);
+      assert.ok(got.phrases.every((p) => typeof p.text === "string" && p.end > p.start));
+      assert.match(errorOf(await call(client, "export_captions", { language: "es", lines: ["uno"] })) ?? "", got.count === 1 ? /^$/ : /line\(s\) for/);
+      const lines = got.phrases.map((p, i) => `línea ${i + 1}`);
+      const out = text(await call(client, "export_captions", { language: "es", lines }));
+      assert.equal(out.count, got.count);
+      const srt = fs.readFileSync(path.join(root, "one", "out", "captions-es.srt"), "utf8");
+      assert.ok(srt.includes("línea 1") && srt.includes("-->"));
+      assert.match(errorOf(await call(client, "export_captions", { language: "Spanish", lines })) ?? "", /language/i);
+      const listed = text(await call(client, "status")).deliverables.map((d) => d.name);
+      assert.ok(listed.includes("captions-es.srt") && listed.includes("captions-es.vtt"), JSON.stringify(listed));
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

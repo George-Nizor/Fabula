@@ -317,6 +317,10 @@ something; put the words on the side the face is not. The line is a promise the 
 Two to four `variants` render side by side into `out/thumbnail-variants.png` at the size a feed
 shows them, which is the size to choose at; the one whose words are read without trying wins.
 
+`get_captions` lists the film's caption phrases with their timings, and `export_captions`
+takes one line per phrase in another language — translated by you, in order — and writes
+`out/captions-<language>.srt` and `.vtt` with the film's own timings, for the platform's
+subtitle upload; a film that speaks one language can carry captions in several.
 `export_description` writes `out/description.md`: the title, a summary you write from the
 story, the links, the chapter list (only from three chapters, which is when a platform shows
 one), the image credits and a last line of `tags` as hashtags — three that say what the film

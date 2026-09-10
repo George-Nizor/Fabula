@@ -236,7 +236,7 @@ export function outputs(dir) {
   const outDir = path.join(dir, "out");
   if (!fs.existsSync(outDir)) return [];
   return fs.readdirSync(outDir)
-    .filter((name) => /^(final|draft|clean|preview-\d+-\d+)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md|description\.md)$/i.test(name))
+    .filter((name) => /^(final|draft|clean|preview-\d+-\d+|captions-[a-z]{2,3}(-[A-Za-z0-9]{2,8})?)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md|description\.md)$/i.test(name))
     .map((name) => {
       const file = path.join(outDir, name);
       const stat = fs.statSync(file);

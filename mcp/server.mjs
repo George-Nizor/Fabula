@@ -64,7 +64,7 @@ import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
@@ -1651,6 +1651,42 @@ server.registerTool("export_chapters", {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, list.text);
   return ok({ file, ...list, hint: list.enough ? "paste the text into the upload's description" : "fewer than three chapters: add section or cover marks where the subject changes (read_story's sections say where), then export again" });
+});
+
+server.registerTool("get_captions", {
+  description:
+    "The film's caption phrases as timed lines — index, start, end, text on the clean timeline — the same phrases the captions burn in and the SRT/VTT carry. Read them to translate: export_captions takes one line per phrase in another language and writes a caption file with these timings.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const phrases = resolvePhraseCaptions(words);
+  return ok({ count: phrases.length, seconds: Number(filmDuration(dir, words).toFixed(1)), phrases: phrases.map((p, index) => ({ index, start: Number(p.start.toFixed(2)), end: Number(p.end.toFixed(2)), text: p.text })) });
+});
+
+server.registerTool("export_captions", {
+  description:
+    "A caption file in another language, with the film's own timings: give one line per phrase from get_captions (translated by you, in that order, the same count), and out/captions-<language>.srt and .vtt are written beside the film for the platform's subtitle upload. The English the film carries is already written beside every render; this is for the languages it does not speak.",
+  inputSchema: {
+    language: z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/).describe("A language tag, e.g. es, pt-BR, ja"),
+    lines: z.array(z.string().max(200)).min(1).max(2000).describe("One translated line per phrase, in get_captions' order"),
+  },
+}, async ({ language, lines }) => {
+  const dir = currentProjectDir();
+  const words = cleanWords(dir);
+  const phrases = resolvePhraseCaptions(words);
+  if (lines.length !== phrases.length) throw new Error(`${lines.length} line(s) for ${phrases.length} phrase(s): get_captions lists them; give exactly one line per phrase, in order`);
+  const empty = lines.findIndex((line) => !line.trim());
+  if (empty >= 0) throw new Error(`line ${empty} is empty; every phrase needs its line (repeat a short one if two phrases share a sentence)`);
+  const cues = phrases.map((p, i) => ({ start: p.start, end: p.end, text: lines[i].trim() }));
+  const files = [];
+  for (const format of ["srt", "vtt"]) {
+    const file = path.join(dir, "out", `captions-${language}.${format}`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, subtitleFile(cues, format));
+    files.push(file);
+  }
+  return ok({ language, files, count: cues.length, hint: "upload beside the film as its subtitles for that language; the timings are the film's own" });
 });
 
 server.registerTool("export_description", {
