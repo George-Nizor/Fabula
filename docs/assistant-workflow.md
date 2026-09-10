@@ -312,8 +312,10 @@ Two to four `variants` render side by side into `out/thumbnail-variants.png` at 
 shows them, which is the size to choose at; the one whose words are read without trying wins.
 
 `export_description` writes `out/description.md`: the title, a summary you write from the
-story, the links, the chapter list and the image credits, as one block to paste into the
-upload. `export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
+story, the links, the chapter list (only from three chapters, which is when a platform shows
+one), the image credits and a last line of `tags` as hashtags — three that say what the film
+is about, since a platform shows the first three above a short's title — as one block to paste
+into the upload. `export_chapters` writes `out/chapters.txt`: the chapter list a platform reads from the
 description, one `m:ss Title` per line from the plan's `section`, `cover` and `headline`
 marks (or from `read_story`'s sections where the plan has none). `list_assets` carries the
 credits for every fetched picture; `out/credits.md` is written with the film. Hand both over

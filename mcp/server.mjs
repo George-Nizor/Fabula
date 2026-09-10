@@ -1623,8 +1623,9 @@ server.registerTool("export_description", {
     summary: z.string().min(20).max(1200).describe("What the film is, in the person's voice, for the description's first lines"),
     title: z.string().max(100).optional().describe("The upload's title; the project's title by default"),
     links: z.array(z.object({ label: z.string().max(60), url: z.string().url() })).max(8).optional().describe("Links the description should carry, in order, each as { label, url }"),
+    tags: z.array(z.string().min(2).max(30)).max(10).optional().describe("Hashtags for the last line, without the #: three that say what the film is about beat ten that say everything; a platform shows the first three above a short's title"),
   },
-}, async ({ summary, title, links }) => {
+}, async ({ summary, title, links, tags }) => {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
@@ -1634,7 +1635,8 @@ server.registerTool("export_description", {
   const credits = listAssets(path.join(dir, "assets")).filter((asset) => asset.attribution?.author || asset.attribution?.license || asset.attribution?.pageUrl);
   const lines = [`# ${shown}`, "", summary.trim(), ""];
   if (links?.length) { for (const link of links) lines.push(`${link.label}: ${link.url}`); lines.push(""); }
-  if (chapters.chapters.length > 1) { lines.push("Chapters", chapters.text.trim(), ""); }
+  // A platform shows chapters only from three; fewer would be a list of two times.
+  if (chapters.enough) { lines.push("Chapters", chapters.text.trim(), ""); }
   if (credits.length) {
     lines.push("Credits");
     for (const asset of credits) {
@@ -1643,11 +1645,13 @@ server.registerTool("export_description", {
     }
     lines.push("");
   }
+  const hashtags = [...new Set((tags ?? []).map((tag) => `#${tag.replace(/^#+/, "").replace(/[^\p{L}\p{N}_]+/gu, "")}`).filter((tag) => tag.length > 1))];
+  if (hashtags.length) lines.push(hashtags.join(" "), "");
   const text = lines.join("\n");
   const file = path.join(dir, "out", "description.md");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
-  return ok({ file, text, chapters: chapters.chapters.length, credits: credits.length });
+  return ok({ file, text, chapters: chapters.chapters.length, chaptersShown: chapters.enough, hashtags, credits: credits.length, ...(chapters.enough ? {} : { note: `${chapters.chapters.length} chapter(s): a platform shows chapters from three, so none are in the description; export_chapters says where to add marks` }) });
 });
 
 server.registerTool("describe_templates", {

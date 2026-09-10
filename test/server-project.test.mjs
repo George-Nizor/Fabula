@@ -112,6 +112,20 @@ test("update_scenes merges params, replaces a card whose kind changes, takes get
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test("export_description carries hashtags cleanly and leaves out a chapter list a platform would not show", async () => {
+  const root = makeRoot();
+  try {
+    await withServer(root, async (client) => {
+      const out = text(await call(client, "export_description", { summary: "How rockets turn sideways to stay up, told in a minute.", tags: ["rockets", "#Orbit", "space flight", "rockets"] }));
+      assert.deepEqual(out.hashtags, ["#rockets", "#Orbit", "#spaceflight"], "cleaned, deduplicated, one # each");
+      assert.ok(out.text.trim().endsWith("#rockets #Orbit #spaceflight"));
+      assert.equal(out.chaptersShown, false);
+      assert.ok(!out.text.includes("Chapters"), "one chapter is not a chapter list");
+      assert.match(out.note, /from three/);
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("status remembers the adopted persona and wait_render says when nothing is running", async () => {
   const root = makeRoot();
   try {
