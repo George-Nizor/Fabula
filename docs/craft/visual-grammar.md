@@ -20,7 +20,7 @@ visible too. Landscape and vertical differ in what fits, so both are given.
 | makes an absolute claim | `word` | `myth-fact`, `kinetic`, `hook` | cutaway / full | cutaway | The big word is a beat, not a title. Once or twice a film. |
 | warns | `alert` | `callout`, `myth-fact` | side | side | The level says how serious. |
 | names a product, tool, person, place | `image` | `logos`, `cover`, `clip` | side / pip | side / band | Fetch the real thing (`search_images`, `fetch_image`) and credit it. Do not draw a logo. |
-| describes something that happened, or that moves | `clip` | `image`, head alone | side / cutaway | side / cutaway | B-roll the person has (`import_clip`): the thing itself, muted, while they tell it. A cutaway when the footage is the picture; beside the head when they are the subject. |
+| describes something that happened, or that moves | `clip` | `image`, head alone | side / cutaway | side / cutaway | B-roll the person has (`import_clip`): the thing itself while they tell it, silent unless the graphic asks for its sound. A cutaway when the footage is the picture; beside the head when they are the subject. |
 | shows something typed | `code` | `keys`, `screen` | cutaway / side | cutaway | The screen track if the recording has one; otherwise the lines themselves. |
 | changes subject | `section` | `cover`, `headline`, head alone | full / cutaway | cutaway | A mark the viewer can feel. |
 | opens the film | `hook` | `title`, `cover`, `teaser` | focus + title | cutaway | The promise, then what is coming. |
@@ -52,7 +52,7 @@ Full-stage (pair with `cutaway` or `full`): `hook`, `word`, `trio`, `timeline`, 
 `ranking`, `phone`, `endscreen` (the last twenty seconds of a YouTube film, room for the
 platform's elements).
 
-Column (sit in `side`, `pip` or `full`'s content rect beside the head): `big-number`,
+Column (sit in `side` or `pip` beside the head; in `full` or a `cutaway` they are blown up to the stage, which rarely reads well): `big-number`,
 `definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`. In a tall
 film "beside the head" is the strip under it, about a quarter as tall as it is wide, and a
 column template sizes itself for that strip; a `question` there is a line, not a poster.

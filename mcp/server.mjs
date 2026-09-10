@@ -384,7 +384,7 @@ server.registerTool("open_project", {
 
 server.registerTool("list_projects", {
   description:
-    "Every Fabula project: each folder under media/ that stages a recording, most recently touched first, with the stage it has reached (staged, transcribed, cut, clean, composed, final), whether its recording is still where it was, and which one is open. The same list the window's Projects dialog shows.",
+    "Every Fabula project: each folder under the projects root (media/ beside the checkout, or the folder fabula.settings.json names) that stages a recording, most recently touched first, with the stage it has reached (staged, transcribed, cut, clean, composed, final), whether its recording is still where it was, and which one is open. The same list the window's Projects dialog shows.",
   inputSchema: {},
 }, async () => {
   const current = fs.existsSync(pointerFile()) ? readJson(pointerFile()).dir : null;
@@ -450,7 +450,7 @@ server.registerTool("create_short", {
   });
   return ok({
     ...short,
-    next: `switch_project ${short.project}, then render_clean and retranscribe_clean (fast — it is ${short.seconds}s of footage), set_theme if this one wants its own, and compose it for the tall frame: focus crops the head to fill, band keeps the whole recording, and a title has room for three words rather than nine.`,
+    next: `switch_project ${short.project}, then render_clean and retranscribe_clean (fast — it is ${short.seconds}s of footage), set_theme if this one wants its own, and compose it for the tall frame: focus crops the head to fill, band keeps the whole recording, and a title has room for four words rather than nine.`,
   });
 });
 
@@ -789,7 +789,7 @@ server.registerTool("list_clean_words", {
 
 server.registerTool("get_scenes", {
   description:
-    "Read the CURRENT scene plan — scenes with indices, captions flag, theme, punch-ins. The person may have tweaked text, accents, layouts, the theme or the punch-ins in the app since the plan was last written, so ALWAYS read this before set_scenes and carry their changes forward; replacing the plan from memory discards their edits.",
+    "Read the CURRENT scene plan — scenes with indices, captions, theme, punch-ins, and the audio block (the bed and the voice's treatment). The person may have tweaked text, accents, layouts, the theme or the punch-ins in the app since the plan was last written, so ALWAYS read this before set_scenes and carry their changes forward; replacing the plan from memory discards their edits.",
   inputSchema: {},
 }, async () => {
   const dir = currentProjectDir();
@@ -880,7 +880,7 @@ server.registerTool("set_music_root", {
 
 server.registerTool("set_audio", {
   description:
-    `The sound under the voice. music: a bed from assets/ (import_audio) at level LU under the voice while nobody speaks (${MUSIC_DEFAULTS.level} by default; the file's loudness and the clean cut's are measured so the number means the same for any file), duck LU lower still under the voice (${MUSIC_DEFAULTS.duck}), ramping over ramp seconds (${MUSIC_DEFAULTS.ramp}) either side of every pause the transcript shows — the duck is computed from the words, not guessed from a compressor — faded in and out over fade seconds (${MUSIC_DEFAULTS.fade}), looped to the film's length unless loop is false. voice_loudness normalises the voice to an integrated LUFS target (-16 for a film, -14 for a short; null leaves it as recorded). Sound lives only in the stitch, so changing it re-renders no chunk: render_final after it is seconds, not minutes. music: null removes the bed. Returns what the bed will do and how many pauses it comes up in.`,
+    `The sound under the voice, and the voice itself. music: a bed from assets/ (import_audio) at level LU under the voice while nobody speaks (${MUSIC_DEFAULTS.level} by default; the file's loudness and the clean cut's are measured so the number means the same for any file), duck LU lower still under the voice (${MUSIC_DEFAULTS.duck}), ramping over ramp seconds (${MUSIC_DEFAULTS.ramp}) either side of every pause the transcript shows — the duck is computed from the words, not guessed from a compressor — faded in and out over fade seconds (${MUSIC_DEFAULTS.fade}), looped to the film's length unless loop is false. voice_loudness normalises the voice to an integrated LUFS target (-16 for a film, -14 for a short; null leaves it as recorded). Sound lives only in the stitch, so changing it re-renders no chunk: render_final after it is seconds, not minutes. music: null removes the bed. Returns what the bed will do and how many pauses it comes up in.`,
   inputSchema: {
     music: z.object({
       src: z.string().describe("assets/…, from import_audio"),
@@ -1038,7 +1038,7 @@ server.registerTool("apply_insert", {
 
 server.registerTool("wait_for_input", {
   description:
-    "Wait for the person to do something in the window: choose an option on an insert point, ask for something else on one (type insert-other, with their words), or send a message (type message). Returns the events as soon as there are any, or none after wait_seconds; call it again to keep listening. This is the dialogue: after your pass, sit in this loop; answer an insert-other by adding an option to that insert (set_inserts keeps the rest) and apply_insert it, answer a message by doing what it asks, and say what you did.",
+    "Wait for the person to do something in the window: choose an option on an insert point, ask for something else on one (type insert-other, with their words), or send a message (type message). Returns the events as soon as there are any, or none after wait_seconds; call it again to keep listening. This is the dialogue: after set_inserts, or when asked to listen, sit in this loop (not unprompted — an idle poll spends the person's usage on nothing); answer an insert-other by adding an option to that insert (set_inserts keeps the rest) and apply_insert it, answer a message by doing what it asks, and say what you did.",
   inputSchema: { wait_seconds: waitSchema },
 }, async ({ wait_seconds }) => {
   const dir = currentProjectDir();
@@ -1195,7 +1195,7 @@ server.registerTool("review_plan", {
 
 server.registerTool("draft_scenes", {
   description:
-    "A first draft of the plan from the story reading, so composing starts from a skeleton rather than a blank: the promise as a hook over the opening (in a short, the thumbnail over the face at frame one), a section mark at every turn in a film, a card at the moments that carry their own text (a question, a quote, a warning, a claim, a name, a number said aloud), the conclusion as the spoken word, the ask as a cta in a short — spaced by the persona's density, in the film's shape, with every cutaway covered and nothing hidden behind the head. It quotes the speaker and invents nothing: where a moment wants judgment (a chart's values, a definition's meaning, a picture) it says so in todo. With apply: false (the default) it returns the scenes for you to edit and set_scenes; with apply: true it writes them as the plan and returns the read-back. Either way the draft is yours to rework; the person's existing plan is replaced only when you apply.",
+    "A first draft of the plan from the story reading, so composing starts from a skeleton rather than a blank: the promise as a hook over the opening (in a short, the thumbnail over the face at frame one), a section mark at every turn in a film, a card at the moments that carry their own text (a question, a quote, a warning, a claim, a name, a number said aloud), the conclusion as the spoken word, the ask as a cta in a short — spaced by the persona's density, in the film's shape, with every cutaway covered and nothing hidden behind the head. It quotes the speaker and invents nothing but two named placeholders — a short's thumbnail line and its cta's line — and where a moment wants judgment (a chart's values, a definition's meaning, a picture, a moment under another scene) it says so in todo. With apply: false (the default) it returns the scenes for you to edit and set_scenes; with apply: true it writes them as the plan and returns the read-back. Either way the draft is yours to rework; the person's existing plan is replaced only when you apply.",
   inputSchema: {
     persona: z.enum(["editor", "farmer"]).optional().describe("Density and shape of the draft; editor by default, farmer for a short"),
     apply: z.boolean().optional().describe("Write the draft as the plan (replacing the current scenes) and read it back"),
@@ -1499,7 +1499,7 @@ server.registerTool("check_scenes", {
 
 server.registerTool("update_scenes", {
   description:
-    "Change named fields on named scenes and leave every other scene, and every other field, exactly as it is. This is how to act on a note about the film — a punchier title, a different layout for one passage, a chart's numbers — without resending the plan. Indices come from get_scenes; read it first, because the person edits scenes in the window between your turns. Returns the fresh variety read of the whole plan.",
+    "Change named fields on named scenes and leave every other scene, and every other field, exactly as it is. This is how to act on a note about the film — a punchier title, a different layout for one passage, a chart's numbers — without resending the plan. Indices come from get_scenes; read it first, because the person edits scenes in the window between your turns. Returns the whole plan's fresh warnings, variety and pacing reads.",
   inputSchema: { patches: z.array(z.object(scenePatchShape).strict()).min(1).max(60) },
 }, async ({ patches }) => {
   const dir = currentProjectDir();
@@ -1691,7 +1691,7 @@ server.registerTool("export_captions", {
 
 server.registerTool("export_description", {
   description:
-    "The upload's description as one paste-ready block, written to out/description.md and returned: the title, a summary you give (two or three sentences the platform shows before the fold — write it from the story, not from the plan), the chapter list from export_chapters, and the image credits the film owes. Hand it over with the film.",
+    "The upload's description as one paste-ready block, written to out/description.md and returned: the title, a summary you give (two or three sentences the platform shows before the fold — write it from the story, not from the plan), the links, the chapter list from export_chapters (only from three chapters, when a platform shows one), the image credits the film owes, and a last line of tags as hashtags. Hand it over with the film.",
   inputSchema: {
     summary: z.string().min(20).max(1200).describe("What the film is, in the person's voice, for the description's first lines"),
     title: z.string().max(100).optional().describe("The upload's title; the project's title by default"),
@@ -1770,7 +1770,7 @@ server.registerTool("preview_frame", {
 
 server.registerTool("film_sheet", {
   description:
-    "A contact sheet tiled from the RENDERED film (out/final.mp4, or a preview span) rather than from the preview page: every N seconds of what the encoder actually wrote, in one picture. preview_sheet shows what the plan will look like; this shows what the render did. Look at it after render_final and before handing the film over — a card behind the head, a black tail, a stitch that lost its sound are all visible here and nowhere else. Seconds, not minutes; no Electron.",
+    "A contact sheet tiled from the RENDERED film (the newer of out/final.mp4 and out/draft.mp4, or a preview span by name) rather than from the preview page: every N seconds of what the encoder actually wrote, in one picture. preview_sheet shows what the plan will look like; this shows what the render did. Look at it after render_final and before handing the film over — a card behind the head, a black tail, a stitch that lost its sound are all visible here and nowhere else. Seconds, not minutes; no Electron.",
   inputSchema: {
     every_seconds: z.number().min(1).max(120).optional().describe("Tile interval; the film's length over twelve by default"),
     file: z.string().optional().describe("A file under out/ to tile instead of final.mp4, e.g. preview-0-60.mp4"),
@@ -1820,7 +1820,7 @@ server.registerTool("film_sheet", {
 
 server.registerTool("render_thumbnail", {
   description:
-    "The still a platform shows before anyone presses play: one frame of the composed film — captions taken off — with a few big words over it from the thumbnail template (a kicker, a line of up to six words, a shade behind them so they read on any frame), written to out/thumbnail.png at 1280×720 (a tall film keeps its shape). Pick a frame where the face is doing something: preview_sheet shows the candidates. The line is a promise, not a summary, and never one the film does not keep.",
+    "The still a platform shows before anyone presses play: one frame of the composed film — captions taken off — with a few big words over it from the thumbnail template (a kicker, a line of up to six words, a shade behind them so they read on any frame), written to out/thumbnail.png at 1280×720 (a tall film keeps its shape). Pick a frame where the face is doing something: preview_sheet shows the candidates. The line is a promise, not a summary, and never one the film does not keep. Two to four variants render side by side into out/thumbnail-variants.png at the size a feed shows them, to choose between.",
   inputSchema: {
     line: z.string().min(1).max(40).optional().describe("The words, six at most (or give variants)"),
     kicker: z.string().max(24).optional(),
@@ -1976,7 +1976,7 @@ server.registerTool("get_theme", {
 
 server.registerTool("set_theme", {
   description:
-    "Set the look of the film for consistent branding: a preset, the brand colours, fonts, title/callout/caption styles, a logo watermark and a handle. Fields merge into the current theme (null removes a logo or watermark); reset drops every override and keeps the preset. `use` loads a theme saved earlier (the way a channel keeps every video the same); `save_as` saves the result under a name for the next video. Previews at once in the window; chunks the look touches re-render on the next render_final (the field and glow are part of every chunk, so a new preset or accent re-renders the film).",
+    "Set the look of the film for consistent branding: a preset, the brand colours, fonts, title/callout/caption styles, a logo watermark and a handle, the transition between layouts (and its seconds), and the grade on the footage. Fields merge into the current theme (null removes a logo or watermark); reset drops every override and keeps the preset. `use` loads a theme saved earlier (the way a channel keeps every video the same); `save_as` saves the result under a name for the next video. Previews at once in the window; chunks the look touches re-render on the next render_final (the field and glow are part of every chunk, so a new preset or accent re-renders the film).",
   inputSchema: {
     ...themeShape,
     reset: z.boolean().optional().describe("Drop all overrides first"),
@@ -2025,7 +2025,7 @@ server.registerTool("search_images", {
 
 server.registerTool("fetch_image", {
   description:
-    "Fetch a picture into the project's assets/ for image, logos or the theme logo: a direct image URL, a page URL (its share image is taken), or a site's icon at 256 px (kind icon, e.g. 'photopea.com'). Returns the project-relative src to use in set_scenes or set_theme.",
+    "Fetch a picture into the project's assets/ for image, logos or cover graphics or the theme logo: a direct image URL, a page URL (its share image is taken), or a site's icon at 256 px (kind icon, e.g. 'photopea.com'). Returns the project-relative src to use in set_scenes or set_theme.",
   inputSchema: {
     url: z.string().min(3).describe("Image URL, page URL, or a domain for kind icon"),
     name: z.string().max(60).optional().describe("File name to give it (slugified)"),

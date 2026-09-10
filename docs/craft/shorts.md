@@ -37,7 +37,7 @@ Nothing else matters if this fails.
   for a short. Use `band` only for the moment a crop would ruin — a screen, two people, a wide
   gesture — and `preview_frame` to check the crop took what you think it took.
 - **Captions from the first word, burned in.** Most of the audience is silent. `set_captions
-  open`. The caption style is part of the look; `karaoke` for energy, `band` for a calmer
+  open`. The caption style is part of the look; `karaoke` for energy, the `band` caption style (a bar under the words, not the layout) for a calmer
   piece. The captions *are* the audio track for most viewers, so the words have to be right —
   fix the transcript in the window before rendering. Let them lean: `set_captions` with
   `emphasis: "auto"` sets the number, the absolute, the name in each phrase in the accent, or
@@ -57,7 +57,7 @@ A short is a sequence of small events. Between events the thumb drifts.
 - Pattern interrupts are cheap and they work: the big `word` on a claim, `myth-fact` on
   "most people think", `alert` on "don't do this", a `question` on the question. Use them
   where the speaker gives you the beat; never where they do not.
-- Punch-ins tighter and more often than in a film — the shot plan's zoom at 1.12–1.2, and
+- Punch-ins tighter and more often than in a film — the shot plan's zoom at 1.15–1.2 (1.15 is the default), and
   let it alternate. A tall frame is already close; the punch-in is a nod, not a leap.
 
 ## Sound
@@ -88,7 +88,7 @@ A short that just stops loses the funnel. The last two seconds are a decision:
 ## The thumbnail and the title
 
 The thumbnail is the first frame the platform shows and the words on it are the hook's
-written twin. `render_thumbnail`: a frame where the face is expressive, three to five words
+written twin. `render_thumbnail`: a frame where the face is expressive, up to six words (three to five read best)
 that promise what the film delivers, the words on the side the face is not. The video's
 title says the same thing in different words; the two are read together. Never a promise the
 film does not keep — the platform measures whether people stay. Never choose from one:
@@ -116,9 +116,10 @@ Make two or three, not eight. Name what each one is for. Let the person choose.
 - Never invent a hook the speaker did not say. A `hook` template quotes or compresses the
   speaker's own words; a written line that misrepresents the video is the fastest way to be
   distrusted by the exact people the funnel is for.
-- Never put a card over the face in `focus` unless it was made for it: the `thumbnail` and the
-  `cta` with a `shade`, `over: true`, keep their words in the lower third, off the eyes. Every
-  other card goes beside the head or in a cutaway.
+- Never put a card over the face in `focus` unless it was made for it: the `thumbnail`, the
+  `cta` with a `shade`, and the `lower-third` when someone is introduced — `over: true` — keep
+  their words in the lower third, off the eyes. Every other card goes beside the head or in a
+  cutaway.
 - Never render the film to check a short. `preview_frame` and `preview_sheet` first, a
   minute of `render_final` second, the whole thing only when the person says.
 - Never make the short the person did not ask for. Suggest, describe, wait.

@@ -132,6 +132,17 @@ the project's assets the way the assistant's import tools file one, and placed b
 over the words at the playhead, with the inspector open on it — their own B-roll, without a
 round trip. The assistant's next read sees it like any scene the window made.
 
+Last, a reader went over the documents the assistant reads — the workflow, the craft guides,
+the tool descriptions — for coherence after thirty commits of accretion, and found
+twenty-four places where two texts disagreed (the clip "muted" in one and its sound kept in
+another, twenty-five templates against twenty-seven, a title of three words against four, the
+loop the tool told the assistant to sit in and the workflow told it not to) and a reading
+order that gave a fresh assistant `describe_kit` and `preview_frame` two hundred lines after
+its first `set_scenes`. The workflow is rewritten in the reader's order — invariants, who you
+are, the session, projects, the shape, the loop, what to read before composing, writing and
+patching, the look, sound, captions and deliverables, the gates, shorts — with the notes for
+whoever edits the code at the end, and every disagreement settled on the code's side.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
