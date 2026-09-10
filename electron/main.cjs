@@ -1059,6 +1059,63 @@ app.whenReady().then(() => {
   );
   // Duplicate and remove, so a plan can be adjusted without a round trip to
   // the assistant for something the eye can see needs doing.
+  // A picture or a clip dropped on the stage: filed under assets/ the way
+  // the assistant's import tools file one, and placed as a card beside the
+  // head over the words at the playhead — the person's own B-roll, without
+  // a round trip to the assistant. Returns the new graphic scene's index.
+  ipcMain.handle("fabula:place-asset", async (event, spec) => {
+    try {
+      const dir = projectDir();
+      if (!dir) throw new Error("no open project");
+      const source = String(spec?.path ?? "");
+      if (!fs.existsSync(source) || !fs.statSync(source).isFile()) throw new Error(`no such file: ${source}`);
+      const ext = path.extname(source).toLowerCase();
+      const isImage = /^\.(png|jpe?g|webp|gif)$/.test(ext);
+      const isVideo = /^\.(mp4|mov|mkv|webm|m4v)$/.test(ext);
+      if (!isImage && !isVideo) throw new Error("a picture (png, jpg, webp, gif) or a clip (mp4, mov, mkv, webm, m4v)");
+      const { execFileSync } = require("node:child_process");
+      const ffmpeg = core.pipeline.FFMPEG;
+      const assets = path.join(dir, "assets");
+      fs.mkdirSync(assets, { recursive: true });
+      const base = path.basename(source, ext).replace(/[^a-z0-9._-]/gi, "_") || "asset";
+      const free = (name) => { let file = path.join(assets, name); for (let n = 2; fs.existsSync(file); n += 1) file = path.join(assets, name.replace(/(\.[a-z0-9]+)$/i, `-${n}$1`)); return file; };
+      let target;
+      if (isImage) {
+        target = free(`${base}${ext === ".gif" ? ".png" : ext === ".jpeg" ? ".jpg" : ext}`);
+        if (ext === ".gif") execFileSync(ffmpeg, ["-y", "-v", "error", "-i", source, "-frames:v", "1", target]);
+        else fs.copyFileSync(source, target);
+      } else {
+        target = free(`${base}.mp4`);
+        execFileSync(ffmpeg, ["-y", "-v", "error", "-i", source, "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", target], { stdio: ["ignore", "ignore", "pipe"] });
+      }
+      fs.writeFileSync(`${target}.source.json`, JSON.stringify({ source: `file:${source}`, requestedUrl: null, note: "dropped on the stage" }, null, 2) + "\n");
+      const src = `assets/${path.basename(target)}`;
+      // The words the card sits over: from the word at the playhead, for
+      // about three seconds (a clip: up to its own length, eight at most).
+      const transcript = readJson(path.join(dir, "clean.json"));
+      const words = transcript ? core.cut.flattenWords(transcript) : [];
+      if (words.length === 0) throw new Error("no clean transcript yet");
+      const at = Number(spec?.at ?? 0);
+      let first = 0;
+      for (const word of words) { if (word.start <= at) first = word.id; else break; }
+      const wanted = isVideo ? Math.min(8, Math.max(2.5, core.pipeline.probeDuration(target))) : 3;
+      let last = first;
+      for (const word of words) { if (word.id < first) continue; last = word.id; if (word.end - words[first].start >= wanted) break; }
+      let index = -1;
+      const result = editCompose(event, (config) => {
+        config.scenes = config.scenes ?? [];
+        const graphic = isImage ? { kind: "image", src } : { kind: "clip", src };
+        config.scenes.push({ type: "stage", fromWordId: first, toWordId: last, layout: "side" });
+        const scene = { type: "graphic", fromWordId: first, toWordId: last, graphic };
+        config.scenes.push(scene);
+        config.scenes.sort((a, b) => a.fromWordId - b.fromWordId || (a.type === "stage" ? -1 : b.type === "stage" ? 1 : 0));
+        index = config.scenes.indexOf(scene);
+      });
+      return result.ok ? { ok: true, index, src, kind: isImage ? "image" : "clip", fromWordId: first, toWordId: last } : result;
+    } catch (error) {
+      return { ok: false, error: String(error.message ?? error) };
+    }
+  });
   ipcMain.handle("fabula:duplicate-scene", (event, index) =>
     editCompose(event, (config) => {
       const scene = config.scenes?.[index];

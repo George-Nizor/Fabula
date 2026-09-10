@@ -2333,7 +2333,20 @@ document.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files?.[0];
   if (!file) return;
   const filePath = window.fabula.pathForFile(file);
-  if (!/\.(mp4|mov|mkv|webm|m4v)$/i.test(filePath)) { setStatus("Fabula opens mp4, mov, mkv, webm and m4v recordings."); return; }
+  const isPicture = /\.(png|jpe?g|webp|gif)$/i.test(filePath);
+  const isVideo = /\.(mp4|mov|mkv|webm|m4v)$/i.test(filePath);
+  // On the Scenes step a dropped picture or clip is placed over the words
+  // at the playhead as a card; anywhere else a recording opens a project.
+  if (mode === "scenes" && compose() && (isPicture || isVideo)) {
+    setStatus(isVideo ? "Filing the clip…" : "Filing the picture…");
+    window.fabula.placeAsset({ path: filePath, at: els.video.currentTime }).then((result) => {
+      if (!result.ok) { setStatus(result.error); return; }
+      setStatus(`${result.kind === "clip" ? "Clip" : "Picture"} placed beside the head over words ${result.fromWordId}–${result.toWordId}; the inspector has it.`);
+      openInspector(result.index);
+    });
+    return;
+  }
+  if (!isVideo) { setStatus(isPicture ? "Open the Scenes step to place a picture over the film." : "Fabula opens mp4, mov, mkv, webm and m4v recordings."); return; }
   openNewProject(filePath, filePath.split(/[\\/]/).pop().replace(/\.[^.]+$/, ""));
 });
 

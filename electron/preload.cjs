@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("fabula", {
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   duplicateScene: (index) => ipcRenderer.invoke("fabula:duplicate-scene", index),
   removeScene: (index) => ipcRenderer.invoke("fabula:remove-scene", index),
+  placeAsset: (spec) => ipcRenderer.invoke("fabula:place-asset", spec),
   setProject: (patch) => ipcRenderer.invoke("fabula:set-project", patch),
   pickAsset: () => ipcRenderer.invoke("fabula:pick-asset"),
   chooseInsert: (insertId, optionId) => ipcRenderer.invoke("fabula:choose-insert", insertId, optionId),

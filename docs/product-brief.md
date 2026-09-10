@@ -127,6 +127,11 @@ chapter list back until a platform would show one, and `get_captions` / `export_
 the assistant translate the film's caption phrases and write them back as a subtitle file with
 the film's own timings.
 
+And one for the person: a picture or a clip dropped on the Scenes step's stage is filed under
+the project's assets the way the assistant's import tools file one, and placed beside the head
+over the words at the playhead, with the inspector open on it — their own B-roll, without a
+round trip. The assistant's next read sees it like any scene the window made.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
