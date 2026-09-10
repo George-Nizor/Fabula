@@ -2346,7 +2346,7 @@ document.addEventListener("drop", (event) => {
     setStatus(isVideo ? "Filing the clip…" : "Filing the picture…");
     window.fabula.placeAsset({ path: filePath, at: els.video.currentTime }).then((result) => {
       if (!result.ok) { setStatus(result.error); return; }
-      setStatus(`${result.kind === "clip" ? "Clip" : "Picture"} placed beside the head over words ${result.fromWordId}–${result.toWordId}; the inspector has it.`);
+      setStatus(`${result.kind === "clip" ? "Clip" : "Picture"} placed ${result.placement} over words ${result.fromWordId}–${result.toWordId}; the inspector has it.`);
       openInspector(result.index);
     });
     return;

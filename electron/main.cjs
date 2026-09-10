@@ -510,7 +510,7 @@ function readState() {
   const state = {
     project: path.basename(dir),
     title: meta.title || path.basename(dir),
-    format: format && { id: format.id, label: format.label, about: format.about, stage: format.stage, shortForm: format.shortForm, duration: format.duration },
+    format: format && { id: format.id, label: format.label, about: format.about, stage: format.stage, shortForm: format.shortForm, lengthRange: format.duration ?? null },
     derivedFrom: typeof meta.derivedFrom === "string" ? meta.derivedFrom : null,
     projects,
     projectsRoot: where,
@@ -1073,45 +1073,82 @@ app.whenReady().then(() => {
       const isImage = /^\.(png|jpe?g|webp|gif)$/.test(ext);
       const isVideo = /^\.(mp4|mov|mkv|webm|m4v)$/.test(ext);
       if (!isImage && !isVideo) throw new Error("a picture (png, jpg, webp, gif) or a clip (mp4, mov, mkv, webm, m4v)");
+      // Nothing is filed until the plan can take it.
+      const transcript = readJson(path.join(dir, "clean.json"));
+      const words = transcript ? core.cut.flattenWords(transcript) : [];
+      if (words.length === 0) throw new Error("no clean transcript yet");
       const { execFileSync } = require("node:child_process");
-      const ffmpeg = core.pipeline.FFMPEG;
+      // ffmpeg lives on the WSL side. On Windows the window reaches it the
+      // way it starts every job — through wsl.exe — with the paths spelled
+      // as WSL sees them; elsewhere it runs it directly.
+      const media = (args) => {
+        if (process.platform !== "win32") return execFileSync(core.pipeline.FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
+        const root = toPosixPath(REPO);
+        if (!root || !WSL_DISTRO) throw new Error("the clip cannot be re-encoded from where this window is installed: ffmpeg lives in WSL");
+        const posix = (arg) => (path.isAbsolute(arg) && /^[A-Za-z]:\\|^\\\\/.test(arg) ? toPosixPath(arg) ?? arg : arg);
+        return execFileSync("wsl.exe", ["-d", WSL_DISTRO, "--", `${root}/tools/ffmpeg/ffmpeg`, ...args.map(posix)], { stdio: ["ignore", "pipe", "pipe"] });
+      };
+      const probeSeconds = (file) => {
+        try {
+          const out = process.platform !== "win32"
+            ? execFileSync(core.pipeline.FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString()
+            : execFileSync("wsl.exe", ["-d", WSL_DISTRO, "--", `${toPosixPath(REPO)}/tools/ffmpeg/ffprobe`, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", toPosixPath(file) ?? file]).toString();
+          const seconds = Number.parseFloat(out);
+          return Number.isFinite(seconds) ? seconds : null;
+        } catch { return null; }
+      };
       const assets = path.join(dir, "assets");
       fs.mkdirSync(assets, { recursive: true });
-      const base = path.basename(source, ext).replace(/[^a-z0-9._-]/gi, "_") || "asset";
+      const base = path.basename(source).replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]/gi, "_") || "asset";
       const free = (name) => { let file = path.join(assets, name); for (let n = 2; fs.existsSync(file); n += 1) file = path.join(assets, name.replace(/(\.[a-z0-9]+)$/i, `-${n}$1`)); return file; };
       let target;
       if (isImage) {
         target = free(`${base}${ext === ".gif" ? ".png" : ext === ".jpeg" ? ".jpg" : ext}`);
-        if (ext === ".gif") execFileSync(ffmpeg, ["-y", "-v", "error", "-i", source, "-frames:v", "1", target]);
+        if (ext === ".gif") media(["-y", "-v", "error", "-i", source, "-frames:v", "1", target]);
         else fs.copyFileSync(source, target);
       } else {
         target = free(`${base}.mp4`);
-        execFileSync(ffmpeg, ["-y", "-v", "error", "-i", source, "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", target], { stdio: ["ignore", "ignore", "pipe"] });
+        media(["-y", "-v", "error", "-i", source, "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", target]);
       }
       fs.writeFileSync(`${target}.source.json`, JSON.stringify({ source: `file:${source}`, requestedUrl: null, note: "dropped on the stage" }, null, 2) + "\n");
       const src = `assets/${path.basename(target)}`;
-      // The words the card sits over: from the word at the playhead, for
-      // about three seconds (a clip: up to its own length, eight at most).
-      const transcript = readJson(path.join(dir, "clean.json"));
-      const words = transcript ? core.cut.flattenWords(transcript) : [];
-      if (words.length === 0) throw new Error("no clean transcript yet");
+      // The words the card sits over: from the word at the playhead, for at
+      // least the dwell floor (three seconds), a clip up to its own length
+      // and eight at most.
       const at = Number(spec?.at ?? 0);
       let first = 0;
       for (const word of words) { if (word.start <= at) first = word.id; else break; }
-      const wanted = isVideo ? Math.min(8, Math.max(2.5, core.pipeline.probeDuration(target))) : 3;
+      const clipSeconds = isVideo ? probeSeconds(target) : null;
+      const wanted = isVideo && clipSeconds ? Math.min(8, Math.max(3, clipSeconds)) : 3;
       let last = first;
       for (const word of words) { if (word.id < first) continue; last = word.id; if (word.end - words[first].start >= wanted) break; }
+      // Where the card lands: beside the head in a side layout of its own —
+      // unless a placed layout already holds those words, in which case the
+      // card joins it, and a stage scene the timeline would ignore is not
+      // written.
+      const config0 = readJson(path.join(dir, "compose.json")) ?? { scenes: [] };
+      const existing = core.compose.resolveScenes(config0.scenes ?? [], words);
+      const timeline = core.stage.resolveLayoutTimeline(existing, cleanDuration(path.join(dir, "out", "clean.mp4"), words));
+      const startsAt = words[first].start + 0.01;
+      const there = timeline.find((s) => s.start <= startsAt && startsAt < s.end);
+      const placed = there && there.layout !== "focus" ? there.layout : null;
       let index = -1;
       const result = editCompose(event, (config) => {
         config.scenes = config.scenes ?? [];
         const graphic = isImage ? { kind: "image", src } : { kind: "clip", src };
-        config.scenes.push({ type: "stage", fromWordId: first, toWordId: last, layout: "side" });
+        if (!placed) config.scenes.push({ type: "stage", fromWordId: first, toWordId: last, layout: "side" });
         const scene = { type: "graphic", fromWordId: first, toWordId: last, graphic };
         config.scenes.push(scene);
         config.scenes.sort((a, b) => a.fromWordId - b.fromWordId || (a.type === "stage" ? -1 : b.type === "stage" ? 1 : 0));
         index = config.scenes.indexOf(scene);
       });
-      return result.ok ? { ok: true, index, src, kind: isImage ? "image" : "clip", fromWordId: first, toWordId: last } : result;
+      if (!result.ok) {
+        // A drop is retried; a file the plan refused must not pile up.
+        fs.rmSync(target, { force: true });
+        fs.rmSync(`${target}.source.json`, { force: true });
+        return result;
+      }
+      return { ok: true, index, src, kind: isImage ? "image" : "clip", fromWordId: first, toWordId: last, placement: placed ? `in the ${placed} layout already there` : "beside the head" };
     } catch (error) {
       return { ok: false, error: String(error.message ?? error) };
     }

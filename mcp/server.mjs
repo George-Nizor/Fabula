@@ -1678,7 +1678,8 @@ server.registerTool("export_captions", {
   if (lines.length !== phrases.length) throw new Error(`${lines.length} line(s) for ${phrases.length} phrase(s): get_captions lists them; give exactly one line per phrase, in order`);
   const empty = lines.findIndex((line) => !line.trim());
   if (empty >= 0) throw new Error(`line ${empty} is empty; every phrase needs its line (repeat a short one if two phrases share a sentence)`);
-  const cues = phrases.map((p, i) => ({ start: p.start, end: p.end, text: lines[i].trim() }));
+  // One line is one cue: a newline inside it would break the file's own grammar.
+  const cues = phrases.map((p, i) => ({ start: p.start, end: p.end, text: lines[i].replace(/\s+/g, " ").trim() }));
   const files = [];
   for (const format of ["srt", "vtt"]) {
     const file = path.join(dir, "out", `captions-${language}.${format}`);

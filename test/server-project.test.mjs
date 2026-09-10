@@ -213,6 +213,11 @@ test("captions can be read as timed phrases and written back in another language
       assert.equal(out.count, got.count);
       const srt = fs.readFileSync(path.join(root, "one", "out", "captions-es.srt"), "utf8");
       assert.ok(srt.includes("línea 1") && srt.includes("-->"));
+      // A newline inside a line would break the file's own grammar: one line is one cue.
+      const broken = lines.slice(); broken[0] = "primera\n\nsegunda";
+      await call(client, "export_captions", { language: "es", lines: broken });
+      const again = fs.readFileSync(path.join(root, "one", "out", "captions-es.srt"), "utf8");
+      assert.ok(again.includes("primera segunda") && !again.includes("primera\n\nsegunda"));
       assert.match(errorOf(await call(client, "export_captions", { language: "Spanish", lines })) ?? "", /language/i);
       const listed = text(await call(client, "status")).deliverables.map((d) => d.name);
       assert.ok(listed.includes("captions-es.srt") && listed.includes("captions-es.vtt"), JSON.stringify(listed));

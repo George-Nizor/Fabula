@@ -152,6 +152,13 @@ set. The rest were the documents' silences — no tool named for the transcript'
 two spellings unexplained, a field guessed for want of a sentence — each now a sentence where
 the reader needed it, and `describe_templates` says what a persona's list leaves out.
 
+A last reading of those commits caught what the Linux window could not: a dropped clip ran
+the WSL ffmpeg inside the Windows window, where every other job goes through `wsl.exe`. It
+does now, with the paths spelled as WSL sees them. With it: a drop inside a placed layout
+joins that layout instead of writing a stage scene the timeline would ignore, a clip's words
+are never under the dwell floor, a file the plan refused is not left in the assets, a
+translated caption line is one line, and an upper-case extension keeps its name.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
