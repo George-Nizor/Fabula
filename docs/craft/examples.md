@@ -63,7 +63,7 @@ straight upward…” — a promise — and closed on a full stop. 37 s against 
 
 Captions open with `auto` emphasis, above the bottom eighth where the platform’s controls
 are; karaoke was not used because the mono look reads calmer. The voice, recorded at -45 LUFS,
-is brought to -14 in the stitch. A music bed was tried with a tone and measured, not kept.
+is brought to -14 in the stitch (-14.2 measured, true peak -1.6 dBTP). A music bed was tried with a tone and measured, not kept.
 
 **What the reads caught.** Two holes at seams (closed by extending spans one word), one card
 hidden behind the head, one callout on a card, an 8.6 s still inside the flow (span pacing
