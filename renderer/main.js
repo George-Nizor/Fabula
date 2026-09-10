@@ -2318,6 +2318,11 @@ let dragDepth = 0;
 document.addEventListener("dragenter", (event) => {
   event.preventDefault();
   dragDepth += 1;
+  // What a drop does depends on where it lands: on the Scenes step it places
+  // a picture or a clip; anywhere else it starts a project.
+  els.dropzone.querySelector(".dropzone-card").textContent = mode === "scenes" && compose()
+    ? "Drop a picture or a clip to place it over the words at the playhead"
+    : "Drop to start a project";
   els.dropzone.hidden = false;
 });
 document.addEventListener("dragleave", () => {
