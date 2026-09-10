@@ -99,3 +99,21 @@ test("a moment under an earlier scene is not dropped in silence, and a working t
   assert.ok(draft.todo.some((note) => /project's name/.test(note)), `a working title is flagged: ${draft.todo.join(" | ")}`);
   assert.ok(draft.todo.some((note) => /under another scene/.test(note)), `the definition under the title is a to-do: ${draft.todo.join(" | ")}`);
 });
+
+test("a short's draft opens on the face with the words on it and ends on the ask", async () => {
+  const { draftScenes } = await import("../core/draft-engine.mjs");
+  const say = "if a rocket flies straight up it comes straight back down which is why every rocket turns sideways as it climbs and falls around the planet instead of onto it so the ground keeps curving away beneath it forever".split(" ");
+  const words = say.map((text, id) => ({ id, text: id === say.length - 1 ? `${text}.` : text, start: id * 0.4, end: id * 0.4 + 0.36 }));
+  const draft = draftScenes(words, { format: "vertical", shortForm: true, persona: "farmer", title: "Rockets" });
+  const first = draft.scenes[0];
+  assert.equal(first.type, "graphic");
+  assert.equal(first.graphic.template, "thumbnail");
+  assert.equal(first.fromWordId, 0);
+  assert.equal(first.graphic.over, true);
+  assert.equal(first.graphic.params.arrive, "instant");
+  assert.ok(first.graphic.params.line.split(" ").length <= 6, first.graphic.params.line);
+  const last = draft.scenes.at(-1);
+  assert.equal(last.graphic?.template, "cta");
+  assert.equal(last.toWordId, words.at(-1).id);
+  assert.ok(draft.todo.some((note) => /placeholder/.test(note)));
+});

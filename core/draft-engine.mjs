@@ -46,6 +46,13 @@ const hookLine = (text) => {
   const kept = clause.split(/\s+/).filter(Boolean).slice(0, 12).join(" ");
   return charsTo(kept, 90);
 };
+// Six words of the promise's first clause, for the face at frame one.
+const thumbLine = (text) => {
+  const clean = String(text).replace(/[.!?]+$/, "").trim();
+  const pause = clean.search(/[,;:—–-]\s/);
+  const clause = pause > 0 ? clean.slice(0, pause) : clean;
+  return charsTo(clause.split(/\s+/).filter(Boolean).slice(0, 6).join(" "), 40);
+};
 const charsTo = (text, max) => (String(text).length <= max ? String(text) : `${String(text).slice(0, max - 1).trim()}…`);
 
 // The word ids a card covers: from the moment's first word, for about
@@ -124,7 +131,14 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
   // the film's title over the first sentence when nothing promises.
   const opening = story.opening;
   const hook = opening?.hook;
-  if (hook) {
+  if (hook && shortForm) {
+    // A short opens on the feed's own frame: the face with the words on it,
+    // there at frame one. The line is the promise cut to six words, which
+    // the assistant rewrites — a draft can cut, not compress.
+    const span = spanFor(words, { fromWordId: 0, toWordId: hook.toWordId }, 4);
+    scenes.push({ type: "graphic", fromWordId: 0, toWordId: span.toWordId, graphic: { kind: "custom", template: "thumbnail", params: { line: thumbLine(hook.text), side: "bottom", shade: 0.6, arrive: "instant", ...(title ? { kicker: charsTo(title, 24) } : {}) }, over: true } });
+    todo.push(`the opening thumbnail's line is the promise cut to six words (“${thumbLine(hook.text)}”); write it as the promise in six, the way a title reads`);
+  } else if (hook) {
     const span = spanFor(words, { fromWordId: hook.fromWordId, toWordId: hook.toWordId }, 6);
     scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout: "cutaway" });
     scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "hook", params: { line: hookLine(hook.text), ...(title ? { kicker: charsTo(title, 32) } : {}) } } });
