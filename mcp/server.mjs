@@ -569,7 +569,8 @@ server.registerTool("detect_framing", {
     applied,
     hint: applied?.segments ? `the proposals were applied as framing.json (${applied.segments} segment(s)); render_clean crops to it. set_framing changes it.`
       : fs.existsSync(paths.framing) ? "framing.json already exists and was kept; set_framing replaces it"
-        : "nothing applied: a run the scan calls full may be a camera inset or a plain head — look at the frames under framing/ and set_framing what you see",
+        : applied?.refused ? `the proposals did not validate (${applied.refused}); look at the frames under framing/ and set_framing what you see`
+          : "nothing applied: a run the scan calls full may be a camera inset or a plain head — look at the frames under framing/ and set_framing what you see",
   });
 });
 
@@ -1085,8 +1086,11 @@ server.registerTool("set_scenes", {
         prefix: z.string().max(4).optional().describe("stat only: text before the number, e.g. $"),
         suffix: z.string().max(6).optional().describe("stat/ring: text after the number, e.g. % or k (ring defaults to %)"),
         label: z.string().optional().describe("stat/ring label; image or screen caption"),
-        src: z.string().optional().describe("image only: project-relative png/jpg/webp, e.g. assets/still.png"),
+        src: z.string().optional().describe("image: project-relative png/jpg/webp, e.g. assets/still.png; clip: assets/….mp4 from import_clip"),
         motion: z.enum([...IMAGE_MOTIONS]).optional().describe("image only: tilt (default), kenburns, pop"),
+        in: z.number().min(0).optional().describe("clip only: seconds into the clip to start from"),
+        fit: z.enum(["cover", "contain"]).optional().describe("clip only: fill the card (default) or fit inside it"),
+        sound: z.union([z.boolean(), z.object({ level: z.number().min(-40).max(0).optional() })]).optional().describe("clip only: the clip's own sound under the voice, true or { level } in dB on the file"),
         text: z.string().max(220).optional().describe("quote only: the quotation"),
         by: z.string().max(60).optional().describe("quote only: who said it"),
         subtitle: z.string().max(80).optional().describe("cover/section: the second line"),
@@ -1105,7 +1109,9 @@ server.registerTool("set_scenes", {
           value: z.number().optional().describe("chart only"),
           src: z.string().optional().describe("logos only: project-relative picture"),
         })).max(6).optional().describe("chart/list/steps/logos rows"),
-      }).optional().describe("graphic scenes only"),
+      // A field the schema does not name reaches the engine's own validation
+      // rather than vanishing: a plan read back keeps everything it carried.
+      }).passthrough().optional().describe("graphic scenes only"),
     })).describe("The full scene list; an empty array clears it. kinetic scenes render the spoken words as giant center-stage type over their span."),
     captions: z.union([z.boolean(), z.enum([...CAPTION_MODES])]).optional().describe("open (burned in), closed (an SRT/VTT beside the film for the player's CC), both, or none; omit to keep the current setting"),
     theme: z.object({
@@ -1130,7 +1136,7 @@ server.registerTool("set_scenes", {
     corner: scene.corner,
     transition: scene.transition,
     graphic: scene.graphic,
-    ...(scene.insert_id ? { insertId: scene.insert_id } : {}),
+    ...((scene.insert_id ?? scene.insertId) ? { insertId: scene.insert_id ?? scene.insertId } : {}),
   })), { format: projectFormat(dir) });
   validateScenes(shaped, words);
   assertAssets(dir, shaped);
@@ -1189,7 +1195,7 @@ server.registerTool("review_plan", {
 
 server.registerTool("draft_scenes", {
   description:
-    "A first draft of the plan from the story reading, so composing starts from a skeleton rather than a blank: the promise as a hook over the opening, a section mark at every turn, a card at the moments that carry their own text (a question, a quote, a warning, a claim, a name, a number said aloud), the conclusion as the spoken word, the ask as a cta in a short — spaced by the persona's density, in the film's shape, with every cutaway covered and nothing hidden behind the head. It quotes the speaker and invents nothing: where a moment wants judgment (a chart's values, a definition's meaning, a picture) it says so in todo. With apply: false (the default) it returns the scenes for you to edit and set_scenes; with apply: true it writes them as the plan and returns the read-back. Either way the draft is yours to rework; the person's existing plan is replaced only when you apply.",
+    "A first draft of the plan from the story reading, so composing starts from a skeleton rather than a blank: the promise as a hook over the opening (in a short, the thumbnail over the face at frame one), a section mark at every turn in a film, a card at the moments that carry their own text (a question, a quote, a warning, a claim, a name, a number said aloud), the conclusion as the spoken word, the ask as a cta in a short — spaced by the persona's density, in the film's shape, with every cutaway covered and nothing hidden behind the head. It quotes the speaker and invents nothing: where a moment wants judgment (a chart's values, a definition's meaning, a picture) it says so in todo. With apply: false (the default) it returns the scenes for you to edit and set_scenes; with apply: true it writes them as the plan and returns the read-back. Either way the draft is yours to rework; the person's existing plan is replaced only when you apply.",
   inputSchema: {
     persona: z.enum(["editor", "farmer"]).optional().describe("Density and shape of the draft; editor by default, farmer for a short"),
     apply: z.boolean().optional().describe("Write the draft as the plan (replacing the current scenes) and read it back"),
@@ -1747,8 +1753,17 @@ server.registerTool("film_sheet", {
   const every = every_seconds ?? Math.max(1, Math.round(duration / 12));
   // One frame at 0, N, 2N… picked by time (fps=1/N picks the frame nearest
   // each slot, half an interval early), so tile k IS the second it is
-  // labelled with; the count is every start under the length.
-  const tiles = Math.max(1, Math.min(48, Math.ceil(duration / every)));
+  // labelled with; the count is every start under the VIDEO's length —
+  // the container runs a few frames longer on its audio, and a start in
+  // that tail has no frame to show.
+  const { execFileSync } = await import("node:child_process");
+  const videoSeconds = (() => {
+    try {
+      const got = Number.parseFloat(execFileSync(FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "csv=p=0", video]).toString());
+      return Number.isFinite(got) ? got : duration;
+    } catch { return duration; }
+  })();
+  const tiles = Math.max(1, Math.min(48, Math.ceil((videoSeconds - 0.04) / every)));
   const dims = probeDimensions(video);
   const tall = dims.height > dims.width;
   const cols = Math.max(1, Math.min(columns ?? (tall ? 6 : 4), tiles));
@@ -1756,7 +1771,6 @@ server.registerTool("film_sheet", {
   const width = tall ? 270 : 480;
   const out = path.join(dir, "out", "frames", `film-sheet-${leaf.replace(/\.mp4$/, "")}-${every}s.png`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  const { execFileSync } = await import("node:child_process");
   execFileSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-i", video,
     "-vf", `select='isnan(prev_selected_t)+gte(t-prev_selected_t\,${every - 0.02})',scale=${width}:-2,tile=${cols}x${rows}:padding=4:color=0x0b0e12`, "-fps_mode", "passthrough", "-frames:v", "1", out], { stdio: ["ignore", "ignore", "pipe"] });
   const audio = (() => {

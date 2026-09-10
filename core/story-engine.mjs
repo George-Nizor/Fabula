@@ -99,7 +99,12 @@ export function sections(words, { minSeconds } = {}) {
   for (let i = 1; i < paras.length; i += 1) {
     const para = paras[i];
     const sinceLast = para.start - bounds.at(-1).start;
-    if (para.signpost && sinceLast >= floor * 0.5) { bounds.push(para); continue; }
+    // A section needs ten seconds of film left to be one: a turn in the
+    // last breath is the ending, not a chapter.
+    if (paras.at(-1).end - para.start < 10) continue;
+    // A signpost is a turn, but not one every few seconds: "so the…" a
+    // dozen seconds into a short is speech, not a chapter.
+    if (para.signpost && sinceLast >= Math.max(floor * 0.5, 12)) { bounds.push(para); continue; }
     if (sinceLast < floor) continue;
     // Vocabulary shift: how much of this paragraph's substance appeared in
     // the previous two. Little overlap reads as a new topic — and a long

@@ -73,7 +73,7 @@ test("the farmer's draft is denser, and ends a short on the ask", () => {
   assert.ok(count(draft) > count(editor), `${count(draft)} vs ${count(editor)}`);
   assert.ok(draft.scenes.some((s) => s.graphic?.template === "cta"), "a short ends on the ask");
   const figures = draft.scenes.filter((s) => s.graphic?.template === "big-number").map((s) => s.graphic.params.value);
-  assert.ok(figures.length && figures.every((v) => /min$|%$/.test(v)), JSON.stringify(figures));
+  assert.ok(figures.length && figures.every((v) => /\d/.test(v)) && figures.includes("16 min") && figures.includes("80%"), JSON.stringify(figures));
   assert.ok(draft.todo.some((t) => t.includes("the figure ")), "a read figure is flagged for a check");
   assert.ok(!draft.scenes.some((s) => s.graphic?.params?.value === "2019"), "a year is not a figure");
   const expanded = expandTemplates(draft.scenes, { format: "vertical" });
@@ -116,4 +116,20 @@ test("a short's draft opens on the face with the words on it and ends on the ask
   assert.equal(last.graphic?.template, "cta");
   assert.equal(last.toWordId, words.at(-1).id);
   assert.ok(draft.todo.some((note) => /placeholder/.test(note)));
+});
+
+test("a short with a spoken ask ends on the cta over the face, and a hook line never hangs", async () => {
+  const { draftScenes } = await import("../core/draft-engine.mjs");
+  const say = "here is the thing about rendering a talking head film with graphics over it and the reason it takes so long is the filter graph so subscribe for the full breakdown next week".split(" ");
+  const words = say.map((text, id) => ({ id, text: id === say.length - 1 ? `${text}.` : text, start: id * 0.4, end: id * 0.4 + 0.36 }));
+  const draft = draftScenes(words, { format: "vertical", shortForm: true, persona: "farmer", title: "Rendering" });
+  const cta = draft.scenes.find((s) => s.graphic?.template === "cta");
+  assert.ok(cta, "ends on the ask");
+  assert.equal(cta.graphic.over, true);
+  assert.ok(!draft.scenes.some((s) => s.type === "stage" && s.layout === "cutaway" && s.fromWordId === cta.fromWordId), "the face stays under it");
+  assert.ok(!draft.scenes.some((s) => s.graphic?.kind === "section"), "no section marks in a short");
+  for (const scene of draft.scenes) {
+    const line = scene.graphic?.params?.line;
+    if (line) assert.ok(!/\b(over|with|of|the|and|to)$/.test(line), `no hanging word: ${line}`);
+  }
 });

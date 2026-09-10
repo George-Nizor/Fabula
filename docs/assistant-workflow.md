@@ -250,7 +250,8 @@ are where a card belongs, and the ones that carry the argument are the ones to t
 `draft_scenes` turns that reading into a first draft of the plan — the promise as a hook over
 a cutaway in a film, or as the `thumbnail` over the face at frame one in a short; a section
 mark at every turn; a card at the moments that carry their own text; the conclusion as the
-spoken word; a short's ending on a `cta` over the face whether or not the speaker made an ask —
+spoken word; a short's ending on a `cta` over the face, on the speaker's ask when there is one
+and on a placeholder line when there is not; no section marks in a short, which is one idea —
 spaced by the persona's density and in the film's shape, with a `todo` for every moment it
 left to judgment (a chart's values, a definition's meaning, a picture, a moment that sat under
 an earlier scene, the six words a thumbnail wants, the cta's line). It quotes the speaker and

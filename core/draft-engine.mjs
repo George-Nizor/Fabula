@@ -43,9 +43,12 @@ const hookLine = (text) => {
   if (words.length <= 12) return charsTo(clean, 90);
   const pause = clean.search(/[,;:—–-]\s/);
   const clause = pause > 0 ? clean.slice(0, pause) : clean;
-  const kept = clause.split(/\s+/).filter(Boolean).slice(0, 12).join(" ");
-  return charsTo(kept, 90);
+  const kept = clause.split(/\s+/).filter(Boolean).slice(0, 12);
+  // Twelve words that end on a preposition are a phrase left hanging.
+  while (kept.length > 3 && HANGING.has(kept.at(-1).toLowerCase().replace(/[^a-z']/g, ""))) kept.pop();
+  return charsTo(kept.join(" "), 90);
 };
+const HANGING = new Set(["a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or", "but", "with", "over", "under", "by", "from", "into", "than", "as", "that", "which", "is", "are", "was", "were", "it", "its", "this", "these", "those", "so", "if", "about", "through", "without"]);
 // Six words of the promise's first clause, for the face at frame one.
 const thumbLine = (text) => {
   const clean = String(text).replace(/[.!?]+$/, "").trim();
@@ -152,7 +155,8 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
 
   // Sections: a mark at every turn after the first, with the head kept as a
   // corner card. Skipped when it would crowd what the opening already placed.
-  const sections = story.sections.slice(1);
+  // A short is one idea and has no chapters: no section marks in it.
+  const sections = shortForm ? [] : story.sections.slice(1);
   for (const [i, section] of sections.entries()) {
     const span = spanFor(words, section, 4);
     if (scenes.some((s) => s.type === "graphic" && Math.abs(words.find((w) => w.id === s.fromWordId).start - span.start) < density.minGap * 0.5)) continue;
@@ -199,9 +203,9 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
   }
   if (ending?.cta) {
     if (shortForm) {
+      // The ask stays on the face, as the ending of a short does.
       const span = spanFor(words, ending.cta, 5);
-      scenes.push({ type: "stage", fromWordId: span.fromWordId, toWordId: span.toWordId, layout: "cutaway" });
-      scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "cta", params: { line: charsTo(ending.cta.text.replace(/[.!?]+$/, ""), 48), arrow: "down" } } });
+      scenes.push({ type: "graphic", fromWordId: span.fromWordId, toWordId: span.toWordId, graphic: { kind: "custom", template: "cta", params: { line: charsTo(ending.cta.text.replace(/[.!?]+$/, ""), 48), arrow: "down", shade: 0.55 }, over: true } });
     } else notes.push(`the ask is at ${words.find((w) => w.id === ending.cta.fromWordId).start.toFixed(1)}s: “${ending.cta.text}” — a callout or the head alone; the cta template is for shorts`);
   } else if (shortForm) {
     // A funnel short ends on the ask whether or not the speaker made one:

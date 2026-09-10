@@ -113,6 +113,15 @@ sampled half an interval early and refused a draft, the `detect_framing` tool sc
 applying what the first pass would have, and the draft dropped a moment that sat under an
 earlier scene without a word. All fixed, each with a test where one could be written.
 
+An eleventh reader took the commits after the journey and found the round trip I had just
+promised was hollow for B-roll: `set_scenes`'s graphic schema predated the clip kind, and zod
+strips what it does not name, so a clip's in-point, fit and sound vanished on the way back.
+The schema names them and passes the rest to the engine's own validation. With it: the lowered
+section floor let "so the…" a dozen seconds into a short count as a chapter, and a short has no
+chapters at all now; `film_sheet` counts against the video's length, not the container's
+longer audio; a short's spoken ask goes over the face like the draft's own; a hook line never
+ends on a preposition.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

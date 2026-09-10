@@ -187,6 +187,15 @@ test("import_clip files B-roll as a muted mp4, list_assets says how long it is, 
       ] }));
       assert.ok(long.warnings.some((w) => /holds its last frame/.test(w)), JSON.stringify(long.warnings));
       assert.match(errorOf(await call(client, "check_scenes", { scenes: [{ type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "clip", src: "assets/nope.mp4" } }] })) ?? "", /no such asset assets\/nope.mp4/);
+      // The round trip keeps a clip's in-point, fit and sound.
+      assert.equal(errorOf(await call(client, "set_scenes", { scenes: [
+        { type: "stage", from_word_id: 0, to_word_id: 4, layout: "side" },
+        { type: "graphic", from_word_id: 0, to_word_id: 4, graphic: { kind: "clip", src: "assets/launch.mp4", in: 0.5, fit: "contain", sound: { level: -20 }, label: "the launch" } },
+      ] })), null);
+      const read = text(await call(client, "get_scenes")).scenes;
+      assert.equal(errorOf(await call(client, "set_scenes", { scenes: read })), null);
+      const kept = JSON.parse(fs.readFileSync(path.join(root, "one", "compose.json"), "utf8")).scenes[1].graphic;
+      assert.deepEqual({ in: kept.in, fit: kept.fit, sound: kept.sound, label: kept.label }, { in: 0.5, fit: "contain", sound: { level: -20 }, label: "the launch" });
     });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

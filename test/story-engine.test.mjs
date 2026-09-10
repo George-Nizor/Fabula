@@ -194,3 +194,10 @@ test("sections follow subject changes a monologue makes without signposting, and
   const one = sections(talk("if a rocket flies straight up it comes straight back down so it turns sideways as it climbs and falls around the planet which is what an orbit is", 0).map((w, id) => ({ ...w, id })));
   assert.equal(one.length, 1);
 });
+
+test("a signpost a dozen seconds into a short is speech, not a chapter", () => {
+  const { sections } = storyModule;
+  const say = "if a rocket flies straight up it comes straight back down which is why it turns sideways as it climbs and falls around the planet instead of onto it. So the ground keeps curving away beneath it forever and it never lands.";
+  const words = say.split(" ").map((text, id) => ({ id, text, start: id * 0.42, end: id * 0.42 + 0.38 }));
+  assert.equal(sections(words).length, 1);
+});
