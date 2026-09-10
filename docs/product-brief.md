@@ -122,6 +122,11 @@ chapters at all now; `film_sheet` counts against the video's length, not the con
 longer audio; a short's spoken ask goes over the face like the draft's own; a hook line never
 ends on a preposition.
 
+Two more for the belt the same evening: `export_description` carries hashtags and holds its
+chapter list back until a platform would show one, and `get_captions` / `export_captions` let
+the assistant translate the film's caption phrases and write them back as a subtitle file with
+the film's own timings.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the
