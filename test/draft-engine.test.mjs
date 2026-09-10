@@ -87,3 +87,15 @@ test("an empty transcript drafts nothing and says so", () => {
   assert.deepEqual(draft.scenes, []);
   assert.ok(draft.notes[0].includes("no words"));
 });
+
+test("a moment under an earlier scene is not dropped in silence, and a working title is flagged", async () => {
+  const { draftScenes } = await import("../core/draft-engine.mjs");
+  // No promise in the opening, so the draft opens on a title; the definition
+  // in the same words sits under it.
+  const say = "the force that pushes a rocket upward is called thrust and thrust is what the engine makes when it burns fuel with oxidizer in the chamber and throws the hot gas out of the nozzle at the back".split(" ");
+  const words = say.map((text, id) => ({ id, text: id === say.length - 1 ? `${text}.` : text, start: id * 0.42, end: id * 0.42 + 0.4 }));
+  const draft = draftScenes(words, { format: "landscape", shortForm: false, persona: "editor", title: "Journey test" });
+  assert.ok(draft.scenes.some((scene) => scene.type === "title"), "opens on a title");
+  assert.ok(draft.todo.some((note) => /project's name/.test(note)), `a working title is flagged: ${draft.todo.join(" | ")}`);
+  assert.ok(draft.todo.some((note) => /under another scene/.test(note)), `the definition under the title is a to-do: ${draft.todo.join(" | ")}`);
+});

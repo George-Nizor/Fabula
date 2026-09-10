@@ -104,6 +104,15 @@ a tool that failed no longer takes a project switch up; `review_film` says when 
 measured is the bed or a clip rather than the room, and measures the newer of the film and
 its draft; a clip on the first words sounds from frame one, as it is drawn.
 
+Then the whole journey was run once, over MCP, on a fresh project made from the owner's
+recording — transcribe, cut, frame, clean, compose, grade, clean the voice, B-roll with sound,
+draft, review, thumbnails, chapters, description, a short, a re-cut and reanchor — and every
+step was true to disk in sixteen minutes. What the run caught was the tools' manners rather
+than their work: `set_scenes` refused the spelling `get_scenes` hands back, `film_sheet`
+sampled half an interval early and refused a draft, the `detect_framing` tool scanned without
+applying what the first pass would have, and the draft dropped a moment that sat under an
+earlier scene without a word. All fixed, each with a test where one could be written.
+
 ## The assistant's toolbelt (2026-09-08)
 
 The assistant is the editor; everything else is a tool it holds. The 09-08 round widened the

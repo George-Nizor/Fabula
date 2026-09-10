@@ -156,9 +156,10 @@ Your work begins there and is the composition. If `status` shows
 no `framing.json` but a scan exists, look at the frames and `set_framing` first.
 
 Footage is referenced where it lives, never copied. When a project was opened outside the
-window (`open_project`), the same steps are yours: `transcribe` → `detect_framing` → look at the
-frames it saved, then `set_framing` when the head is not the whole frame (screen recordings with
-a camera inset, OBS scene switches, pillarboxing) → `cut_pass` → cut review → `render_clean` → `retranscribe_clean` → `plan_shots` → `set_theme` (the
+window (`open_project`), the same steps are yours: `transcribe` → `detect_framing` (which
+applies a plain pillarbox itself, as the first pass does, and says so) → look at the frames
+it saved, then `set_framing` when the head is not the whole frame and the scan could not tell
+(screen recordings with a camera inset, OBS scene switches) → `cut_pass` → cut review → `render_clean` → `retranscribe_clean` → `plan_shots` → `set_theme` (the
 look, and a step of its own before any scene: `status` and `get_theme` report whether anyone
 actually chose it, because an unset theme resolves to the studio preset and reads like a
 decision. When it is unchosen, ask what the film is for and whether it uses one of the person's
@@ -261,8 +262,9 @@ real render. It is never the deliverable. Every tool that takes a file from the 
 (`open_project`, `import_image`, `import_audio`, `set_music_root`) accepts a Windows path as
 well as a WSL one.
 
-`film_sheet` tiles the rendered film itself, from `out/final.mp4` or a preview span, in
-seconds and without Electron: what the encoder actually wrote. Look at it after `render_final`
+`film_sheet` tiles the rendered film itself — the newer of `out/final.mp4` and `out/draft.mp4`,
+or a preview span by name — one tile on each interval's second, in seconds and without
+Electron: what the encoder actually wrote. Look at it after `render_final`
 and before handing the film over.
 
 `review_film` is the whole film in one call: the plan's reads, the chapter list it would

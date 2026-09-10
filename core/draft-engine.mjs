@@ -155,7 +155,14 @@ export function draftScenes(words, { format = "landscape", shortForm = false, pe
   for (const moment of wanted) {
     if (cards >= density.maxCards) break;
     const busy = taken().some((t) => moment.start < t.end + density.minGap && moment.end > t.start - density.minGap);
-    if (busy) continue;
+    if (busy) {
+      // A moment under a scene already placed is not forgotten: the plan
+      // may want it once the earlier scene is trimmed.
+      if (["definition", "number", "change", "quote", "question", "warning", "name", "sequence", "enumeration", "compare"].includes(moment.kind)) {
+        todo.push(`at ${moment.start.toFixed(1)}s (${moment.kind}): under another scene, so nothing was placed — ${moment.evidence?.length ? `“${moment.evidence.slice(0, 3).join(", ")}”` : "the sentence"} may want its own card once the scene over it ends`);
+      }
+      continue;
+    }
     const span = spanFor(words, moment, density.cardSeconds);
     if (span.end - span.start < 1.5) continue;
     const card = cardFor(moment, span, { shortForm });
