@@ -371,8 +371,11 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
 
 ## Open questions
 
-- Export throughput: frames per second of offscreen capture at 1080p. Even 5–10 fps capture is
-  acceptable — a 10-minute video renders in under an hour, unattended — but measure early.
+- ~~Export throughput: frames per second of offscreen capture at 1080p.~~ Resolved: the render
+  captures only the frames on which a layer's signature changes (states, not frames) and lets
+  ffmpeg hold each plate, so a 105 s film's draft renders in 117 s and its clean cut in 48 s
+  (2026-09-10, the journey run); chunks are cached by content identity, so a tweak re-renders
+  one chunk. The spike's findings below still hold for the mechanism.
   **Spike findings (2026-09-04, `scripts/spike-offscreen-capture.cjs`):** the mechanism works —
   two full runs produced correct stepped frames — with these hard-won specifics: `capturePage`
   stalls on offscreen windows (use the CDP `Page.captureScreenshot` through
@@ -381,8 +384,8 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
   mid-session (ESRCH creating shm in both `/dev/shm` and `/tmp` while the same syscalls succeed
   from Python — likely cured by `wsl --shutdown`, and irrelevant on the Windows target). Re-run
   the spike after a WSL restart to get a clean CDP throughput number.
-- WebCodecs demux: `VideoDecoder` needs the H.264 samples handed to it; use mp4box.js for demux or
-  fall back to `<video>` seek-per-frame if it fights back.
+- ~~WebCodecs demux.~~ Not needed: the head never goes through the browser in the render (ffmpeg
+  places the footage; the page captures plates), and the window seeks a `<video>`.
 - ~~The John Van Sickle static ffmpeg has no NVENC.~~ Resolved 2026-09-05: `setup-tools.sh`
   installs the BtbN GPL build, and `h264_nvenc` works from WSL (the encoder library is exposed
   under `/usr/lib/wsl/lib`). What the switch revealed is that the encoder was never the clean
@@ -393,6 +396,8 @@ Electron app; Windows is the eventual target, WSL2 is the development host.
   trimmed to exactly those frames' instants, so the two tracks stay the same length to the sample
   instead of drifting by up to a frame per cut. NVDEC (`h264_cuvid`) also works but decodes this
   footage no faster than sixteen cores, and would tie the render to h264/hevc sources; not used.
-- WhisperX on this 4080/WSL2 (fallback: faster-whisper with `word_timestamps=True`).
+- ~~WhisperX on this 4080/WSL2.~~ Runs: 63 s for a 105 s recording, word timings good enough to
+  anchor every scene; the retranscribe of the clean cut is what the plan anchors to.
 - Whether `large-v3` hallucination on long silences needs VAD tightening before the gap detector
-  runs (WhisperX applies VAD by default; verify on a real recording).
+  runs: not seen on the recordings cut so far; the silence cuts and the false-start, stutter and
+  retake detectors have been enough. Open until a long, quiet recording says otherwise.
