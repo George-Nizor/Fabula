@@ -247,11 +247,14 @@ try first. Call it once before `set_scenes`, and before `suggest_clips` when loo
 shorts. It is a reading, not a plan: sections are where a heading or a cover belongs, moments
 are where a card belongs, and the ones that carry the argument are the ones to take.
 
-`draft_scenes` turns that reading into a first draft of the plan — the promise as a hook, a
-section mark at every turn, a card at the moments that carry their own text, the conclusion as
-the spoken word, the ask as a cta in a short — spaced by the persona's density and in the
-film's shape, with a `todo` for every moment it left to judgment (a chart's values, a
-definition's meaning, a picture). It quotes the speaker and invents nothing. Read it, rework
+`draft_scenes` turns that reading into a first draft of the plan — the promise as a hook over
+a cutaway in a film, or as the `thumbnail` over the face at frame one in a short; a section
+mark at every turn; a card at the moments that carry their own text; the conclusion as the
+spoken word; a short's ending on a `cta` over the face whether or not the speaker made an ask —
+spaced by the persona's density and in the film's shape, with a `todo` for every moment it
+left to judgment (a chart's values, a definition's meaning, a picture, a moment that sat under
+an earlier scene, the six words a thumbnail wants, the cta's line). It quotes the speaker and
+invents nothing but those two placeholders, and names them. Read it, rework
 what you disagree with, and `set_scenes` the result; or `apply: true` and refine with
 `update_scenes`. It is a skeleton, not a composition: the head alone is still a choice it
 cannot make for you.
