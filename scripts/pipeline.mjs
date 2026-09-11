@@ -601,7 +601,7 @@ export function scanFraming(videoPath, framesDir) {
 // whether the files on disk already are that. `source` is source.json's
 // record of the footage.
 export function cleanPlan({ review, framing, dims, source, fps = CLEAN_FPS, ceiling = CLEAN_CEILING }) {
-  const keeps = keepSegments(review.cuts, review.duration);
+  const keeps = keepSegments(review.cuts, review.duration, { words: review.words });
   const effective = framing ?? fullFrameFraming(dims, review.duration);
   return {
     keeps,
@@ -681,13 +681,17 @@ const fmtClock = (seconds) => {
 // out/clean-map.json written last, so a clean.mp4 beside a map is always a
 // finished one and the map's identity can be trusted.
 export async function renderClean(videoPath, cuts, duration, outPath, options = {}) {
-  const keeps = keepSegments(cuts, duration);
+  // The words decide whether a short gap between two cuts is speech worth
+  // keeping or silence worth absorbing; the plan below must agree, or the
+  // identity it stamps would not describe what was rendered.
+  const words = options.words ?? null;
+  const keeps = keepSegments(cuts, duration, { words });
   if (keeps.length === 0) throw new Error("every moment is cut; nothing to render");
   const dims = probeDimensions(videoPath);
   const fps = options.fps ?? CLEAN_FPS;
   const ceiling = options.ceiling ?? CLEAN_CEILING;
   const source = options.source ?? { path: path.resolve(videoPath), bytes: fs.statSync(videoPath).size };
-  const plan = cleanPlan({ review: { cuts, duration }, framing: options.framing ?? null, dims, source, fps, ceiling });
+  const plan = cleanPlan({ review: { cuts, duration, words }, framing: options.framing ?? null, dims, source, fps, ceiling });
   const { framing } = plan;
   const headSize = headOutputSize(framing, ceiling);
   const screenSize = screenOutputSize(framing, ceiling);

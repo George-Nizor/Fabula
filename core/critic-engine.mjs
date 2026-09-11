@@ -20,8 +20,10 @@ import { PUNCH_DWELL_SECONDS } from "./shot-engine.mjs";
 
 // A shot shorter than this reads as a flinch rather than a cut.
 export const SHOT_FLOOR_SECONDS = PUNCH_DWELL_SECONDS;
-// A kept scrap of footage this short is a flash whatever framing it wears.
-export const KEEP_FLOOR_SECONDS = 1.2;
+// A kept scrap of footage this short, carrying no word, is silence two cuts
+// failed to join across: it renders as a stutter. A scrap this short that
+// carries a word is the speaker talking, however briefly, and is not a fault.
+export const KEEP_FLOOR_SECONDS = 0.4;
 // A cut that removes less than this removes nothing and leaves a hiccup.
 export const POINTLESS_CUT_SECONDS = 0.12;
 // Silence before the first word and after the last, past which it drags.
@@ -81,10 +83,13 @@ function critiqueCut({ words = [], keeps = [], punchSpans = [], cuts = [], secon
   keeps.forEach((keep, index) => {
     const length = round(keep.end - keep.start);
     if (length >= KEEP_FLOOR_SECONDS) return;
+    // Speech is never a sliver. Two cuts either side of a word have simply
+    // tightened around it, which is what a cut is for.
+    if ((words ?? []).some((word) => word.end > keep.start + 0.01 && word.start < keep.end - 0.01)) return;
     out.push(finding("fault", "keep-sliver",
-      `A ${length}s scrap of footage at ${round(keep.start, 1)}s`,
-      "Two cuts landed almost on top of each other; what survives between them is a flash nobody can read.",
-      "Keep one of the two cuts either side (set_cut_enabled), so the scrap joins its neighbour.",
+      `A ${length}s scrap of silence at ${round(keep.start, 1)}s`,
+      "Two cuts landed almost on top of each other with nothing but silence between them; it renders as two jump cuts a tenth of a second apart, which reads as a dropped frame.",
+      "Re-render the clean cut — the cut engine absorbs a silent scrap this short — or turn one of the two cuts off (set_cut_enabled).",
       { at: round(keep.start, 2), seconds: length, keepIndex: index }));
   });
 

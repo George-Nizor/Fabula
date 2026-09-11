@@ -90,6 +90,7 @@ const steps = {
     const caps = encoderCapabilities();
     say(`clean render: ${video.path} → out/clean.mp4 with ${caps.nvenc ? "h264_nvenc" : "libx264"} (${caps.version})`);
     const result = await renderClean(video.path, review.cuts, review.duration, path.join(dir, "out", "clean.mp4"), {
+      words: review.words,
       framing,
       source: video.source,
       ceiling: ceilingOf(readProjectMeta(dir)),

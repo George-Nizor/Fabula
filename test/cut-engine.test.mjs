@@ -1,13 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  flattenWords,
-  detectFillerCuts,
-  detectGapCuts,
-  normalizeCuts,
-  keepSegments,
-  totalCutSeconds,
-} from "../core/cut-engine.mjs";
+import { flattenWords, detectFillerCuts, detectGapCuts, normalizeCuts, keepSegments, totalCutSeconds, SILENT_KEEP_FLOOR_SECONDS } from "../core/cut-engine.mjs";
 import { addWordCut, keepWords } from "../core/cut-engine.mjs";
 
 function word(id, text, start, end) {
@@ -140,4 +133,26 @@ test("keepWords splits an enabled cut around the chosen words and leaves disable
   const tight = [{ start: 0.8, end: 3.1, enabled: true, sources: [{ start: 0.8, end: 3.1, reason: "filler", wordIds: [0, 1, 2, 3], enabled: true }] }];
   assert.deepEqual(keepWords(tight, words, [0, 1, 2, 3]), []);
   assert.throws(() => keepWords(cuts, words, [99]), /no words/);
+});
+
+test("a silent scrap between two cuts is absorbed; the same scrap with a word in it survives", () => {
+  // Two filler cuts side by side leave a tenth of a second of silence between
+  // them. Rendered, that is two jump cuts a tenth of a second apart.
+  const cuts = [
+    { start: 1.2, end: 1.4, enabled: true, sources: [] },
+    { start: 1.5, end: 1.7, enabled: true, sources: [] },
+    { start: 2.0, end: 2.9, enabled: true, sources: [] },
+  ];
+  const silent = [{ id: 0, start: 0.1, end: 1.0 }, { id: 1, start: 3.2, end: 4.5 }];
+  // Without the words nothing can be told apart, so every scrap survives —
+  // which is what every caller that has no transcript still gets.
+  assert.equal(keepSegments(cuts, 5).length, 4);
+  // With them, the silent scraps at 1.4 and 1.7 go and the speech is kept.
+  assert.deepEqual(keepSegments(cuts, 5, { words: silent }), [{ start: 0, end: 1.2 }, { start: 2.9, end: 5 }]);
+
+  // A scrap holding a word is the speaker talking, and stays however short.
+  const speaking = [{ id: 0, start: 0.1, end: 1.0 }, { id: 1, start: 1.45, end: 1.65 }, { id: 2, start: 3.2, end: 4.5 }];
+  const kept = keepSegments(cuts, 5, { words: speaking });
+  assert.ok(kept.some((k) => Math.abs(k.start - 1.4) < 0.001), "the word between the two cuts survives");
+  assert.ok(SILENT_KEEP_FLOOR_SECONDS > 0.2 && SILENT_KEEP_FLOOR_SECONDS < 1);
 });

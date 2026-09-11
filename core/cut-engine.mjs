@@ -141,16 +141,35 @@ export function normalizeCuts(cuts, options = {}) {
   return merged;
 }
 
-// The complement of the enabled cuts: what survives into clean.mp4.
-export function keepSegments(cuts, durationSeconds) {
+// A scrap of SILENCE this short between two cuts is not an edit, it is a
+// stutter: two jump cuts a tenth of a second apart, which reads as a dropped
+// frame. Two filler cuts side by side ("um, uh") leave exactly that. A scrap
+// this short that carries a WORD is a different thing entirely — the speaker
+// said it, and it stays however short it is.
+export const SILENT_KEEP_FLOOR_SECONDS = 0.4;
+
+const holdsAWord = (words, start, end) =>
+  (words ?? []).some((word) => word.end > start + 0.01 && word.start < end - 0.01);
+
+// The complement of the enabled cuts: what survives into clean.mp4. Given the
+// words, a silent scrap under the floor is absorbed into the cuts either side
+// rather than rendered as three frames nobody asked for.
+export function keepSegments(cuts, durationSeconds, { words = null } = {}) {
   const active = normalizeCuts(cuts.filter((cut) => cut.enabled));
   const keeps = [];
   let cursor = 0;
+  const worthKeeping = (start, end) => {
+    const seconds = end - start;
+    if (seconds < MIN_KEEP_SEGMENT_SECONDS) return false;
+    if (!words || seconds >= SILENT_KEEP_FLOOR_SECONDS) return true;
+    return holdsAWord(words, start, end);
+  };
   for (const cut of active) {
-    if (cut.start - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: Math.min(cut.start, durationSeconds) });
+    const end = Math.min(cut.start, durationSeconds);
+    if (worthKeeping(cursor, end)) keeps.push({ start: cursor, end });
     cursor = Math.min(Math.max(cursor, cut.end), durationSeconds);
   }
-  if (durationSeconds - cursor >= MIN_KEEP_SEGMENT_SECONDS) keeps.push({ start: cursor, end: durationSeconds });
+  if (worthKeeping(cursor, durationSeconds)) keeps.push({ start: cursor, end: durationSeconds });
   return keeps;
 }
 

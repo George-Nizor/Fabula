@@ -50,7 +50,7 @@ function assertZoom(zoom) {
 export function punchPlan(words, cuts, durationSeconds, options = {}) {
   const zoom = options.zoom ?? DEFAULT_PUNCH_ZOOM;
   assertZoom(zoom);
-  const keeps = keepSegments(cuts, durationSeconds);
+  const keeps = keepSegments(cuts, durationSeconds, { words });
   const scales = punchScales(keeps.map((keep) => keep.end - keep.start), zoom);
   return keeps.map((keep, index) => {
     const inside = words.filter(

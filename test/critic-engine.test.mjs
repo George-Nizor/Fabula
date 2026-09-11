@@ -68,15 +68,23 @@ test("shotRuns merges neighbouring spans that share a framing", () => {
   ]);
 });
 
-test("a scrap of footage between two cuts is a fault whatever framing it wears", () => {
+test("a silent scrap between two cuts is a fault; the same scrap carrying a word is not", () => {
   const film = clean();
-  film.keeps = [{ start: 0, end: 12 }, { start: 12, end: 12.6 }, { start: 12.6, end: 30 }];
-  const result = critiqueFilm(film);
-  const sliver = result.findings.find((f) => f.kind === "keep-sliver");
+  // Nothing is spoken between 11 and 14, so the scrap at 12 is silence two
+  // cuts failed to join across.
+  film.words = [{ id: 0, start: 0.2, end: 11 }, { id: 1, start: 14, end: 29.4 }];
+  film.keeps = [{ start: 0, end: 12 }, { start: 12, end: 12.3 }, { start: 12.3, end: 30 }];
+  const sliver = critiqueFilm(film).findings.find((f) => f.kind === "keep-sliver");
   assert.ok(sliver && sliver.severity === "fault");
-  assert.equal(sliver.seconds, 0.6);
+  assert.equal(sliver.seconds, 0.3);
   assert.ok(sliver.seconds < KEEP_FLOOR_SECONDS);
   assert.equal(sliver.keepIndex, 1);
+  assert.match(sliver.what, /silence/);
+
+  // The same scrap with a word in it is the speaker talking, however briefly.
+  const speaking = { ...film, words: [{ id: 0, start: 0.2, end: 11 }, { id: 1, start: 12.05, end: 12.25 }, { id: 2, start: 14, end: 29.4 }] };
+  assert.equal(critiqueFilm(speaking).findings.filter((f) => f.kind === "keep-sliver").length, 0,
+    "a cut tightened around a word is what a cut is for");
 });
 
 test("a voice nothing is levelling is the loudest fault there is", () => {
@@ -153,9 +161,9 @@ test("the plan's own reads are folded in at the severity they deserve", () => {
 
 test("findings come back worst first, and the verdict counts only what is broken", () => {
   const film = clean();
-  film.keeps = [{ start: 0, end: 0.5 }, { start: 0.5, end: 30 }];   // a fault
+  film.keeps = [{ start: 0, end: 0.2 }, { start: 0.2, end: 30 }];   // a silent scrap: a fault
   film.audio = { target: -16, measured: -44.6, rendered: -16.1, truePeak: -0.5 }; // a risk
-  film.words = [{ id: 0, start: 0.2, end: 4 }, { id: 1, start: 9, end: 29.4 }];   // a long pause: a note
+  film.words = [{ id: 0, start: 0.4, end: 4 }, { id: 1, start: 9, end: 29.4 }];   // a long pause: a note
   const result = critiqueFilm(film);
   assert.deepEqual(result.findings.map((f) => f.severity), ["fault", "risk", "note"]);
   assert.match(result.verdict, /^1 fault to fix/);
@@ -176,7 +184,8 @@ test("silence at either end, and a cut that removes nothing", () => {
 
 test("every finding carries what it is, why it reads badly, and the call that fixes it", () => {
   const film = clean();
-  film.keeps = [{ start: 0, end: 0.5 }, { start: 0.5, end: 30 }];
+  film.keeps = [{ start: 0, end: 0.2 }, { start: 0.2, end: 30 }];
+  film.words = [{ id: 0, start: 1, end: 4 }, { id: 1, start: 4.4, end: 29.4 }];
   film.audio = { target: null, measured: -44.6, rendered: -44.7, truePeak: -21.3 };
   film.output = { exists: false, stale: [] };
   const result = critiqueFilm(film);
