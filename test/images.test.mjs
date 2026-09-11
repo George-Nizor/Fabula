@@ -50,3 +50,20 @@ test('a gif is filed as a png and a repeated name never overwrites the first pic
     fs.rmSync(assetsDir, { recursive: true, force: true });
   }
 });
+
+test('audio is an asset too, so a licensed track reaches the credits', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabula-assets-'));
+  const assetsDir = path.join(dir, 'assets');
+  fs.mkdirSync(assetsDir, { recursive: true });
+  fs.writeFileSync(path.join(assetsDir, 'bed.mp3'), 'not really an mp3');
+  fs.writeFileSync(path.join(assetsDir, 'bed.mp3.source.json'), JSON.stringify({ author: 'xkeril', license: 'CC0 1.0', pageUrl: 'https://freesound.org/people/xkeril/sounds/609895' }));
+  fs.writeFileSync(path.join(assetsDir, 'shot.png'), 'not really a png');
+  try {
+    const assets = listAssets(assetsDir);
+    const audio = assets.find((a) => a.src.endsWith('bed.mp3'));
+    assert.ok(audio, 'audio is listed');
+    assert.equal(audio.kind, 'audio');
+    assert.equal(audio.attribution.author, 'xkeril');
+    assert.equal(assets.find((a) => a.src.endsWith('shot.png')).kind, 'image');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

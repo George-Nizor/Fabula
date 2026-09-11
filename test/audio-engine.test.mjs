@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, bedGainDb, parseLoudness, MUSIC_DEFAULTS, VOICE_CLEAN } from "../core/audio-engine.mjs";
+import { validateAudio, resolveAudio, swellWindows, bedGainExpression, audioGraph, describeAudio, bedSpans, spanPresenceExpression, bedGainDb, parseLoudness, MUSIC_DEFAULTS, VOICE_CLEAN, effectSounds, EFFECT_DEFAULT_DB, EFFECT_DEFAULT_LEAD } from "../core/audio-engine.mjs";
 import { evaluateExpression } from "../core/render-plan.mjs";
 
 const words = [
@@ -187,4 +187,63 @@ test("a clip's own sound is read from its offset, placed at its second, ducked f
   assert.match(withBed.filter, /\[v0\]\[bed\]\[nat0\]amix=inputs=3/);
   assert.equal(withBed.inputs.at(-1), "/p/assets/demo.mp4");
   assert.equal(audioGraph({ audio: {}, words, span: 10, clips: [scenes[1]] }), null, "a clip without sound: the voice as it is");
+});
+
+const SPOKEN = [
+  { id: 0, text: "one", start: 1.0, end: 1.6 },
+  { id: 1, text: "two", start: 5.0, end: 5.6 },
+  { id: 2, text: "three", start: 9.0, end: 9.6 },
+];
+
+test("an effect anchors to a word and lands a breath before it, so the hit leads the picture", () => {
+  const [hit] = effectSounds([{ src: "assets/whoosh.mp3", wordId: 1 }], SPOKEN, { from: 0, span: 20 });
+  assert.equal(hit.at, Number((5.0 - EFFECT_DEFAULT_LEAD).toFixed(3)));
+  assert.equal(hit.level, EFFECT_DEFAULT_DB);
+  assert.equal(hit.src, "assets/whoosh.mp3");
+  // An exact second takes no lead: the caller has said where it goes.
+  const [exact] = effectSounds([{ src: "assets/whoosh.mp3", at: 5 }], SPOKEN, { from: 0, span: 20 });
+  assert.equal(exact.at, 5);
+  // A lead may be given either way, and is clamped at the film's start.
+  const [early] = effectSounds([{ src: "assets/a.mp3", wordId: 0, lead: 1 }], SPOKEN, { from: 0, span: 20 });
+  assert.equal(early.at, 0, "a hit cannot start before the film does");
+});
+
+test("effects outside the span are dropped, and one near the end is trimmed to fit", () => {
+  const effects = [{ src: "assets/a.mp3", at: 2 }, { src: "assets/b.mp3", at: 40 }];
+  assert.deepEqual(effectSounds(effects, SPOKEN, { from: 0, span: 20 }).map((e) => e.src), ["assets/a.mp3"]);
+  const [tail] = effectSounds([{ src: "assets/a.mp3", at: 19.5, seconds: 6 }], SPOKEN, { from: 0, span: 20 });
+  assert.equal(tail.seconds, 0.5, "it stops when the film does");
+  // A word id that is not in the transcript places nothing rather than guessing.
+  assert.deepEqual(effectSounds([{ src: "assets/a.mp3", wordId: 99 }], SPOKEN, { from: 0, span: 20 }), []);
+});
+
+test("an effect is refused unless it says where it goes, and only once", () => {
+  const ok = (effects) => validateAudio({ effects });
+  assert.doesNotThrow(() => ok([{ src: "assets/a.mp3", wordId: 3 }]));
+  assert.doesNotThrow(() => ok([{ src: "assets/a.mp3", at: 3 }]));
+  assert.throws(() => ok([{ src: "assets/a.mp3" }]), /needs a wordId/);
+  assert.throws(() => ok([{ src: "assets/a.mp3", wordId: 3, at: 3 }]), /not both/);
+  assert.throws(() => ok([{ src: "bed.mp3", at: 1 }]), /under assets/);
+  assert.throws(() => ok([{ src: "assets/a.mp3", at: 1, level: 4 }]), /-40 to 0/);
+  assert.throws(() => ok([{ src: "assets/a.mp3", at: 1, seconds: 40 }]), /0.05 to 8/);
+});
+
+test("a placed effect is mixed in without a duck; a clip's own sound keeps one", () => {
+  const graph = audioGraph({
+    audio: { voice: { loudness: -16, measured: -40 }, effects: [{ src: "assets/whoosh.mp3", wordId: 1, seconds: 1.5 }] },
+    words: SPOKEN, span: 20, voiceLoudness: -40, effectPath: (src) => `/p/${src}`,
+  });
+  const line = graph.filter.split("\n").find((l) => l.includes("[nat0]"));
+  assert.ok(line.includes("volume=-16dB"), "the level is on the file");
+  assert.ok(!line.includes("eval=frame"), "an effect is not ducked under the voice");
+  assert.ok(line.includes("adelay=4880|4880"), "delayed to where it lands");
+  assert.ok(graph.inputs.includes("/p/assets/whoosh.mp3"));
+  assert.equal(graph.hits.length, 1);
+  // The clip path still ducks, which is what makes natural sound sit under.
+  const withClip = audioGraph({
+    audio: { voice: { loudness: -16, measured: -40 } }, words: SPOKEN, span: 20, voiceLoudness: -40,
+    clips: [{ type: "graphic", start: 2, end: 6, graphic: { kind: "clip", src: "assets/c.mp4", sound: true } }],
+    clipPath: (src) => `/p/${src}`,
+  });
+  assert.ok(withClip.filter.split("\n").find((l) => l.includes("[nat0]")).includes("eval=frame"));
 });

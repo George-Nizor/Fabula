@@ -153,8 +153,30 @@ function critiquePictures({ scenes = [], assets = {}, stage = null }) {
 
 // ---- The sound ----
 
-function critiqueSound({ audio = {}, shortForm = false }) {
+function critiqueSound({ audio = {}, shortForm = false, words = [] }) {
   const out = [];
+
+  // A placed effect is not ducked, on purpose. Landing one on a word is
+  // therefore a choice to talk over the speaker.
+  for (const effect of audio.effectsAt ?? []) {
+    const over = (words ?? []).find((word) => effect.at > word.start + 0.05 && effect.at < word.end);
+    if (!over) continue;
+    out.push(finding("risk", "effect-on-speech",
+      `A sound effect lands on "${over.text ?? "a word"}" at ${round(effect.at, 2)}s`,
+      "Effects are not ducked under the voice — that is what makes them audible — so one placed mid-word talks over the speaker.",
+      "Move it to the gap before the sentence: anchor it to the first word of the phrase, where its lead puts it in the pause.",
+      { at: round(effect.at, 2), src: effect.src }));
+  }
+
+  // A bed needs somewhere to breathe, and a tight cut takes those places away.
+  if (audio.music && audio.swells === 0) {
+    out.push(finding("note", "bed-no-swell",
+      "The music bed never comes up",
+      "Every pause long enough for it was cut, so it stays ducked under the voice from beginning to end and is doing almost nothing.",
+      "Keep a beat or two at the section changes (set_cut_enabled), or drop the bed — a bed nobody can hear is a file in the render.",
+      { at: null }));
+  }
+
   const target = audio.target ?? null;
   const wanted = shortForm ? LOUDNESS_TARGETS.short : LOUDNESS_TARGETS.film;
   const measured = audio.measured ?? null;   // the clean cut, as recorded
@@ -247,7 +269,7 @@ export function critiqueFilm(film = {}) {
     ...critiqueCut(film),
     ...critiquePlan(film),
     ...critiquePictures({ scenes: film.scenes, assets: film.assets, stage }),
-    ...critiqueSound({ audio: film.audio, shortForm }),
+    ...critiqueSound({ audio: film.audio, shortForm, words: film.words }),
     ...critiqueRender({ output: film.output, stage, seconds: film.seconds }),
   ].sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || (a.at ?? -1) - (b.at ?? -1));
 

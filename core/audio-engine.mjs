@@ -49,6 +49,23 @@ export function validateAudio(audio) {
       }
     }
   }
+  const { effects } = audio;
+  if (effects !== undefined && effects !== null) {
+    if (!Array.isArray(effects) || effects.length > 40) throw new Error("audio.effects is a list of up to 40 one-shot sounds");
+    effects.forEach((effect, index) => {
+      const at = `audio.effects[${index}]`;
+      if (!effect || typeof effect !== "object") throw new Error(`${at} must be an object`);
+      if (!assetAudioPath(effect.src)) throw new Error(`${at}.src must be a project-relative audio file under assets/, e.g. assets/whoosh.mp3 (import_audio puts one there)`);
+      const placed = Number.isInteger(effect.wordId) || typeof effect.at === "number";
+      if (!placed) throw new Error(`${at} needs a wordId (the word it lands on) or an at in seconds`);
+      if (Number.isInteger(effect.wordId) && typeof effect.at === "number") throw new Error(`${at} takes a wordId or an at, not both`);
+      if (effect.at !== undefined && !(typeof effect.at === "number" && effect.at >= 0)) throw new Error(`${at}.at is seconds from the start of the film`);
+      if (effect.level !== undefined && !between(effect.level, -40, 0)) throw new Error(`${at}.level is dB from -40 to 0`);
+      if (effect.offset !== undefined && !(typeof effect.offset === "number" && effect.offset >= 0)) throw new Error(`${at}.offset is seconds into the file, 0 or more`);
+      if (effect.seconds !== undefined && !between(effect.seconds, 0.05, EFFECT_MAX_SECONDS)) throw new Error(`${at}.seconds is 0.05 to ${EFFECT_MAX_SECONDS}`);
+      if (effect.lead !== undefined && !between(effect.lead, 0, 1)) throw new Error(`${at}.lead is seconds to start early, 0 to 1`);
+    });
+  }
   if (voice !== undefined && voice !== null) {
     if (typeof voice !== "object") throw new Error("audio.voice must be an object");
     if (voice.loudness !== undefined && voice.loudness !== null && !between(voice.loudness, -30, -8)) throw new Error("audio.voice.loudness is integrated LUFS from -30 to -8 (-16 for a film, -14 for a short)");
@@ -90,7 +107,7 @@ export function resolveAudio(audio) {
   validateAudio(audio);
   const music = audio?.music ? { ...MUSIC_DEFAULTS, ...audio.music } : null;
   const voice = { loudness: audio?.voice?.loudness ?? null, measured: audio?.voice?.measured ?? null, clean: audio?.voice?.clean ?? "off" };
-  return { music, voice };
+  return { music, voice, effects: audio?.effects ?? [] };
 }
 
 // ---- Where the music may come up ----
@@ -165,6 +182,38 @@ export function spanPresenceExpression(spans, fade, T = "t") {
 // A clip's own sound, as the stitch places it: the clip scenes that carry
 // sound and touch the span, each with where its file is read from and where
 // in the span it lands. Level is dB on the file, -14 unless the plan says.
+// A one-shot sits under the voice rather than beside it, and is over quickly.
+export const EFFECT_DEFAULT_DB = -16;
+export const EFFECT_MAX_SECONDS = 8;
+// A hit lands better a breath before the picture changes than exactly on it.
+export const EFFECT_DEFAULT_LEAD = 0.12;
+
+// The film's one-shot sounds, resolved onto the span's own clock. Anchored to
+// a word like everything else here, so a re-cut moves them with the words
+// rather than leaving them stranded at a second that now means something else.
+export function effectSounds(effects, words, { from = 0, span } = {}) {
+  const byId = new Map((words ?? []).map((word) => [word.id, word]));
+  return (effects ?? [])
+    .map((effect) => {
+      const anchor = Number.isInteger(effect.wordId) ? byId.get(effect.wordId)?.start : effect.at;
+      if (typeof anchor !== "number") return null;
+      const lead = effect.lead ?? (Number.isInteger(effect.wordId) ? EFFECT_DEFAULT_LEAD : 0);
+      const start = Math.max(anchor - lead, 0);
+      if (span !== undefined && (start >= from + span || start < from - 0.001)) return null;
+      const seconds = Math.min(effect.seconds ?? EFFECT_MAX_SECONDS, span === undefined ? EFFECT_MAX_SECONDS : from + span - start);
+      if (!(seconds > 0.05)) return null;
+      return {
+        src: effect.src,
+        offset: Number((effect.offset ?? 0).toFixed(3)),
+        at: Number((start - from).toFixed(3)),
+        seconds: Number(seconds.toFixed(3)),
+        level: effect.level ?? EFFECT_DEFAULT_DB,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.at - b.at);
+}
+
 export const NAT_SOUND_DEFAULT_DB = -14;
 export function clipSounds(scenes, { from = 0, span }) {
   return (scenes ?? [])
@@ -187,10 +236,19 @@ export function clipSounds(scenes, { from = 0, span }) {
     });
 }
 
-export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0, clips = [], clipPath = (src) => src }) {
-  const { music, voice } = resolveAudio(audio);
+export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudness, voiceTrimDb = 0, clips = [], clipPath = (src) => src, effectPath = (src) => src }) {
+  const { music, voice, effects } = resolveAudio(audio);
+  // Two kinds of one-shot, mixed the same way and ducked differently: a
+  // clip's own sound sits under the words like the bed, and a placed effect
+  // does not — a whoosh ducked to nothing is a whoosh nobody hears. Keeping
+  // an effect quiet is the level's job, and where it lands is the editor's.
   const nats = clipSounds(clips, { from, span });
-  if (!music && voice.loudness === null && voice.clean === "off" && nats.length === 0) return null;
+  const hits = effectSounds(effects, words, { from, span });
+  const sounds = [
+    ...nats.map((sound) => ({ ...sound, duck: true, file: clipPath(sound.src) })),
+    ...hits.map((sound) => ({ ...sound, duck: false, file: effectPath(sound.src) })),
+  ];
+  if (!music && voice.loudness === null && voice.clean === "off" && sounds.length === 0) return null;
   const lines = [];
   // The clean-up comes first, so a loudness target is met on the voice as it
   // will be heard.
@@ -216,26 +274,31 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
   // Inputs follow the music's (or take its place when there is none).
   const natInputs = [];
   const natLabels = [];
-  if (nats.length) {
+  if (sounds.length) {
     const natWindows = swellWindows(words, from + span)
       .map((w) => ({ start: w.start - from, end: w.end - from }))
       .filter((w) => w.end > 0 && w.start < span)
       .map((w) => ({ start: Number(Math.max(w.start, 0).toFixed(3)), end: Number(Math.min(w.end, span).toFixed(3)) }));
-    nats.forEach((nat, k) => {
+    sounds.forEach((sound, k) => {
       const index = 2 + (music ? 1 : 0) + k;
-      const delayMs = Math.round(nat.at * 1000);
-      // The duck reads t on the clip's own clock (the filter sits before
-      // adelay), so the windows are read at t plus where the clip lands.
-      const duck = bedGainExpression(natWindows, music ?? MUSIC_DEFAULTS, { offset: nat.at });
-      lines.push(`[${index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=N/SR/TB,atrim=duration=${num(nat.seconds)},volume=${num(nat.level)}dB,volume=volume='${duck}':eval=frame,afade=t=in:st=0:d=0.25,afade=t=out:st=${num(Math.max(nat.seconds - 0.35, 0))}:d=0.35${delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : ""}[nat${k}]`);
-      natInputs.push("-ss", num(nat.offset), "-t", num(nat.seconds), "-i", clipPath(nat.src));
+      const delayMs = Math.round(sound.at * 1000);
+      // The duck reads t on the sound's own clock (the filter sits before
+      // adelay), so the windows are read at t plus where the sound lands.
+      const duck = sound.duck
+        ? `,volume=volume='${bedGainExpression(natWindows, music ?? MUSIC_DEFAULTS, { offset: sound.at })}':eval=frame`
+        : "";
+      // A short hit gets short fades; a long clip keeps the old ones.
+      const fadeIn = Math.min(0.25, sound.seconds / 4);
+      const fadeOut = Math.min(0.35, sound.seconds / 3);
+      lines.push(`[${index}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=N/SR/TB,atrim=duration=${num(sound.seconds)},volume=${num(sound.level)}dB${duck},afade=t=in:st=0:d=${num(fadeIn)},afade=t=out:st=${num(Math.max(sound.seconds - fadeOut, 0))}:d=${num(fadeOut)}${delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : ""}[nat${k}]`);
+      natInputs.push("-ss", num(sound.offset), "-t", num(sound.seconds), "-i", sound.file);
       natLabels.push(`[nat${k}]`);
     });
   }
   if (!music) {
-    if (!nats.length) return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]`, voiceTarget };
+    if (!sounds.length) return { inputs: [], filter: lines.join(";\n") + "\n", map: `[${voiceLabel}]`, voiceTarget };
     lines.push(`[${voiceLabel}]${natLabels.join("")}amix=inputs=${1 + natLabels.length}:duration=first:dropout_transition=0:normalize=0[mix]`);
-    return { inputs: natInputs, filter: lines.join(";\n") + "\n", map: "[mix]", voiceTarget, nats };
+    return { inputs: natInputs, filter: lines.join(";\n") + "\n", map: "[mix]", voiceTarget, nats, hits, sounds };
   }
   // The film's swell windows, shifted to the span's own clock.
   const windows = swellWindows(words, from + span)
@@ -269,7 +332,7 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
   lines.push(`${bed.join(",")}[bed]`);
   lines.push(`[${voiceLabel}][bed]${natLabels.join("")}amix=inputs=${2 + natLabels.length}:duration=first:dropout_transition=0:normalize=0[mix]`);
   const inputs = [...(music.loop ? ["-stream_loop", "-1"] : []), ...(from > 0 ? ["-ss", num(from)] : []), "-i", musicPath, ...natInputs];
-  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined, voiceTarget, nats };
+  return { inputs, filter: lines.join(";\n") + "\n", map: "[mix]", windows, gain, confined, voiceTarget, nats, hits, sounds };
 }
 
 // A one-line account of the bed, for the tool that sets it and for status.

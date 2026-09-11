@@ -377,8 +377,10 @@ set):
 
 - **A music bed** (`set_audio` with `music`): a file the person owns or has licensed, brought
   into `assets/` by `import_audio` from a path or from their library — `set_music_root` names
-  the folder once, `list_music` lists it by folder (a mood, a genre) and length — Fabula
-  fetches no music. The bed sits `level` LU below the voice while
+  the folder once, `list_music` lists it by folder (a mood, a genre) and length — or one found
+  with `search_audio`, the free CC index (CC0 and CC-BY only, since the person may monetise the
+  film), imported by `import_audio` with a `url`, its credit written beside it and printed by
+  `export_description`. Keep a search to two or three words. The bed sits `level` LU below the voice while
   nobody speaks (both loudnesses are measured when the bed is set, so the number means the same
   for any file) and `duck` LU lower still under the voice, and the duck is computed from the
   transcript's own words, not guessed by a compressor listening to the track: it comes up in
@@ -387,7 +389,17 @@ set):
   file is shorter than the film. `set_audio` reports how many pauses it comes up in. A short
   nearly always wants a bed; a long film wants one under its opening, its section marks and
   its ending, and often nothing under the argument: `spans` confines the bed to named word
-  spans, faded at each edge, and an empty list lifts the confinement.
+  spans, faded at each edge, and an empty list lifts the confinement. A tight cut and a bed are
+  in tension: the bed only comes up where nobody speaks, so a film with every pause cut gives it
+  nowhere to go and it stays ducked from beginning to end. `critique_film` says so as a note.
+- **One-shot effects** (`set_audio` with `effects`): a whoosh into a section, a soft impact as a
+  card lands. Each is an asset, a placement and a level. Anchor them to a `word_id` and they
+  start 0.12s before it, which is where a hit belongs — leading the picture rather than
+  following it — or give an `at_seconds` and they land exactly there and do not survive a re-cut.
+  They are deliberately NOT ducked under the voice, because a ducked whoosh is one nobody hears,
+  so the level (-16 dB on the file by default) and the placement are the whole craft: land them
+  in the gaps between sentences, and use two or three in a two-minute film rather than one per
+  card. `critique_film` reports any that land mid-word.
 - **Voice loudness** (`set_audio` with `voice_loudness`): an integrated LUFS target for the voice, -16 for a
   film, -14 for a short, null to leave it as recorded. With the voice measured it is an exact
   gain under a true-peak ceiling, so the voice keeps its own dynamics. Platforms normalise on upload; this

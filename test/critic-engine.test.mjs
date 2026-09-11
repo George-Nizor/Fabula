@@ -191,3 +191,31 @@ test("every finding carries what it is, why it reads badly, and the call that fi
   assert.equal(result.score, undefined);
   assert.ok(SHOT_FLOOR_SECONDS >= 3);
 });
+
+test("a sound effect landing on a word is a risk, because effects are not ducked", () => {
+  const film = clean();
+  film.words = [{ id: 0, text: "orbit", start: 4, end: 5 }, { id: 1, text: "sideways", start: 9, end: 10 }];
+  film.audio = { ...film.audio, music: null, swells: 3, effectsAt: [
+    { src: "assets/whoosh.mp3", at: 4.5, seconds: 1 },   // mid-word
+    { src: "assets/whoosh.mp3", at: 8.6, seconds: 1 },   // in the gap, where it belongs
+  ] };
+  const found = critiqueFilm(film).findings.filter((f) => f.kind === "effect-on-speech");
+  assert.equal(found.length, 1);
+  assert.equal(found[0].at, 4.5);
+  assert.match(found[0].what, /"orbit"/);
+  assert.equal(found[0].severity, "risk");
+});
+
+test("a bed with no pause to come up in is a note: the cut took its room away", () => {
+  const film = clean();
+  film.audio = { ...film.audio, music: { src: "assets/bed.mp3" }, swells: 0, effectsAt: [] };
+  const found = critiqueFilm(film).findings.find((f) => f.kind === "bed-no-swell");
+  assert.ok(found && found.severity === "note");
+  assert.match(found.fix, /set_cut_enabled|drop the bed/);
+  // With somewhere to breathe it says nothing.
+  assert.equal(critiqueFilm({ ...film, audio: { ...film.audio, swells: 2 } })
+    .findings.filter((f) => f.kind === "bed-no-swell").length, 0);
+  // And with no bed at all there is nothing to say either.
+  assert.equal(critiqueFilm({ ...film, audio: { ...film.audio, music: null, swells: 0 } })
+    .findings.filter((f) => f.kind === "bed-no-swell").length, 0);
+});

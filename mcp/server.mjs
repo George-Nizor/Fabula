@@ -58,13 +58,14 @@ import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templa
 import { readStory, editorialCuts } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
-import { validateAudio, describeAudio, bedSpans, assetAudioPath, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
+import { validateAudio, describeAudio, bedSpans, assetAudioPath, effectSounds, swellWindows, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
 import { chapterList } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core/cut-engine.mjs";
 import { punchPlan, punchSpans, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { critiqueFilm } from "../core/critic-engine.mjs";
+import { searchAudio, fetchAudio, SAFE_LICENSES } from "../scripts/audio-library.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
@@ -831,16 +832,43 @@ server.registerTool("get_scenes", {
 
 // ---- Sound ----
 
+server.registerTool("search_audio", {
+  description:
+    `Free music and sound effects, from the Openverse index of CC-licensed audio — no account and no key, the same two-step the pictures use: read the list, then import_audio the url you want. Only ${SAFE_LICENSES.toUpperCase()} comes back by default, because the person may monetise what they make here and NC forbids that while ND forbids the derivative a soundtrack arguably is; widening that is a deliberate choice. kind is a duration rule, not the index's category (which is empty on most rows): music is half a minute or longer, effect is a few seconds. Keep the query SHORT — two or three words finds far more than a sentence. Every row carries its licence and author; import_audio saves them beside the file and export_description credits them.`,
+  inputSchema: {
+    query: z.string().min(2).describe("Two or three words: 'ambient', 'warm piano', 'whoosh', 'soft impact'"),
+    kind: z.enum(["music", "effect", "any"]).optional().describe("music: a bed, 30s or longer. effect: a one-shot, 12s or shorter. any: no duration rule"),
+    count: z.number().int().min(1).max(20).optional(),
+    min_seconds: z.number().min(0).optional(),
+    max_seconds: z.number().min(0).optional(),
+    license: z.string().optional().describe(`Openverse licence codes, comma separated; ${SAFE_LICENSES} by default. Widen it only when the person has said the film is not monetised.`),
+  },
+}, async ({ query, kind, count, min_seconds, max_seconds, license }) => {
+  const results = await searchAudio({ query, kind: kind ?? "any", count: count ?? 8, minSeconds: min_seconds, maxSeconds: max_seconds, license: license ?? SAFE_LICENSES });
+  return ok({
+    results,
+    hint: results.length
+      ? "import_audio with the url and the row's attribution, then set_audio music (a bed) or effects (a one-shot)."
+      : "Nothing at that licence and length. Try a shorter query first — a sentence finds nothing where one word finds hundreds.",
+  });
+});
+
 server.registerTool("import_audio", {
   description:
-    "Copy a music file from the pipeline host into the project's assets/ so set_audio can use it as the bed: mp3, wav, m4a, aac, ogg, flac or opus. Music is the person's own or licensed; Fabula fetches none. Returns the project-relative src.",
+    "Bring audio into the project's assets/ so set_audio can use it as the bed or as a one-shot effect: mp3, wav, m4a, aac, ogg, flac or opus. Either a file the person already has (path, or library from list_music) or a url from search_audio, which is fetched with its credit written beside it. Returns the project-relative src.",
   inputSchema: {
+    url: z.string().optional().describe("A direct audio URL, normally one search_audio returned; the licence and the source page are saved beside the file and export_description credits them"),
+    attribution: z.object({ pageUrl: z.string().optional(), author: z.string().optional(), license: z.string().optional(), title: z.string().optional() }).optional().describe("Carry search_audio's row through so the credit is right"),
     path: z.string().optional().describe("Absolute path to the file; a Windows path (E:\\Music\\bed.mp3) or a WSL one, either is fine"),
     library: z.string().optional().describe("Or a name from list_music, relative to the music folder"),
     name: z.string().optional().describe("File name under assets/; the source's own name by default"),
   },
-}, async ({ path: given, library, name }) => {
+}, async ({ path: given, library, name, url, attribution }) => {
   const dir = currentProjectDir();
+  if (url !== undefined) {
+    const got = await fetchAudio({ url, name, attribution, assetsDir: path.join(dir, "assets") });
+    return ok({ src: got.src, bytes: got.bytes, seconds: probeDuration(path.join(dir, got.src)) ?? null, attribution: got.attribution });
+  }
   let source = given === undefined ? undefined : hostPath(given);
   if (library !== undefined) {
     const root = configuredMusicRoot();
@@ -918,8 +946,17 @@ server.registerTool("set_audio", {
     }).nullable().optional().describe("The bed; null removes it; omit to keep the current one"),
     voice_loudness: z.number().min(-30).max(-8).nullable().optional().describe("Integrated LUFS target for the voice; null leaves it as recorded; omit to keep"),
     voice_clean: z.enum(["off", "light", "strong"]).optional().describe("Clean the voice before it is levelled: light takes the room's hum and the desk's rumble down and keeps the voice's air (most recordings); strong is for a poor microphone in a live room and softens sibilance too; off leaves it as recorded. Omit to keep."),
+    effects: z.array(z.object({
+      src: z.string().describe("assets/…, from import_audio"),
+      word_id: z.number().int().min(0).optional().describe("The word it lands on; it starts a breath (0.12s) before, which is where a hit belongs"),
+      at_seconds: z.number().min(0).optional().describe("Or an exact second on the clean timeline; a word id survives a re-cut and this does not"),
+      level: z.number().min(-40).max(0).optional().describe("dB on the file, -16 by default: under the voice, not beside it"),
+      offset: z.number().min(0).optional().describe("Seconds into the file to start from"),
+      seconds: z.number().min(0.05).max(8).optional().describe("How much of it to play"),
+      lead: z.number().min(0).max(1).optional().describe("Start this many seconds early; 0.12 from a word id, 0 from a second"),
+    })).max(40).nullable().optional().describe("The film's one-shot sounds — a whoosh into a section, a soft impact as a card lands. The whole list, replacing what is there; null clears them; omit to keep. They are NOT ducked under the voice (a ducked whoosh is one nobody hears), so keep the level low and land them where nobody is speaking — describeAudio's swell windows are exactly those gaps."),
   },
-}, async ({ music, voice_loudness, voice_clean }) => {
+}, async ({ music, voice_loudness, voice_clean, effects }) => {
   const dir = currentProjectDir();
   const config = readComposeConfig(dir);
   const audio = { ...(config.audio ?? {}) };
@@ -939,6 +976,20 @@ server.registerTool("set_audio", {
         if (spans.length === 0) delete audio.music.spans;
         else audio.music.spans = spans.map((span) => ({ fromWordId: span.from_word_id, toWordId: span.to_word_id }));
       }
+    }
+  }
+  if (effects !== undefined) {
+    if (effects === null || effects.length === 0) delete audio.effects;
+    else {
+      audio.effects = effects.map((effect) => {
+        if (!assetAudioPath(effect.src)) throw new Error(`effect src must be a project-relative audio file under assets/, got ${effect.src}`);
+        if (!fs.existsSync(path.join(dir, effect.src))) throw new Error(`no such asset ${effect.src}; import_audio first`);
+        const out = { src: effect.src };
+        if (Number.isInteger(effect.word_id)) out.wordId = effect.word_id;
+        if (typeof effect.at_seconds === "number") out.at = effect.at_seconds;
+        for (const key of ["level", "offset", "seconds", "lead"]) if (effect[key] !== undefined) out[key] = effect[key];
+        return out;
+      });
     }
   }
   if (voice_loudness !== undefined) {
@@ -1300,7 +1351,13 @@ server.registerTool("critique_film", {
     try { output.seconds = probeDuration(paths.final); } catch { /* leave the length unknown */ }
   }
 
-  const audio = { target: config.audio?.voice?.loudness ?? null, measured: readJson(path.join(dir, "out", "clean-audio.json"))?.voiceLoudness ?? null };
+  const audio = {
+    target: config.audio?.voice?.loudness ?? null,
+    measured: readJson(path.join(dir, "out", "clean-audio.json"))?.voiceLoudness ?? null,
+    music: config.audio?.music ?? null,
+    effectsAt: effectSounds(config.audio?.effects, words, { from: 0, span: duration }),
+    swells: swellWindows(words, duration).length,
+  };
   if (exists && sound !== false) {
     const heard = measureSound(paths.final);
     Object.assign(audio, { rendered: heard.integrated, truePeak: heard.truePeak, range: heard.range, noiseFloor: heard.noiseFloor });

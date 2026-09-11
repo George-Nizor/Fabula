@@ -102,6 +102,26 @@ of it first (`set_audio` `voice_clean`): light for most recordings, strong only 
 microphone in a live room — a floor taken too far down sounds like a booth, which is worse
 than a room.
 
+**Where the music comes from.** `search_audio` is the free index — CC0 and CC-BY only, because
+the person may monetise this — and `import_audio` brings a row in with its credit, which
+`export_description` then prints. Keep the search to two or three words: "ambient", "warm piano",
+"slow strings". A bed as long as the film needs no loop and never seams. Choose for texture, not
+for tune: if you can hum it, it is competing with the voice.
+
+**A tight cut and a bed are in tension, and it is worth knowing before you set one.** The bed only
+comes up where nobody is speaking. Cut every pause and there is nowhere for it to go, so it stays
+ducked from beginning to end and is doing nothing but costing a file. `set_audio` says how many
+pauses it found; if the answer is none or one, either keep a beat at the section changes or do not
+use a bed. `critique_film` says the same thing as a note.
+
+**One-shot effects are a different instrument.** A whoosh into a section, a soft impact as a card
+lands. `set_audio effects` places them on a word id, and they start a breath before it, which is
+where a hit belongs — leading the picture, not following it. They are deliberately NOT ducked: a
+ducked whoosh is one nobody hears. That makes level and placement the whole craft. Keep them
+around -16 dB on the file, land them in the gaps between sentences, and use two or three in a
+two-minute film. A hit on every card is a cartoon. The commonest mistake is one landing mid-word,
+where it simply talks over the speaker; `critique_film` catches that one.
+
 ## Looking
 
 The plan is numbers. The film is a picture. `preview_frame` a moment after every card that

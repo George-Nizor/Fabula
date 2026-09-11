@@ -18,7 +18,7 @@ const EXPECTED = [
   "preview_frame", "preview_sheet", "film_sheet", "render_thumbnail",
   "set_captions", "list_themes", "get_theme", "set_theme",
   "search_images", "fetch_image", "import_image", "import_clip", "list_assets",
-  "import_audio", "list_music", "set_music_root", "set_audio", "export_chapters", "export_description", "get_captions", "export_captions",
+  "import_audio", "search_audio", "list_music", "set_music_root", "set_audio", "export_chapters", "export_description", "get_captions", "export_captions",
   "reanchor_scenes", "render_final", "wait_render", "status",
 ];
 
