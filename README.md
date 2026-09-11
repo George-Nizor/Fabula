@@ -214,14 +214,21 @@ To look at the window from a machine that cannot show it (a WSL shell, a CI box)
 and let it photograph itself:
 
 ```bash
-FABULA_SNAPSHOT=/tmp/snap FABULA_SNAPSHOT_PROJECT=<project> \
+env -u ELECTRON_RUN_AS_NODE FABULA_PROJECTS_ROOT=/tmp/fabula-root \
+  FABULA_SNAPSHOT=/tmp/snap FABULA_SNAPSHOT_PROJECT=<project> \
   node_modules/electron/dist/electron --no-sandbox --no-zygote --ozone-platform=headless --disable-gpu .
 ```
 
 It writes the home screen, the Assistant sheet and, with a project named, the open project and its
 Export step as PNGs, then quits (`FABULA_SNAPSHOT_LOOK=<gallery id>` adds a Look gallery,
 `FABULA_SNAPSHOT_SCENE=<index>` a scene's inspector, `FABULA_SNAPSHOT_EVAL=<js>` an answer from the
-page). `scripts/probe-templates.cjs`, run the same way, renders every template in both shapes
+page). For any other view, `FABULA_SNAPSHOT_SCRIPT=<file.json>` names a list of steps, each
+`{ "size": [w, h], "run": "<js>", "wait": ms, "shot": "name", "print": "label" }` with every key
+optional, applied in that order — click a tab, open an inspector, resize, photograph. Give the run
+its own `FABULA_PROJECTS_ROOT` (a copy of the projects to look at): opening a project moves the
+root's open-project pointer, and the person's own root should not move under them. An
+`ELECTRON_RUN_AS_NODE` left in the shell by an assistant session makes Electron refuse its own
+switches ("bad option"); unset it for the launch. `scripts/probe-templates.cjs`, run the same way, renders every template in both shapes
 through the export page and tiles them into two sheets under `out/template-probe/` — run it after
 touching `core/templates.mjs` or the painter, and look.
 

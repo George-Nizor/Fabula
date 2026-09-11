@@ -90,6 +90,23 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* The system's window controls overlay the top-right corner on Windows. */
 body.win32 .topbar { padding-right: 156px; }
 
+/* A narrower window: the raw and clean lengths go first (the Cut summary
+   has them), then the assistant button keeps its mark and loses its word,
+   then the project name gets shorter. The masthead never overflows. */
+@media (max-width: 1240px) {
+  .session { display: none !important; }
+  .panel-toggles { margin-left: auto; }
+  .progress-detail { display: none; }
+  .progress { max-width: 30vw; }
+  .stagebtn { padding: 0.28rem 0.8rem; }
+}
+@media (max-width: 1080px) {
+  .assistantbtn-label { display: none; }
+  .assistantbtn { padding: 0 10px; }
+  .projbtn { max-width: 180px; }
+  .topbar { gap: 12px; }
+}
+
 .topbar button, .topbar input, .topbar nav { -webkit-app-region: no-drag; }
 
 .brand { display: flex; align-items: center; gap: 10px; }
@@ -188,8 +205,8 @@ body.win32 .topbar { padding-right: 156px; }
   50% { transform: scale(1.15); opacity: 1; }
 }
 
-.progress-label { font-weight: 600; }
-.progress-detail { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.progress-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 100%; }
+.progress-detail { color: var(--dim); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .progress-clock { font-variant-numeric: tabular-nums; color: var(--dim); }
 
 .session {
@@ -258,7 +275,7 @@ body.win32 .topbar { padding-right: 156px; }
 body.rail-collapsed .rail { display: none; }
 body.insp-collapsed .inspector { display: none; }
 
-.stat { color: var(--dim); font-size: var(--t-sm); }
+.stat { color: var(--dim); font-size: var(--t-sm); white-space: nowrap; }
 
 .stat b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -661,6 +678,27 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   color: var(--faint);
 }
 
+/* The rail's head: the label, and a find box that lights every match in
+   the words and walks them with Enter. A forty-minute film is six thousand
+   words; nobody scrolls for a phrase. */
+.rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 14px; }
+.rail-head .rail-label { padding-right: 0; }
+.rail-find { display: flex; align-items: center; gap: 6px; padding-top: 8px; }
+.rail-find input {
+  width: 8.5em;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.rail-find input:focus { border-color: var(--accent); outline: none; }
+.rail-find input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.rail-find-count { font-size: var(--t-xs); color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 3.4em; }
+.word.is-match { background: color-mix(in srgb, #f2c94c 38%, transparent); }
+.word.is-match-now { background: #f2c94c; color: var(--ink); }
+
 .transcript {
   flex: 1;
   overflow-y: auto;
@@ -921,16 +959,17 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   overflow-y: auto;
 }
 
+/* The label, then what is inspected on its own line: a scene's name and
+   span is too long to share a line with the label without wrapping ragged. */
 .insp-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 0;
 }
 
-.insp-head .rail-label { padding: 12px 0 4px; }
+.insp-head .rail-label { padding: 12px 0 2px; }
 
-#insp-title { font-size: var(--t-sm); color: var(--accent-deep); font-weight: 600; }
+#insp-title { font-size: var(--t-sm); color: var(--accent-deep); font-weight: 600; line-height: 1.35; }
 
 .insp-placeholder {
   margin: 1rem 0 0;

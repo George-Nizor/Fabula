@@ -10,8 +10,11 @@ const settings = require("../scripts/settings.cjs");
 
 // The projects live in media/ beside the checkout unless fabula.settings.json
 // names another folder (as the pipeline sees it; mapped here for this host).
+// FABULA_PROJECTS_ROOT is the same test hook the server has: a root that is
+// not the person's, so a snapshot run never moves their open project.
 const DEFAULT_MEDIA_ROOT = path.join(__dirname, "..", "media");
 function mediaRoot() {
+  if (process.env.FABULA_PROJECTS_ROOT) return process.env.FABULA_PROJECTS_ROOT;
   const configured = settings.configuredProjectsRoot();
   return configured ? toLocalPath(configured) : DEFAULT_MEDIA_ROOT;
 }
@@ -324,7 +327,9 @@ function startRender(kind, options = {}) {
     }
     if (kind === "refresh" && !fs.existsSync(paths.review)) throw new Error("Nothing to cut yet: no review.");
     if (kind === "first" && !paths.video) throw new Error("This project has no recording.");
-    const allowed = { fresh: Boolean(options.fresh) };
+    // A draft is the whole film at half size in a fraction of the time;
+    // it lands beside the film as draft.mp4 and never replaces it.
+    const allowed = { fresh: Boolean(options.fresh), draft: options.draft === true };
     if (process.platform === "win32") {
       const root = toPosixPath(REPO);
       const posixDir = toPosixPath(dir);
@@ -749,6 +754,22 @@ async function snapshotWindow(window) {
         await run(`(document.querySelector('[data-scene="${Number(scene)}"]') ?? {click(){}}).click(); true`);
         await wait(900);
         await shoot("5-scene");
+      }
+    }
+    // A script of steps, when one is given: FABULA_SNAPSHOT_SCRIPT names a
+    // JSON list of { size: [w, h], run: js, wait: ms, shot: name, print:
+    // label }; each key is optional and they apply in that order. It is how
+    // any view of the window is photographed without a new env var per view.
+    if (process.env.FABULA_SNAPSHOT_SCRIPT) {
+      const steps = JSON.parse(fs.readFileSync(process.env.FABULA_SNAPSHOT_SCRIPT, "utf8"));
+      for (const step of steps) {
+        if (step.size) { window.setSize(step.size[0], step.size[1]); await wait(400); }
+        if (step.run !== undefined) {
+          const answer = await run(step.run);
+          if (step.print) console.log(JSON.stringify({ step: step.print, answer }));
+        }
+        if (step.wait) await wait(step.wait);
+        if (step.shot) await shoot(step.shot);
       }
     }
     // A question for the page, when one is asked: its answer, as JSON.

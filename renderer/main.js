@@ -18,7 +18,9 @@ const els = {
   session: $("session"), raw: $("stat-raw"), clean: $("stat-clean"),
   empty: $("empty"), emptyLine: $("empty-line"), emptyHint: $("empty-hint"), emptyClose: $("empty-close"), emptyFirstPass: $("empty-firstpass"),
   sumClean: $("sum-clean"),
-  inspApprove: $("insp-approve"), approveCut: $("approve-cut"), approveStatus: $("approve-status"),
+  inspApprove: $("insp-approve"), approveCut: $("approve-cut"), approveStatus: $("approve-status"), approveHead: $("approve-head"), approveNote: $("approve-note"),
+  brand: $("brand"), brandForm: $("brand-form"), brandName: $("brand-name"), brandStatus: $("brand-status"), brandCancel: $("brand-cancel"),
+  inspHeading: $("insp-heading"), inspHeadingWrap: $("insp-heading-wrap"),
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
   inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selClear: $("sel-clear"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
@@ -42,7 +44,7 @@ const els = {
   playpause: $("playpause"), skipwrap: $("skipwrap"), skipcuts: $("skipcuts"),
   scriptToggle: $("script-toggle"), captionsWrap: $("captions-wrap"), stageCaptions: $("stage-captions"),
   timeNow: $("time-now"), timeSep: $("time-sep"), timeTotal: $("time-total"), transportNote: $("transport-note"),
-  hint: $("controls-hint"), transcript: $("transcript"),
+  hint: $("controls-hint"), transcript: $("transcript"), find: $("find"), findCount: $("find-count"),
   timeline: $("timeline"), laneRuler: $("lane-ruler"), dockGrip: $("dock-grip"), assistantDot: $("assistant-dot"),
   trackCuts: $("track-cuts"), laneCuts: $("lane-cuts"),
   trackLayout: $("track-layout"), laneLayout: $("lane-layout"),
@@ -350,6 +352,7 @@ function renderCutTranscript() {
   emitChipsBefore(Infinity);
   if (selection && selection.to >= wordSpans.length) selection = null;
   paintSelection();
+  runFind({ keep: true });
 }
 
 // ---- Cutting by hand ----
@@ -457,6 +460,71 @@ function renderSceneTranscript() {
     wordSpans.push({ word, span });
     els.transcript.append(span, " ");
   }
+  runFind({ keep: true });
+}
+
+// ---- Find in the transcript ----
+//
+// A word or a phrase, matched on the words as spoken (case and punctuation
+// aside; the last word of a phrase may be a prefix). Every match is lit;
+// Enter walks them from the playhead, seeking the picture and scrolling the
+// rail to each. The spans are rebuilt on every state push, so the find is
+// run again over the new ones and keeps its place.
+
+let findMatches = []; // { from, to } as indexes into wordSpans
+let findAt = -1;
+const findNorm = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+
+function runFind({ keep = false, step = 0 } = {}) {
+  const tokens = els.find.value.trim().split(/\s+/).map(findNorm).filter(Boolean);
+  for (const entry of wordSpans) entry.span.classList.remove("is-match", "is-match-now");
+  const before = findMatches[findAt]?.from ?? null;
+  findMatches = [];
+  if (tokens.length > 0) {
+    for (let i = 0; i + tokens.length <= wordSpans.length; i += 1) {
+      let ok = true;
+      for (let k = 0; k < tokens.length && ok; k += 1) {
+        const word = findNorm(wordSpans[i + k].word.text);
+        ok = k === tokens.length - 1 ? word.startsWith(tokens[k]) : word === tokens[k];
+      }
+      if (ok) findMatches.push({ from: i, to: i + tokens.length - 1 });
+    }
+  }
+  for (const match of findMatches) for (let i = match.from; i <= match.to; i += 1) wordSpans[i].span.classList.add("is-match");
+  if (findMatches.length === 0) {
+    findAt = -1;
+    els.findCount.textContent = tokens.length ? "none" : "";
+    return;
+  }
+  if (keep && before !== null && findMatches.some((m) => m.from === before)) findAt = findMatches.findIndex((m) => m.from === before);
+  else if (step) findAt = (findAt + step + findMatches.length) % findMatches.length;
+  else {
+    // The first match at or after the playhead, so the walk starts here.
+    const now = els.video.currentTime;
+    const ahead = findMatches.findIndex((m) => wordSpans[m.from].word.start >= now - EPSILON);
+    findAt = ahead >= 0 ? ahead : 0;
+  }
+  const current = findMatches[findAt];
+  for (let i = current.from; i <= current.to; i += 1) wordSpans[i].span.classList.add("is-match-now");
+  els.findCount.textContent = `${findAt + 1} of ${findMatches.length}`;
+  if (!keep) {
+    seek(wordSpans[current.from].word.start);
+    wordSpans[current.from].span.scrollIntoView({ block: "center" });
+  }
+}
+
+els.find.addEventListener("input", () => runFind());
+els.find.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); runFind({ step: event.shiftKey ? -1 : 1 }); }
+  else if (event.key === "Escape") { event.preventDefault(); els.find.value = ""; runFind(); els.find.blur(); }
+});
+
+// ctrl+F opens the rail if it is closed and lands in the find box.
+function openFind() {
+  if (mode === "cut" && !railWanted) { railWanted = true; document.body.classList.remove("rail-collapsed"); els.toggleRail.classList.add("is-on"); }
+  if (mode === "scenes" && !scriptOpen) { scriptOpen = true; render(); }
+  els.find.focus();
+  els.find.select();
 }
 
 // ---- Timeline ----
@@ -519,10 +587,12 @@ function renderCutTimeline() {
 
 // Scenes: one lane for where the head sits, one for the screen track where
 // it exists, one for the scenes, one for the insert points. Blocks are
-// clickable — seek, select, inspect. A click lands just past the boundary's
-// transition (a glide, the longest, is 0.8 s) and a card's entrance, so what
-// appears is the settled picture, not the first frame of a change.
-const settledAt = (start, end) => start + Math.min(0.9, Math.max((end - start) / 2, 0.05));
+// clickable — seek, select, inspect. A click lands past the boundary's
+// transition (a glide, the longest, is 0.8 s) and a card's entrance (a
+// typewriter title takes over a second to finish), so what appears is the
+// settled picture, not the first frame of a change; a short scene lands at
+// its middle.
+const settledAt = (start, end) => start + Math.min(1.6, Math.max((end - start) / 2, 0.05));
 
 function renderSceneTimeline() {
   const c = compose();
@@ -615,10 +685,36 @@ function describeFraming(framing) {
   return `${n} segment${n === 1 ? "" : "s"}${withScreen ? ` · ${withScreen} with screen` : ""}`;
 }
 
+// What the Cut step's one big button does depends on where the film is.
+// Before a clean cut exists, approving the cut renders it and hands the
+// film to the assistant. Once the film is composed, a changed cut needs the
+// clean cut refreshed and the scenes moved onto the new transcript — and a
+// cut that is current with a composed film needs nothing at all.
+// The main process lists what is out of date; by artifact name here.
+const staleMap = (e) => Object.fromEntries((e?.stale ?? []).map((s) => [s.artifact, s]));
+const cleanState = (e) => (!e?.have?.clean ? "none" : staleMap(e)["clean.mp4"] || staleMap(e)["clean.json"] ? "stale" : "current");
+
+function cutCall() {
+  const e = state?.export;
+  const clean = cleanState(e);
+  if (clean === "stale" && compose()) {
+    return { head: "The cuts changed", note: "The clean cut no longer matches them. Refresh it, and the scenes move onto the new transcript.", button: "Refresh the clean cut", task: "refresh" };
+  }
+  if (clean === "current" && compose()) return null;
+  return { head: "Approve the cut", note: "Renders the clean cut, then the assistant composes the film.", button: "Approve and compose", task: "compose" };
+}
+
 function renderProjectPanel() {
   const r = review();
   els.inspTitle.textContent = state?.title ?? state?.project ?? "";
-  els.inspApprove.hidden = mode !== "cut";
+  const call = mode === "cut" ? cutCall() : null;
+  els.inspApprove.hidden = !call;
+  if (call) {
+    els.approveHead.textContent = call.head;
+    els.approveNote.textContent = call.note;
+    els.approveCut.textContent = call.button;
+    els.approveCut.dataset.task = call.task;
+  }
   if (mode === "cut") {
     els.inspCutSummary.hidden = false;
     els.inspKeysCut.hidden = false;
@@ -628,15 +724,12 @@ function renderProjectPanel() {
     els.sumRemoved.textContent = fmt(removedSeconds(), false);
     els.sumShots.textContent = r.shotPlan ? `alternating ${Math.round(r.shotPlan.zoom * 100)}%` : "off";
     els.sumFraming.textContent = describeFraming(r.framing);
-    const e = state?.export;
-    els.sumClean.textContent = !e?.have?.clean ? "not rendered"
-      : e.stale?.["clean.mp4"] ? "out of date" : "up to date";
+    els.sumClean.textContent = { none: "not rendered", stale: "out of date", current: "up to date" }[cleanState(state?.export)];
     els.inspEmpty.textContent = "Click a struck word or pause to keep it. Drag across words to cut them. Click a word to jump there.";
     renderSelection();
   } else {
     els.inspCutSummary.hidden = true;
     els.inspKeysCut.hidden = true;
-    els.inspApprove.hidden = true;
     const open = inserts().filter((insert) => !insert.chosen).length;
     els.inspEmpty.textContent = open > 0
       ? `${open} insert point${open === 1 ? "" : "s"} open. Click a + in the transcript or a diamond in the timeline to choose what goes there.`
@@ -1075,7 +1168,7 @@ function renderExportPage() {
   els.exportMain.replaceChildren();
   els.exportMain.append(make("div", "page-head", "<h2>Export</h2><p class=\"page-lede\">The film re-renders only the parts that changed.</p>"));
   if (!e) { els.exportMain.append(make("p", "field-note", "Nothing to export yet.")); return; }
-  const stale = Object.fromEntries(e.stale.map((s) => [s.artifact, s]));
+  const stale = staleMap(e);
   const busy = Boolean(e.running);
 
   if (e.running) {
@@ -1115,6 +1208,16 @@ function renderExportPage() {
     filmRow.append(actionButton("Show in folder", () => window.fabula.reveal(final.path), { small: true }));
   }
   film.append(filmRow);
+  // A draft: the whole film at half size, for looking at the cut and the
+  // cards before the real render; it never replaces the film.
+  const draft = e.outputs.find((o) => o.kind === "draft");
+  const draftRow = make("div", "export-actions");
+  draftRow.append(actionButton(draft ? "Render a draft again" : "Render a draft", () => startRender("final", { draft: true }), { small: true, disabled: busy || !e.canRenderFinal, title: "The whole film at half size, in a fraction of the time, as draft.mp4" }));
+  if (draft) {
+    draftRow.append(actionButton("Play the draft", () => window.fabula.openOutput(draft.path), { small: true }));
+    draftRow.append(make("span", "field-note", `Draft from ${esc(fmtWhen(draft.modifiedAt))}, ${esc(fmtBytes(draft.bytes))}.`));
+  }
+  film.append(draftRow);
   film.append(make("p", "field-note", esc(CAPTION_FILES[e.captionMode] ?? "")));
   els.exportMain.append(film);
 
@@ -1321,6 +1424,7 @@ function flashInsert(text, isError = false) {
 // Which card kinds carry which field. The inspector shows a control only
 // where the engine would accept it, so nothing on screen is a dead end.
 const KIND_FIELDS = {
+  heading: ["cover", "section", "chart", "list", "steps"],
   label: ["image", "clip", "screen", "stat", "ring"],
   value: ["stat", "ring"],
   by: ["quote"],
@@ -1385,7 +1489,7 @@ function renderTemplateEditor(scene) {
   for (const [name, field] of Object.entries(spec.fields)) {
     const label = document.createElement("label");
     label.className = "insp-field";
-    label.append(`${name}${field.required ? "" : " (optional)"}`);
+    label.append(`${name.charAt(0).toUpperCase()}${name.slice(1)}${field.required ? "" : " (optional)"}`);
     let input;
     if (field.type === "choice") {
       input = document.createElement("select");
@@ -1461,6 +1565,13 @@ function openInspector(index) {
   const styles = scene.type === "title" ? look()?.titleStyles : scene.type === "callout" ? look()?.calloutStyles : null;
   els.inspStyleWrap.hidden = !styles;
   if (styles) fillSelect(els.inspStyle, styles, scene.style, "the film's");
+
+  const hasHeading = kindHas(scene, "heading");
+  els.inspHeadingWrap.hidden = !hasHeading;
+  els.inspHeading.value = hasHeading ? (scene.graphic.title ?? "") : "";
+  // A cover or a section is its heading; the rows of a chart or list can
+  // stand without one.
+  els.inspHeading.placeholder = ["cover", "section"].includes(scene.graphic?.kind) ? "" : "none";
 
   const hasLabel = kindHas(scene, "label");
   els.inspLabelWrap.hidden = !hasLabel;
@@ -1719,6 +1830,7 @@ function render() {
     if (selectedScene !== null || selectedInsert !== null) closeInspector();
     renderCutTranscript();
     renderCutTimeline();
+    openCutAtFirstKeptWord();
   } else {
     document.body.classList.toggle("rail-collapsed", !scriptOpen);
     els.scriptToggle.classList.toggle("is-on", scriptOpen);
@@ -1746,6 +1858,22 @@ function render() {
   els.player.hidden = !els.video.src;
   els.dock.hidden = els.player.hidden;
   highlighted = null;
+}
+
+// A film that begins inside a cut — a leading pause, or a short whose
+// first minute is struck — opens on its first kept word, so the picture
+// and the rail show what the film starts with rather than a page of
+// strikethrough. Once per project; a return to the step keeps its place.
+let cutOpenedFor = null;
+function openCutAtFirstKeptWord() {
+  if (cutOpenedFor === state?.project) return;
+  cutOpenedFor = state?.project ?? null;
+  const leading = enabledCuts().find((cut) => cut.start <= 0.05);
+  if (!leading) return;
+  const at = leading.end + 0.01;
+  seek(at);
+  const entry = wordSpans.find((w) => w.word.start >= at - EPSILON);
+  entry?.span.scrollIntoView({ block: "start" });
 }
 
 // ---- Chrome events ----
@@ -1927,6 +2055,14 @@ els.inspStyle.addEventListener("change", () => patchScene({ style: els.inspStyle
 els.inspMotion.addEventListener("change", () => patchScene({ graphic: { motion: els.inspMotion.value || null } }));
 els.inspClipIn.addEventListener("change", () => { const v = Number(els.inspClipIn.value); patchScene({ graphic: { in: Number.isFinite(v) && v > 0 ? v : null } }); });
 els.inspClipFit.addEventListener("change", () => patchScene({ graphic: { fit: els.inspClipFit.value === "cover" ? null : els.inspClipFit.value } }));
+commit(els.inspHeading, () => {
+  const scene = selectedSceneNow();
+  if (!scene) return;
+  const required = ["cover", "section"].includes(scene.graphic?.kind);
+  const value = els.inspHeading.value.trim();
+  if (required && !value) return flashStatus(`a ${scene.graphic.kind} needs its heading`, true);
+  patchScene({ graphic: { title: value || null } });
+});
 commit(els.inspLabel, () => patchScene({ label: els.inspLabel.value }));
 commit(els.inspBy, () => patchScene({ graphic: { by: els.inspBy.value || null } }));
 commit(els.inspNumber, () => patchScene({ graphic: { number: els.inspNumber.value || null } }));
@@ -2081,11 +2217,24 @@ els.themeLogoPick.addEventListener("click", async () => {
 els.themeWatermark.addEventListener("change", () => setTheme({ watermark: els.themeWatermark.value.trim() || null }));
 els.themeWatermark.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); els.themeWatermark.blur(); } });
 els.lookReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
-els.lookSave.addEventListener("click", async () => {
-  const name = window.prompt("Save this look as a brand, for every next film:", look()?.savedThemes[0]?.name ?? "");
-  if (!name) return;
+// Saving a brand asks for a name in a sheet of its own: Electron has no
+// window.prompt, and a sheet can show what went wrong where it went wrong.
+els.lookSave.addEventListener("click", () => {
+  els.brandStatus.textContent = "";
+  els.brandName.value = look()?.savedThemes[0]?.name ?? "";
+  els.brand.showModal();
+  els.brandName.focus();
+  els.brandName.select();
+});
+els.brandCancel.addEventListener("click", () => els.brand.close());
+els.brandForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = els.brandName.value.trim();
+  if (!name) { els.brandStatus.textContent = "Give the brand a name."; return; }
   const result = await window.fabula.setProject({ themeSave: name });
-  els.lookStatus.textContent = result.ok ? `saved as “${name}”` : result.error;
+  if (!result.ok) { els.brandStatus.textContent = result.error; return; }
+  els.brand.close();
+  els.lookStatus.textContent = `saved as “${name}”`;
 });
 
 els.insertNone.addEventListener("click", async () => {
@@ -2155,7 +2304,12 @@ function nearestCut(direction) {
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const typing = target instanceof HTMLElement && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) && target.type !== "checkbox";
-  const sheetOpen = [els.projects, els.newProject, els.rename, els.assistant].some((dialog) => dialog.open);
+  const sheetOpen = [els.projects, els.newProject, els.rename, els.brand, els.assistant].some((dialog) => dialog.open);
+  if (!sheetOpen && (event.ctrlKey || event.metaKey) && (event.key === "f" || event.key === "F") && state && onStage() && !els.player.hidden) {
+    event.preventDefault();
+    openFind();
+    return;
+  }
   if (!typing && !sheetOpen && (event.ctrlKey || event.metaKey)) {
     if (event.key === "n" || event.key === "N") { event.preventDefault(); openNewProject(); return; }
     if ((event.key === "o" || event.key === "O") && event.shiftKey) { event.preventDefault(); openProjects(); return; }
@@ -2194,6 +2348,9 @@ document.addEventListener("keydown", (event) => {
   } else if ((event.key === "[" || event.key === "]") && mode === "cut") {
     const cut = nearestCut(event.key === "]" ? 1 : -1);
     if (cut) seek(Math.max(cut.start - 0.6, 0));
+  } else if ((event.key === "Delete" || event.key === "Backspace") && mode === "cut" && selection) {
+    event.preventDefault();
+    els.selCut.click();
   } else if (event.key === "Escape" && selection) {
     clearSelection();
   } else if (event.key === "Escape" && (selectedScene !== null || selectedInsert !== null)) {
@@ -2743,11 +2900,18 @@ els.assistantStopBtn.addEventListener("click", () => window.fabula.assistantStop
 // Approving the cut: render the clean cut, then hand the film to the assistant.
 // A running session is told in its own terminal; otherwise one is started
 // with composing as its first task.
+let reanchorWhenRefreshed = false; // the Cut step asked for a refresh on a composed film
 els.approveCut.addEventListener("click", async () => {
   els.approveStatus.classList.remove("is-error");
   els.approveStatus.textContent = "";
   const result = await window.fabula.render("refresh", {});
   if (!result.ok) { els.approveStatus.textContent = result.error; els.approveStatus.classList.add("is-error"); return; }
+  if (els.approveCut.dataset.task === "refresh") {
+    // The scenes follow once the new transcript lands; see the state feed.
+    reanchorWhenRefreshed = true;
+    els.approveStatus.textContent = "Refreshing. The scenes move onto the new transcript when it lands.";
+    return;
+  }
   if (assistantRunning) {
     showAssistantPane(true);
     window.fabula.assistantInput("I have approved the cut and pressed Approve the cut and compose. The clean cut is rendering or current: wait for it, then compose the film as the workflow says, starting with the framing if it still needs a look, and preview the first minute before the whole film.\r");
@@ -2781,5 +2945,27 @@ window.fabula.onState((next) => {
   // The engines load async in the main process; when the compose stage
   // arrives late, follow it — unless the user already picked a tab.
   if (!userChoseTab && mode === "cut" && compose()) mode = "scenes";
+  if (projectChanged) reanchorWhenRefreshed = false;
+  followRefresh();
   render();
 });
+
+// A refresh the Cut step started on a composed film: when the job is done
+// and the transcript has moved, the scenes are re-anchored onto it and the
+// panel says how many moved. A refresh that failed leaves the Export step's
+// card to explain.
+async function followRefresh() {
+  if (!reanchorWhenRefreshed) return;
+  const e = state?.export;
+  if (!e || e.running) return;
+  reanchorWhenRefreshed = false;
+  if (e.lastFailure) { els.approveStatus.textContent = `${STAGE_NAMES[e.lastFailure.stage] ?? e.lastFailure.stage} failed; the Export step has the log.`; els.approveStatus.classList.add("is-error"); return; }
+  const stale = staleMap(e);
+  if (!stale["compose.json"]) { els.approveStatus.textContent = "The clean cut is current again; the scenes did not need to move."; return; }
+  if (!e.have.previousTranscript) { els.approveStatus.textContent = "The scenes could not follow: ask the assistant to place them again."; els.approveStatus.classList.add("is-error"); return; }
+  const r = await window.fabula.reanchor();
+  if (!r.ok) { els.approveStatus.textContent = r.error; els.approveStatus.classList.add("is-error"); return; }
+  const left = r.unresolved.length;
+  els.approveStatus.textContent = `Moved ${r.moved} scene${r.moved === 1 ? "" : "s"} onto the new transcript${left ? `; ${left} could not be placed — ask the assistant` : ""}.`;
+  els.approveStatus.classList.toggle("is-error", left > 0);
+}

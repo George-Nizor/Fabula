@@ -146,6 +146,20 @@
     </form>
   </dialog>
 
+  <dialog class="sheet" id="brand">
+    <form method="dialog" class="sheet-form" id="brand-form">
+      <header><h2>Save as brand</h2><p>The look as it is now, kept for every next film. It appears under Your brands, one click to use.</p></header>
+      <label class="field">Name
+        <input type="text" id="brand-name" maxlength="60" autocomplete="off" spellcheck="false" placeholder="My channel" />
+      </label>
+      <footer class="sheet-foot">
+        <span class="projects-status" id="brand-status"></span>
+        <button type="button" class="button is-quiet" id="brand-cancel">Cancel</button>
+        <button type="submit" class="button is-primary">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog class="sheet" id="assistant">
     <form method="dialog" class="sheet-form" id="assistant-form">
       <header><h2 id="assistant-sheet-title">Start the assistant</h2><p id="assistant-sheet-note">Runs in a pane in this window, on your own subscription. One at a time.</p></header>
@@ -195,7 +209,13 @@
 
   <main class="workspace" id="player" hidden>
     <aside class="rail">
-      <div class="rail-label">Transcript</div>
+      <div class="rail-head">
+        <span class="rail-label">Transcript</span>
+        <span class="rail-find">
+          <input type="search" id="find" placeholder="Find…" autocomplete="off" spellcheck="false" title="Find in the transcript (ctrl+F). Enter for the next match, shift+Enter for the previous." />
+          <span class="rail-find-count" id="find-count"></span>
+        </span>
+      </div>
       <article class="transcript" id="transcript"></article>
       <div class="rail-foot" id="controls-hint"></div>
     </aside>
@@ -216,8 +236,8 @@
 
       <div id="insp-project">
         <div class="insp-section insp-cta" id="insp-approve" hidden>
-          <b>Approve the cut</b>
-          <p>Renders the clean cut, then the assistant composes the film.</p>
+          <b id="approve-head">Approve the cut</b>
+          <p id="approve-note">Renders the clean cut, then the assistant composes the film.</p>
           <button type="button" class="button is-primary" id="approve-cut">Approve and compose</button>
           <span class="insp-status" id="approve-status"></span>
         </div>
@@ -243,7 +263,8 @@
           <span><kbd>,</kbd><kbd>.</kbd> one frame</span>
           <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> back · stop · forward</span>
           <span><kbd>ctrl</kbd> + wheel zoom the timeline</span>
-          <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut</span>
+          <span><kbd>ctrl</kbd><kbd>F</kbd> find in the transcript</span>
+          <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut · <kbd>del</kbd> cut the selection</span>
         </div>
       </div>
 
@@ -266,6 +287,9 @@
       <div id="insp-body" hidden>
         <label class="insp-field" id="insp-text-wrap">Text
           <input type="text" id="insp-text" />
+        </label>
+        <label class="insp-field" id="insp-heading-wrap">Heading
+          <input type="text" id="insp-heading" maxlength="80" />
         </label>
         <label class="insp-field" id="insp-label-wrap">Caption
           <input type="text" id="insp-label" placeholder="none" />
