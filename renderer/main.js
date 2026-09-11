@@ -72,7 +72,7 @@ const els = {
   themeCaptions: $("theme-captions"), captionsNote: $("captions-note"),
   themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
   themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"),
-  inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"),
+  inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"), inspUndoWrap: $("insp-undo-wrap"), inspUndoText: $("insp-undo-text"), inspUndo: $("insp-undo"),
   inspNoteWrap: $("insp-note-wrap"), inspNote: $("insp-note"), inspNoteLabel: $("insp-note-label"), inspNoteSend: $("insp-note-send"), inspNoteStatus: $("insp-note-status"),
   inspClose: $("insp-close"), inspStatus: $("insp-status"),
   inspText: $("insp-text"), inspTextWrap: $("insp-text-wrap"),
@@ -762,6 +762,7 @@ function renderProjectPanel() {
       ? `${open} insert point${open === 1 ? "" : "s"} open. Click a + in the transcript or a diamond in the timeline to choose what goes there.`
       : "Click a block in the timeline to edit it. For anything larger, ask the assistant in its pane.";
   }
+  renderUndo();
 }
 
 // ---- The Look page ----
@@ -2173,11 +2174,32 @@ els.inspDuplicate.addEventListener("click", async () => {
   if (result.ok) openInspector(at + 1);
   flashStatus(result.ok ? "duplicated · editing the copy" : result.error, !result.ok);
 });
+// Remove is one click and has no confirmation; instead the scene is kept
+// for a while and the project panel offers to put it back where it was.
+let removed = null; // { index, scene, label, timer }
 els.inspRemove.addEventListener("click", async () => {
   if (selectedScene === null) return;
-  const result = await window.fabula.removeScene(selectedScene);
-  if (result.ok) closeInspector();
-  else flashStatus(result.error, true);
+  const index = selectedScene;
+  const scene = structuredClone(compose()?.scenes[index]);
+  const result = await window.fabula.removeScene(index);
+  if (!result.ok) { flashStatus(result.error, true); return; }
+  clearTimeout(removed?.timer);
+  removed = { index, scene, label: scene.type === "stage" ? `${scene.layout} layout` : sceneBlockLabel(scene), timer: setTimeout(() => { removed = null; renderUndo(); }, 12000) };
+  closeInspector();
+});
+function renderUndo() {
+  els.inspUndoWrap.hidden = !removed || mode !== "scenes";
+  if (removed) els.inspUndoText.textContent = `Removed ${removed.label}.`;
+}
+els.inspUndo.addEventListener("click", async () => {
+  if (!removed) return;
+  const { index, scene } = removed;
+  const result = await window.fabula.restoreScene(index, scene);
+  if (!result.ok) { els.inspUndoText.textContent = result.error; return; }
+  clearTimeout(removed.timer);
+  removed = null;
+  renderUndo();
+  openInspector(index);
 });
 
 // ---- The dock's height ----
@@ -3008,6 +3030,7 @@ window.fabula.onState((next) => {
   state = next;
   if (projectChanged) {
     selectedScene = null; selectedInsert = null; userChoseTab = false; scriptOpen = false;
+    clearTimeout(removed?.timer); removed = null;
     // A shortlist belongs to the film it was read from.
     clipResult = null; clipError = null; clipFinding = null; clipBusy = null;
     mode = compose() ? "scenes" : "cut";

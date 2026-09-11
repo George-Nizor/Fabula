@@ -1203,6 +1203,19 @@ app.whenReady().then(() => {
       config.scenes.splice(index, 1);
     })
   );
+  // Undo of a removal: the scene the window kept, put back where it was.
+  // It goes through the same validation as any write, so a scene that no
+  // longer fits (the plan changed under it) is refused with a reason.
+  ipcMain.handle("fabula:restore-scene", (event, index, scene) =>
+    editCompose(event, (config) => {
+      if (!scene || typeof scene !== "object" || !Number.isInteger(index)) throw new Error("nothing to put back");
+      // The window's copy carries the seconds the state feed derived from
+      // the words; the plan holds word ids only.
+      const { start, end, ...plain } = scene;
+      config.scenes = config.scenes ?? [];
+      config.scenes.splice(Math.min(Math.max(index, 0), config.scenes.length), 0, plain);
+    })
+  );
   ipcMain.handle("fabula:set-project", (event, patch) =>
     editCompose(event, (config) => {
       if ("accent" in patch) patch = { ...patch, theme: { ...(patch.theme ?? {}), accent: patch.accent || null } };
