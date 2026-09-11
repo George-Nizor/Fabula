@@ -13,7 +13,35 @@ import { keepSegments } from "./cut-engine.mjs";
 
 export const DEFAULT_PUNCH_ZOOM = 1.15;
 
+// A punch-in has to hold long enough to read as a shot. Alternating on every
+// keep, however short, pops the camera out and back inside two seconds where
+// two cuts land close together — which reads as a fault, not a shot change.
+// A keep shorter than this carries the framing it already had, so the
+// alternation resumes at the next keep long enough to hold one. It is the
+// same floor the stage engine puts under a layout, for the same reason.
+export const PUNCH_DWELL_SECONDS = 3;
+
 const EPSILON = 0.02;
+
+// The scale for each keep, in order. The film opens wide and alternates only
+// across keeps that can hold a shot; with no short keeps this is exactly the
+// old index parity, so a film without slivers renders identically.
+export function punchScales(durations, zoom) {
+  assertZoom(zoom);
+  let scale = 1;
+  let held = 0; // seconds already spent in the framing we are in
+  return durations.map((seconds, index) => {
+    // Both sides of a change have to be able to hold a shot: the one being
+    // left must have run for the floor, and the one being entered must have
+    // the room. Either test alone leaves a sliver on the other side.
+    if (index > 0 && held >= PUNCH_DWELL_SECONDS && seconds >= PUNCH_DWELL_SECONDS) {
+      scale = scale === 1 ? zoom : 1;
+      held = 0;
+    }
+    held += seconds;
+    return scale;
+  });
+}
 
 function assertZoom(zoom) {
   if (!(zoom > 1)) throw new Error(`punch zoom must exceed 1, got ${zoom}`);
@@ -23,6 +51,7 @@ export function punchPlan(words, cuts, durationSeconds, options = {}) {
   const zoom = options.zoom ?? DEFAULT_PUNCH_ZOOM;
   assertZoom(zoom);
   const keeps = keepSegments(cuts, durationSeconds);
+  const scales = punchScales(keeps.map((keep) => keep.end - keep.start), zoom);
   return keeps.map((keep, index) => {
     const inside = words.filter(
       (word) => word.start >= keep.start - EPSILON && word.end <= keep.end + EPSILON
@@ -32,7 +61,7 @@ export function punchPlan(words, cuts, durationSeconds, options = {}) {
       end: keep.end,
       fromWordId: inside[0]?.id ?? null,
       toWordId: inside.at(-1)?.id ?? null,
-      scale: index % 2 === 0 ? 1 : zoom,
+      scale: scales[index],
     };
   });
 }
@@ -49,13 +78,12 @@ export function punchSpans(pieces, zoom = DEFAULT_PUNCH_ZOOM) {
     if (!Number.isInteger(piece.keepIndex)) return [];
     const last = spans.at(-1);
     if (last && last.keepIndex === piece.keepIndex) { last.end = piece.cleanEnd; continue; }
-    spans.push({
-      keepIndex: piece.keepIndex,
-      start: piece.cleanStart,
-      end: piece.cleanEnd,
-      scale: piece.keepIndex % 2 === 0 ? 1 : zoom,
-    });
+    spans.push({ keepIndex: piece.keepIndex, start: piece.cleanStart, end: piece.cleanEnd, scale: 1 });
   }
+  // The keeps are whole here, so the dwell floor is measured on the clean
+  // timeline the viewer actually watches.
+  const scales = punchScales(spans.map((span) => span.end - span.start), zoom);
+  spans.forEach((span, index) => { span.scale = scales[index]; });
   return spans;
 }
 
