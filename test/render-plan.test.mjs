@@ -1,19 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  headExpressions,
-  glowExpressions,
-  punchExpression,
-  punchPlacements,
-  evaluateExpression,
-  chunkPlan,
-  chunkIdentity,
-  screenPlacements,
-  clipPlacements,
-  chunkGraph,
-  headRectAt,
-  punchScaleAtTime,
-} from "../core/render-plan.mjs";
+import { headExpressions, glowExpressions, punchExpression, punchPlacements, evaluateExpression, chunkPlan, chunkIdentity, screenPlacements, clipPlacements, chunkGraph, headRectAt, punchScaleAtTime, chunkTimeline } from "../core/render-plan.mjs";
 import { DEFAULT_STAGE, resolveLayoutTimeline, layoutAt, headDrawRect } from "../core/stage-engine.mjs";
 
 const stage = DEFAULT_STAGE;
@@ -343,4 +330,30 @@ test("a grade goes on the footage before it is shaped, and the vignette after, o
   assert.ok(!zoomed.includes("alphaextract"), "on the zoomed route the vignette goes on the footage before its alpha exists");
   const punched = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], punch, grade: { warmth: 0.3 } });
   inOrder(punched, ["[2:v]colortemperature=temperature=7040:mix=1,format=rgba,scale=w=", "[hz]"]);
+});
+
+test("a chunk is given the boundaries it can see, and one either side for a transition", () => {
+  const timeline = [];
+  for (let i = 0; i < 79; i += 1) timeline.push({ start: i * 10, end: i * 10 + 10, layout: i % 2 ? "side" : "focus", transition: "dissolve", transitionSeconds: 0.8 });
+
+  const kept = chunkTimeline(timeline, 240, 360);
+  // Everything the chunk overlaps, plus one before and one after.
+  assert.ok(kept[0].start <= 240 - 3, "the segment already running when the chunk opens is there");
+  assert.ok(kept.at(-1).start >= 360, "so is the one that starts after it closes");
+  assert.ok(kept.length < 20 && kept.length > 10, `kept ${kept.length} of ${timeline.length}`);
+  // Every segment the chunk actually shows is present.
+  for (const segment of timeline.filter((s) => s.end > 240 && s.start < 360)) {
+    assert.ok(kept.includes(segment), `the segment at ${segment.start}s is missing`);
+  }
+  // A film short enough to need no trimming is handed back as it is.
+  const two = timeline.slice(0, 2);
+  assert.deepEqual(chunkTimeline(two, 0, 1000), two);
+  assert.equal(chunkTimeline([], 0, 10).length, 0);
+
+  // And the expression a chunk gets is far shorter than the film's, which is
+  // the whole point: ffmpeg refuses the deep one.
+  const stage = { width: 1920, height: 1080 };
+  const whole = headExpressions(timeline, 1.7778, stage, 0);
+  const chunked = headExpressions(timeline, 1.7778, stage, 240, 360);
+  assert.ok(chunked.alpha.length * 3 < whole.alpha.length, `${chunked.alpha.length} vs ${whole.alpha.length}`);
 });

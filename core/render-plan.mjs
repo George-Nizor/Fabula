@@ -39,7 +39,28 @@ const alphaOf = (layout) => (layout === "cutaway" ? 0 : 1);
 //
 // `alpha` is the string "1" when nothing in the timeline ever fades, which
 // is how chunkGraph knows to leave the mask alone.
-export function headExpressions(timeline, videoAspect, stage, offset = 0) {
+// ffmpeg's expression parser gives up somewhere past a few hundred nested
+// conditionals, and the folds below write one per boundary in the WHOLE film.
+// A chunk only needs the boundaries it can see: everything that finished
+// before it began folds into the opening value, and everything that starts
+// after it ends never fires inside it. So a chunk is given the segments it
+// overlaps plus one either side, which is enough for a transition reaching
+// across its edge. On a short film this changes nothing; on a long one it is
+// the difference between a render and "Error initializing filters".
+const TRANSITION_HEADROOM_SECONDS = 3;
+export function chunkTimeline(timeline, from, to = Infinity) {
+  if (!Array.isArray(timeline) || timeline.length < 2) return timeline;
+  const start = from - TRANSITION_HEADROOM_SECONDS;
+  const end = to + TRANSITION_HEADROOM_SECONDS;
+  let first = 0;
+  for (let i = 0; i < timeline.length; i += 1) if (timeline[i].start <= start) first = i;
+  let last = timeline.length - 1;
+  for (let i = timeline.length - 1; i > first; i -= 1) if (timeline[i].start > end) last = i - 1;
+  return timeline.slice(first, last + 1);
+}
+
+export function headExpressions(fullTimeline, videoAspect, stage, offset = 0, until = Infinity) {
+  const timeline = chunkTimeline(fullTimeline, offset, until);
   const T = `(t+${num(offset)})`;
   const layouts = timeline.map((segment) => layoutRects(segment.layout, segment.corner, videoAspect, stage));
   const rects = layouts.map((layout) => layout.video);
@@ -352,7 +373,7 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
   // the card's space; on the zoomed or cropped route it sits on the footage
   // and the crop takes part of it, which the window does not show.
   const graded = grade ? gradeFilters(grade) : { pre: "", post: "" };
-  const head = headExpressions(timeline, videoAspect, stage, chunk.start);
+  const head = headExpressions(timeline, videoAspect, stage, chunk.start, chunk.end);
   const glow = glowExpressions(stage, glowSize, chunk.start);
   const punched = punchPlacements(punch, chunk);
   const fade = head.alpha === "1" ? "" : `,eq=brightness='(${head.alpha})-1':eval=frame`;
