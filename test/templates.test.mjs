@@ -149,3 +149,20 @@ test("a reader re-expands a template from its params, keeping what else the grap
   const plain = { type: "graphic", fromWordId: 0, toWordId: 3, graphic: { kind: "stat", value: 3, label: "x" } };
   assert.deepEqual(refreshTemplates([plain], { format: "landscape" })[0], plain);
 });
+
+test("the big word scales its type to the longest word, so a tall frame never clips it", () => {
+  const sizeOf = (words, format) => {
+    const css = renderTemplate("word", { words }, { format }).css;
+    return Number(/\.t-big \{[^}]*?font-size: min\([^,]+, ([\d.]+)cqi\)/.exec(css)[1]);
+  };
+  // A short word keeps the cap in both shapes: nothing that fit before shrinks.
+  assert.equal(sizeOf("Never. Again.", "vertical"), 19);
+  assert.equal(sizeOf("Never. Again.", "landscape"), 15);
+  // A long one comes down, and a tall frame — sized against half the width —
+  // is where it bites first.
+  assert.ok(sizeOf("Sideways.", "vertical") < 19, "a nine-character word is scaled down in a tall frame");
+  assert.equal(sizeOf("Sideways.", "landscape"), 15, "the same word still fits a wide frame");
+  // Longer still comes down further, and never below something legible.
+  assert.ok(sizeOf("Extraordinary", "vertical") < sizeOf("Sideways.", "vertical"));
+  assert.ok(sizeOf("Extraordinary", "vertical") > 6);
+});

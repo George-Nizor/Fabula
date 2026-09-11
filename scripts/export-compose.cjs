@@ -24,6 +24,10 @@ const { spawn, spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
+
+// A voice quieter than this, with nothing levelling it, is worth warning
+// about at the render gate: platforms play at -14 to -16 LUFS.
+const QUIET_VOICE_LUFS = -22;
 const FPS = 30;
 const PARALLEL_ENCODES = 4;
 const CAPTURE_WINDOWS = 3;
@@ -441,6 +445,19 @@ async function main() {
   };
   const sound = await stitch(0);
   if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${sound.nats?.length ? `, ${sound.nats.length} clip(s) with their own sound under it` : ""}${composeFile.audio?.voice?.loudness != null ? `, voice to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
+  // A film nobody can hear is not a film. The clean render measured the
+  // voice; when nothing is normalising it and it sits well under what
+  // platforms play at, say so here, where the person is watching the render
+  // — status says it too, but nobody has to read status to press render.
+  if (wholeOutput && composeFile.audio?.voice?.loudness == null) {
+    let measured = null;
+    try {
+      measured = JSON.parse(fs.readFileSync(path.join(projectDir, "out", "clean-audio.json"), "utf8")).voiceLoudness;
+    } catch { measured = null; }
+    if (typeof measured === "number" && measured < QUIET_VOICE_LUFS) {
+      say(`WARNING: the voice measures ${measured} LUFS and nothing is levelling it; platforms play at -14 to -16, so this film will be far too quiet. set_audio voice_loudness -16 (a film) or -14 (a short) and render again — the sound is only the stitch, so it takes seconds.`);
+    }
+  }
   // The ceiling takes a little off a voice that needed a lot of gain. The
   // stitch is seconds, so measure what came out and go once more with the
   // difference trimmed in.

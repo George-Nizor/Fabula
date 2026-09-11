@@ -18,6 +18,10 @@
 // Text is escaped, lengths are capped by the field, and the result still goes
 // through the same forbidden-content check as a hand-written custom graphic.
 
+// How much of the card's width the big word may take before its type is
+// scaled down to fit; the rest is the margin either side.
+const WORD_FIT_CQI = 88;
+
 const esc = (value) => String(value ?? "")
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
@@ -181,10 +185,18 @@ export const TEMPLATES = {
     example: { words: "Never. Again.", note: "the rule after the sixteen-minute render" },
     render: (p, { portrait }) => {
       const parts = p.words.split(" ").slice(0, 3);
+      // The cap is what a SHORT word can take. A long one has to come down or
+      // it runs off the edge — a tall frame is where that bites first, since
+      // the type is sized against a width barely half the landscape one.
+      // 0.62em is about the advance of this face at weight 900 with the
+      // letter-spacing below; WORD_FIT_CQI leaves a margin either side.
+      const longest = Math.max(...parts.map((word) => word.length), 1);
+      const capCqi = portrait ? 19 : 15;
+      const sizeCqi = Math.min(capCqi, WORD_FIT_CQI / (longest * 0.62));
       const html = `<div class="t t-word"><div class="t-stack">${parts.map((w, i) => `<div class="t-big" style="--k:${wake(i, { from: 0.05, each: 0.22, dur: 0.3 })}">${esc(w)}</div>`).join("")}<div class="t-rule"></div></div>${p.note ? `<div class="t-note">${esc(p.note)}</div>` : ""}</div>`;
       const css = `${base(portrait)}
 .t-word { align-items: flex-start; gap: 3cqh; }
-.t-big { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "11cqh, 19cqi" : "22cqh, 15cqi"}); line-height: 0.95; letter-spacing: -0.03em; opacity: var(--k); transform: translateX(calc((1 - var(--k)) * -0.15em)); }
+.t-big { font-family: ${FONT_DISPLAY}; font-weight: 900; font-size: min(${portrait ? "11cqh" : "22cqh"}, ${sizeCqi.toFixed(2)}cqi); line-height: 0.95; letter-spacing: -0.03em; opacity: var(--k); transform: translateX(calc((1 - var(--k)) * -0.15em)); }
 .t-rule { height: min(1.2cqh, 1.6cqi); width: min(30cqw, 40cqi); margin-top: 2cqh; background: ${ACCENT}; transform-origin: left center; transform: scaleX(${wake(parts.length, { from: 0.05, each: 0.22, dur: 0.4 })}); }
 .t-note { font-family: ${FONT_SERIF}; font-style: italic; font-size: min(3cqh, 4.2cqi); color: ${MUTED}; opacity: ${wake(0, { from: 0.85, dur: 0.3 })}; }`;
       return { html, css };
