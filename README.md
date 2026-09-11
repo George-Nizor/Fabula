@@ -153,10 +153,12 @@ step with the film.
    punch-in — each card a live stage playing that option, drawn by the painter that draws the
    film, so nothing is chosen from a name alone. **Scenes**: the film on the 1080p stage with the
    script tucked away in a drawer; click a timeline block and the inspector gives you its text,
-   its style, a card's own fields, its word span, and duplicate or remove. Drop a picture or a
+   its heading, its style, a card's own fields, its word span (underlined in the script), and
+   duplicate or remove — a removal can be undone for a few seconds. Drop a picture or a
    clip of your own onto the stage and it is filed with the project and placed beside the head
-   over the words at the playhead, with the inspector open on it. Drag the top edge of
-   the transport to make the timeline taller.
+   over the words at the playhead, with the inspector open on it. The box at the foot of the
+   inspector tells the assistant what should change, about the film or the scene under
+   inspection. Drag the top edge of the transport to make the timeline taller.
    **Export**: render buttons, progress, what is out of date and why, and every file the renders
    wrote. Every change is saved to the project and previews immediately.
 
