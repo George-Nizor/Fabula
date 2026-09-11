@@ -137,7 +137,8 @@ step with the film.
    the pauses and fillers, and the cuts an editor makes from reading: the preamble before the
    film promises anything, a false start, a stutter, a retake.
    The window shows each step as it lands. Review the cuts in the Cut step: click a struck word
-   or pause to keep it, drag across words and cut them by hand. When the cut is right, press
+   or pause to keep it, drag across words and cut them by hand, or drag across struck words to
+   keep just those (ctrl+F finds a phrase in a long transcript). When the cut is right, press
    **Approve the cut and compose** at the top of the inspector: the clean cut renders and the
    assistant takes over (one is started for you if none is running). It sets the framing where
    the scan needed a human eye, re-transcribes the clean cut, plans layouts and scenes, and

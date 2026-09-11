@@ -129,7 +129,8 @@ The first pass already proposes the editorial cuts beside the pauses and fillers
 anything, a false start said again at once, a stuttered word, a retake (the same sentence said
 again within half a minute; the earlier one goes) — as proposals the person toggles
 like the rest. Run it after the first pass and before `render_clean`; `add_cut` is for the
-judgment calls it cannot make (a tangent, a repetition ten sentences apart).
+judgment calls it cannot make (a tangent, a repetition ten sentences apart), and `keep_words`
+brings a few words back out of a struck run without keeping the whole cut around them.
 
 ## Before you compose
 

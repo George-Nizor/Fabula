@@ -758,6 +758,13 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   text-underline-offset: 0.25em;
 }
 
+/* The inspected scene's words in the script drawer. */
+.word.is-scene {
+  text-decoration: underline solid var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.22em;
+}
+
 .gap {
   cursor: pointer;
   display: inline-block;
@@ -1619,7 +1626,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 11px 13px 9px;
-  background: color-mix(in srgb, var(--ink) 25%, transparent);
+  background: var(--well);
 }
 
 .clip-head { display: flex; align-items: baseline; gap: 0.6rem; font-variant-numeric: tabular-nums; font-size: var(--t-sm); }

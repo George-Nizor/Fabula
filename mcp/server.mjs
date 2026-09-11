@@ -62,7 +62,7 @@ import { validateAudio, describeAudio, bedSpans, assetAudioPath, AUDIO_EXTENSION
 import { chapterList } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
-import { normalizeCuts, flattenWords } from "../core/cut-engine.mjs";
+import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core/cut-engine.mjs";
 import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
@@ -670,6 +670,29 @@ server.registerTool("add_cut", {
   const added = review.cuts.findIndex((cut) =>
     cut.sources.some((s) => s.reason === reason && s.wordIds[0] === wordIds[0]));
   return ok({ added: describeCut(review.cuts[added], added, wordText), stats: reviewStats(review) });
+});
+
+server.registerTool("keep_words", {
+  description:
+    "Keep a word range (inclusive ids) that a cut proposal struck: every enabled cut over those words is split around them, so the words come back without keeping the whole pause or filler run they sat in. The opposite of add_cut, and finer than set_cut_enabled, which keeps a whole cut. A leftover piece shorter than the pause the engine itself would cut (0.6 s) goes with the words.",
+  inputSchema: {
+    from_word_id: z.number().int().min(0).describe("First word id to keep"),
+    to_word_id: z.number().int().min(0).describe("Last word id to keep (inclusive)"),
+  },
+}, async ({ from_word_id, to_word_id }) => {
+  const dir = currentProjectDir();
+  const review = readReview(dir);
+  const byId = new Map(review.words.map((word) => [word.id, word]));
+  const first = byId.get(from_word_id);
+  const last = byId.get(to_word_id);
+  if (!first || !last) throw new Error(`word ids must be 0–${review.words.length - 1}`);
+  if (last.start < first.start) throw new Error("to_word_id precedes from_word_id");
+  const wordIds = review.words.filter((word) => word.start >= first.start && word.end <= last.end).map((word) => word.id);
+  const before = review.cuts.filter((cut) => cut.enabled).length;
+  review.cuts = keepWords(review.cuts, review.words, wordIds);
+  writeReview(dir, review);
+  const after = review.cuts.filter((cut) => cut.enabled).length;
+  return ok({ kept: wordIds.length, cuts: review.cuts.length, enabledBefore: before, enabledAfter: after, removedSeconds: Number(totalCutSeconds(review.cuts).toFixed(2)) });
 });
 
 server.registerTool("story_cuts", {

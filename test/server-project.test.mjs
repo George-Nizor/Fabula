@@ -224,3 +224,24 @@ test("captions can be read as timed phrases and written back in another language
     });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("keep_words brings struck words back by splitting the cut around them", async () => {
+  const root = makeRoot();
+  try {
+    const words = "if a rocket simply flies straight upward and turns its engines off gravity will eventually pull it back down".split(" ")
+      .map((text, id) => ({ id, text, start: id * 0.4 + 0.02, end: id * 0.4 + 0.36 }));
+    fs.writeFileSync(path.join(root, "one", "review.json"), JSON.stringify({ duration: 8, words, cuts: [] }));
+    await withServer(root, async (client) => {
+      const cut = await call(client, "add_cut", { from_word_id: 2, to_word_id: 9, reason: "tangent" });
+      assert.equal(errorOf(cut), null, errorOf(cut));
+      assert.equal(text(await call(client, "list_cuts")).length, 1);
+      const kept = text(await call(client, "keep_words", { from_word_id: 5, to_word_id: 6 }));
+      assert.equal(kept.kept, 2);
+      assert.equal(kept.enabledAfter, 2, "one cut became two around the kept words");
+      const cuts = text(await call(client, "list_cuts"));
+      assert.equal(cuts.length, 2);
+      assert.ok(cuts[0].end <= words[5].start + 0.001 && cuts[1].start >= words[6].end - 0.001, "the kept words sit in the gap");
+      assert.match(errorOf(await call(client, "keep_words", { from_word_id: 9, to_word_id: 2 })) ?? "", /precedes/);
+    });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

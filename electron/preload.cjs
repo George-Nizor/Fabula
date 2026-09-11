@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("fabula", {
   createShort: (clip) => ipcRenderer.invoke("fabula:create-short", clip),
   setCut: (index, enabled) => ipcRenderer.invoke("fabula:set-cut", index, enabled),
   addCut: (wordIds) => ipcRenderer.invoke("fabula:add-cut", wordIds),
+  keepWords: (wordIds) => ipcRenderer.invoke("fabula:keep-words", wordIds),
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   duplicateScene: (index) => ipcRenderer.invoke("fabula:duplicate-scene", index),
   removeScene: (index) => ipcRenderer.invoke("fabula:remove-scene", index),

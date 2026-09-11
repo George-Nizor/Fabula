@@ -22,7 +22,7 @@ const els = {
   brand: $("brand"), brandForm: $("brand-form"), brandName: $("brand-name"), brandStatus: $("brand-status"), brandCancel: $("brand-cancel"),
   inspHeading: $("insp-heading"), inspHeadingWrap: $("insp-heading-wrap"),
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
-  inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selClear: $("sel-clear"),
+  inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selKeep: $("sel-keep"), selClear: $("sel-clear"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
   projectMenu: $("project-menu"), projectName: $("project-name"), projectMenuPop: $("project-menu-pop"),
@@ -372,6 +372,9 @@ function paintSelection() {
   wordSpans.forEach((entry, index) => entry.span.classList.toggle("is-selected", Boolean(selection) && index >= selection.from && index <= selection.to));
 }
 
+// A word is struck when an enabled cut covers it.
+const wordStruck = (word) => enabledCuts().some((cut) => word.start >= cut.start - EPSILON && word.end <= cut.end + EPSILON);
+
 function renderSelection() {
   const words = mode === "cut" ? selectedWords() : [];
   els.inspSelection.hidden = words.length === 0;
@@ -379,6 +382,11 @@ function renderSelection() {
   const seconds = words.at(-1).end - words[0].start;
   els.selSummary.textContent = `${words.length} word${words.length === 1 ? "" : "s"} · ${seconds.toFixed(1)} s`;
   els.selText.textContent = `“${words.map((word) => word.text).join(" ")}”`;
+  // Words already struck can be kept back; words still in can be cut. A
+  // selection across both offers both.
+  const struck = words.filter(wordStruck).length;
+  els.selKeep.hidden = struck === 0;
+  els.selCut.hidden = struck === words.length;
 }
 
 function clearSelection() {
@@ -428,6 +436,13 @@ els.selCut.addEventListener("click", async () => {
   if (result.ok) clearSelection();
   else els.selSummary.textContent = result.error;
 });
+els.selKeep.addEventListener("click", async () => {
+  const words = selectedWords();
+  if (words.length === 0) return;
+  const result = await window.fabula.keepWords(words.map((word) => word.id));
+  if (result.ok) clearSelection();
+  else els.selSummary.textContent = result.error;
+});
 els.selClear.addEventListener("click", clearSelection);
 els.emptyFirstPass.addEventListener("click", async () => {
   const result = await window.fabula.render("first", {});
@@ -460,7 +475,18 @@ function renderSceneTranscript() {
     wordSpans.push({ word, span });
     els.transcript.append(span, " ");
   }
+  paintSceneWords();
   runFind({ keep: true });
+}
+
+// The words the inspected scene sits on, underlined in the script drawer,
+// so a nudge of its ends is seen in the words as well as the timeline.
+function paintSceneWords() {
+  if (mode !== "scenes") return;
+  const scene = selectedScene === null ? null : compose()?.scenes[selectedScene];
+  for (const entry of wordSpans) {
+    entry.span.classList.toggle("is-scene", Boolean(scene) && entry.word.id >= scene.fromWordId && entry.word.id <= scene.toWordId);
+  }
 }
 
 // ---- Find in the transcript ----
@@ -725,7 +751,7 @@ function renderProjectPanel() {
     els.sumShots.textContent = r.shotPlan ? `alternating ${Math.round(r.shotPlan.zoom * 100)}%` : "off";
     els.sumFraming.textContent = describeFraming(r.framing);
     els.sumClean.textContent = { none: "not rendered", stale: "out of date", current: "up to date" }[cleanState(state?.export)];
-    els.inspEmpty.textContent = "Click a struck word or pause to keep it. Drag across words to cut them. Click a word to jump there.";
+    els.inspEmpty.textContent = "Click a struck word or pause to keep it. Drag across words to cut them, or across struck words to keep just those. Click a word to jump there.";
     renderSelection();
   } else {
     els.inspCutSummary.hidden = true;
@@ -1620,6 +1646,7 @@ function openInspector(index) {
   els.inspStatus.textContent = "";
   els.inspStatus.classList.remove("is-error");
   renderSceneTimeline();
+  paintSceneWords();
 }
 
 // The inspector addresses a scene by index, and the assistant may rewrite
@@ -1669,7 +1696,7 @@ function closeInspector() {
   els.inspBody.hidden = true;
   els.inspInsert.hidden = true;
   if (review()) renderProjectPanel();
-  if (mode === "scenes" && compose()) renderSceneTimeline();
+  if (mode === "scenes" && compose()) { renderSceneTimeline(); paintSceneWords(); }
 }
 
 async function patchScene(patch) {
@@ -1739,6 +1766,7 @@ function setMode(next) {
 
 function render() {
   renderProgress();
+  document.title = state?.title ? `${state.title} — Fabula` : "Fabula";
   if (state?.project !== viewProject) {
     viewProject = state?.project ?? null;
     views.cut = { start: 0, zoom: 1 };
@@ -1808,7 +1836,7 @@ function render() {
     document.body.classList.toggle("rail-collapsed", !railWanted);
     setSource(review().videoUrl);
     els.skipwrap.hidden = false;
-    els.hint.textContent = "Click a word to jump there. Click anything struck to keep it. Drag to select and cut.";
+    els.hint.textContent = "Click a word to jump there. Click anything struck to keep it. Drag across words to cut them, or to keep struck ones.";
     els.overlay.replaceChildren();
     delete els.overlay.dataset.state;
     frame.classList.remove("is-stage", "stage-field");
@@ -2311,6 +2339,12 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (!typing && !sheetOpen && (event.ctrlKey || event.metaKey)) {
+    const step = { 1: "cut", 2: "look", 3: "scenes", 4: "export" }[event.key];
+    if (step && review()) {
+      const button = { cut: els.tabCut, look: els.tabLook, scenes: els.tabScenes, export: els.tabExport }[step];
+      if (!button.disabled) { event.preventDefault(); button.click(); }
+      return;
+    }
     if (event.key === "n" || event.key === "N") { event.preventDefault(); openNewProject(); return; }
     if ((event.key === "o" || event.key === "O") && event.shiftKey) { event.preventDefault(); openProjects(); return; }
     if ((event.key === "w" || event.key === "W") && state?.project) { event.preventDefault(); window.fabula.closeProject(); return; }

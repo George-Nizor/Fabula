@@ -171,3 +171,28 @@ export function addWordCut(cuts, words, wordIds) {
   for (const cut of merged) if (cut.start <= start + 0.001 && cut.end >= end - 0.001) cut.enabled = true;
   return merged;
 }
+
+// The opposite gesture: words the person drew across inside a struck span
+// are kept, and every enabled cut over them is split around them. A cut's
+// sources stay with the piece they fall in, so the window can still explain
+// what was proposed. A leftover piece shorter than the pause the engine
+// itself would cut (the breath before the first kept word) is dropped rather
+// than left as a jump cut nobody asked for. Disabled cuts are the person's
+// already and are left alone.
+const MIN_SPLIT_PIECE_SECONDS = 0.6;
+export function keepWords(cuts, words, wordIds) {
+  const chosen = words.filter((word) => wordIds.includes(word.id)).sort((a, b) => a.start - b.start);
+  if (chosen.length === 0) throw new Error("no words to keep");
+  const start = chosen[0].start;
+  const end = chosen.at(-1).end;
+  const out = [];
+  for (const cut of cuts) {
+    if (!cut.enabled || cut.end <= start || cut.start >= end) { out.push(cut); continue; }
+    for (const piece of [{ start: cut.start, end: Math.min(start, cut.end) }, { start: Math.max(end, cut.start), end: cut.end }]) {
+      if (piece.end - piece.start < MIN_SPLIT_PIECE_SECONDS) continue;
+      const sources = (cut.sources ?? [cut]).filter((s) => s.start < piece.end && s.end > piece.start);
+      out.push({ ...piece, enabled: true, sources: sources.length ? sources : [{ ...(cut.sources?.[0] ?? {}), start: piece.start, end: piece.end }] });
+    }
+  }
+  return normalizeCuts(out);
+}

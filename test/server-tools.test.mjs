@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const EXPECTED = [
   "open_project", "list_projects", "switch_project", "rename_project", "close_project", "set_format",
   "suggest_clips", "create_short",
-  "transcribe", "cut_pass", "story_cuts", "detect_framing", "set_framing", "get_framing", "list_cuts", "set_cut_enabled", "add_cut",
+  "transcribe", "cut_pass", "story_cuts", "detect_framing", "set_framing", "get_framing", "list_cuts", "set_cut_enabled", "add_cut", "keep_words",
   "plan_shots", "render_clean", "retranscribe_clean", "list_clean_words",
   "get_scenes", "set_scenes", "check_scenes", "update_scenes", "add_scenes", "remove_scenes", "set_inserts", "get_inserts", "apply_insert", "wait_for_input",
   "describe_kit", "describe_templates", "adopt_persona", "read_craft", "read_story", "draft_scenes", "review_plan", "review_film",

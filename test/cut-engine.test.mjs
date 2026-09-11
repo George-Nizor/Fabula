@@ -8,7 +8,7 @@ import {
   keepSegments,
   totalCutSeconds,
 } from "../core/cut-engine.mjs";
-import { addWordCut } from "../core/cut-engine.mjs";
+import { addWordCut, keepWords } from "../core/cut-engine.mjs";
 
 function word(id, text, start, end) {
   return { id, text, start, end };
@@ -119,4 +119,25 @@ test("keepSegments never emits a keep that ends before it starts", () => {
     { start: 10.6, end: 11, enabled: true, sources: [{ start: 10.6, end: 11, reason: "pause", enabled: true }] },
   ]), 10);
   for (const keep of keeps) assert.ok(keep.end >= keep.start, JSON.stringify(keeps));
+});
+
+test("keepWords splits an enabled cut around the chosen words and leaves disabled cuts alone", () => {
+  const words = [
+    { id: 0, start: 1.0, end: 1.4, text: "one" }, { id: 1, start: 1.5, end: 1.9, text: "two" },
+    { id: 2, start: 2.0, end: 2.4, text: "three" }, { id: 3, start: 2.5, end: 2.9, text: "four" },
+  ];
+  const cuts = [
+    { start: 0.2, end: 3.7, enabled: true, sources: [{ start: 0.2, end: 3.7, reason: "filler", wordIds: [0, 1, 2, 3], enabled: true }] },
+    { start: 5, end: 6, enabled: false, sources: [{ start: 5, end: 6, reason: "silence", wordIds: [], enabled: true }] },
+  ];
+  const kept = keepWords(cuts, words, [1, 2]);
+  assert.deepEqual(kept.map((c) => [c.start, c.end, c.enabled]), [[0.2, 1.5, true], [2.4, 3.7, true], [5, 6, false]]);
+  assert.equal(kept[0].sources[0].reason, "filler");
+  // Keeping every word leaves the 0.8 s of silence at either end as cuts of
+  // their own, since the engine would have proposed a pause that long...
+  assert.deepEqual(keepWords(cuts, words, [0, 1, 2, 3]).map((c) => [c.start, c.end]), [[0.2, 1.0], [2.9, 3.7], [5, 6]]);
+  // ...but a breath shorter than that goes with the words.
+  const tight = [{ start: 0.8, end: 3.1, enabled: true, sources: [{ start: 0.8, end: 3.1, reason: "filler", wordIds: [0, 1, 2, 3], enabled: true }] }];
+  assert.deepEqual(keepWords(tight, words, [0, 1, 2, 3]), []);
+  assert.throws(() => keepWords(cuts, words, [99]), /no words/);
 });

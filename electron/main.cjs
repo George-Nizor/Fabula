@@ -970,6 +970,21 @@ app.whenReady().then(() => {
       return { ok: false, error: error.message };
     }
   });
+  ipcMain.handle("fabula:keep-words", (event, wordIds) => {
+    const dir = projectDir();
+    const file = dir && path.join(dir, "review.json");
+    const review = file && readJson(file);
+    if (!review || !core) return { ok: false, error: "No cuts to keep from yet." };
+    if (!Array.isArray(wordIds) || wordIds.length === 0 || wordIds.length > 5000 || !wordIds.every(Number.isInteger)) return { ok: false, error: "Select some words first." };
+    try {
+      review.cuts = core.cut.keepWords(review.cuts, review.words, wordIds);
+      writeJsonAtomic(file, review);
+      event.sender.send("fabula:state", readState());
+      return { ok: true, cuts: review.cuts.length };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
   // ---- Shorts ----
   //
   // Reading the film for moments that could stand alone is pure and fast, so
