@@ -447,6 +447,22 @@ integrated loudness, loudness range, true peak, noise floor — under `sound.mea
 notes when the film misses its target, peaks over -1 dBFS, or carries an audible room: the
 one sense the sheet cannot give.
 
+`critique_film` is the review that needs no taste: every measurable fault in one list, worst
+first, each with what it is, why it reads badly and the call that fixes it. Shots too short to
+read, scraps of footage between two cuts, cuts that remove nothing, silence at either end,
+pauses the cut left in, pictures floating in an empty frame, a voice nothing is levelling, a
+film out of date with its own plan or rendered in the wrong shape, plus the plan's warnings and
+its variety and pacing reads. Run it before every render and after the person has been editing,
+and fix the faults before arguing about the notes. There is no score out of a hundred on
+purpose: a count of faults cannot be gamed.
+
+The half that DOES need taste is yours, and `adopt_persona critic` hands you it —
+`docs/craft/critic.md`, and a working method: measure first, then look at the frames, then say
+three to five things worst first, each anchored to a second, each with one change. The critic is
+a job rather than a film shape, so it is worth switching to deliberately when a film is composed:
+an editor reading its own plan back sees what it meant, and a reader that only measures sees what
+is there.
+
 ## The two gates, and what is stale
 
 The two gates are different in kind. `render_clean` finalises the cut: once it has run, the

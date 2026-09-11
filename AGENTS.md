@@ -18,11 +18,13 @@ render gates, the scene kit and the iteration rules. Read it before working on F
 a film. `docs/product-brief.md` holds the architecture and the decisions already made; its
 historical Claude-only plan is superseded by the shared workflow.
 
-`docs/craft/` is the craft: `editor.md` and `shorts.md` are the two personas' judgment,
-`visual-grammar.md` maps what is said to what goes on the stage, `references.md` describes
-widely watched styles as methods, `examples.md` is two real films worked scene by scene and `plans/` holds those two plans as files. `adopt_persona` hands you the two your persona reads;
-`read_story`, `describe_templates`, `review_plan` and `preview_sheet` are the tools that go
-with them.
+`docs/craft/` is the craft: `storytelling.md` is how a story gets built when you cannot reorder a
+word of the recording, `editor.md` and `shorts.md` are the making personas' judgment, `critic.md`
+is the reviewing one's, `visual-grammar.md` maps what is said to what goes on the stage,
+`references.md` describes widely watched styles as methods, `examples.md` is two real films worked
+scene by scene and `plans/` holds those two plans as files. `adopt_persona` hands you the ones
+your persona reads; `read_story`, `describe_templates`, `review_plan`, `preview_sheet` and
+`critique_film` are the tools that go with them.
 
 The window's Assistant button starts a session in a pane; `npm run assistant` is the same
 launcher by hand.

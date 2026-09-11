@@ -63,7 +63,8 @@ import { chapterList } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core/cut-engine.mjs";
-import { punchPlan, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
+import { punchPlan, punchSpans, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
+import { critiqueFilm } from "../core/critic-engine.mjs";
 import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
@@ -1251,6 +1252,65 @@ server.registerTool("draft_scenes", {
   writeComposeConfig(dir, config);
   const read = readBackPlan(dir, expanded, words, config.theme, config.captions);
   return ok({ persona: who, applied: true, scenes: expanded.length, todo: draft.todo, notes: draft.notes, warnings: read.warnings, variety: read.variety, pacing: read.pacing });
+});
+
+server.registerTool("critique_film", {
+  description:
+    "Everything wrong with this film that can be measured, as a list of findings worst first: shots too short to read, scraps of footage between two cuts, cuts that remove nothing, silence at either end, pauses the cut left in, pictures floating in an empty frame, a voice nothing is levelling, a film out of date with its own plan or rendered in the wrong shape, plus the plan's own warnings and its variety and pacing reads. Every finding says what it is, why it reads badly, and the call that fixes it. It measures the rendered film's sound when one exists (a few seconds; sound: false skips it). This is the half of a review that needs no taste — run it before every render and after the person has been editing, and fix the faults before arguing about the notes. The half that DOES need taste is docs/craft/critic.md and your own eyes on preview_sheet and film_sheet: whether the picture earns its place, whether the hook is a promise the film keeps. There is deliberately no score out of a hundred; a count of faults cannot be gamed.",
+  inputSchema: {
+    sound: z.boolean().optional().describe("Measure the rendered film's loudness and true peak; true by default when a film exists"),
+  },
+}, async ({ sound }) => {
+  const dir = currentProjectDir();
+  const shape = resolveFormat(projectFormat(dir));
+  const words = cleanWords(dir);
+  const config = readComposeConfig(dir);
+  const paths = projectPaths(dir);
+  const duration = filmDuration(dir, words);
+  const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: duration });
+  const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
+  // The engine takes three lists; readBackPlan carries pacing as stats plus
+  // notes, and only the notes are findings.
+  const plan = { warnings: read.warnings ?? [], variety: read.variety ?? [], pacing: read.pacing?.notes ?? [] };
+
+  // The keeps and the shots as the clean render actually wrote them.
+  const pieces = readCleanMap(dir)?.pieces ?? [];
+  const keeps = [];
+  for (const piece of pieces) {
+    const last = keeps.at(-1);
+    if (last && last.keepIndex === piece.keepIndex) { last.end = piece.cleanEnd; continue; }
+    keeps.push({ keepIndex: piece.keepIndex, start: piece.cleanStart, end: piece.cleanEnd });
+  }
+  const spans = config.punch ? punchSpans(pieces, config.punch.zoom ?? DEFAULT_PUNCH_ZOOM) : [];
+  const review = fs.existsSync(paths.review) ? readJson(paths.review) : null;
+  const cuts = (review?.cuts ?? []).filter((cut) => cut.enabled);
+
+  // Every picture the plan places, at the size it actually is.
+  const assets = {};
+  for (const scene of scenes) {
+    const src = scene.graphic?.kind === "image" ? scene.graphic.src : null;
+    if (!src || assets[src]) continue;
+    try { assets[src] = probeDimensions(path.join(dir, src)); } catch { /* unreadable; no finding rather than a wrong one */ }
+  }
+
+  const exists = fs.existsSync(paths.final);
+  const output = { exists, stale: staleness(dir) };
+  if (exists) {
+    try { Object.assign(output, probeDimensions(paths.final)); } catch { /* leave the shape unknown */ }
+    try { output.seconds = probeDuration(paths.final); } catch { /* leave the length unknown */ }
+  }
+
+  const audio = { target: config.audio?.voice?.loudness ?? null, measured: readJson(path.join(dir, "out", "clean-audio.json"))?.voiceLoudness ?? null };
+  if (exists && sound !== false) {
+    const heard = measureSound(paths.final);
+    Object.assign(audio, { rendered: heard.integrated, truePeak: heard.truePeak, range: heard.range, noiseFloor: heard.noiseFloor });
+  }
+
+  return ok({
+    ...critiqueFilm({ format: shape, words, keeps, punchSpans: spans, cuts, scenes, plan, audio, output, assets, seconds: duration }),
+    looked: { seconds: Number(duration.toFixed(2)), keeps: keeps.length, shots: spans.length, scenes: scenes.length, pictures: Object.keys(assets).length, rendered: exists, pacing: read.pacing?.stats ?? null },
+    hint: "Fix every fault, then look at preview_sheet or film_sheet yourself for the half this cannot measure — docs/craft/critic.md is the judgment that goes with it.",
+  });
 });
 
 server.registerTool("review_film", {
