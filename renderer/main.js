@@ -73,6 +73,7 @@ const els = {
   themeLogoPick: $("theme-logo-pick"), themeLogoName: $("theme-logo-name"), themeLogoClear: $("theme-logo-clear"),
   themeLogoCornerWrap: $("theme-logo-corner-wrap"), themeLogoCorner: $("theme-logo-corner"), themeWatermark: $("theme-watermark"),
   inspEmpty: $("insp-empty"), inspKeysCut: $("insp-keys-cut"),
+  inspNoteWrap: $("insp-note-wrap"), inspNote: $("insp-note"), inspNoteLabel: $("insp-note-label"), inspNoteSend: $("insp-note-send"), inspNoteStatus: $("insp-note-status"),
   inspClose: $("insp-close"), inspStatus: $("insp-status"),
   inspText: $("insp-text"), inspTextWrap: $("insp-text-wrap"),
   inspLabel: $("insp-label"), inspLabelWrap: $("insp-label-wrap"),
@@ -1880,6 +1881,7 @@ function render() {
     renderSceneTranscript();
   }
   els.timeSep.textContent = mode === "cut" ? " · " : " / ";
+  renderNoteBox();
   if (selectedInsert !== null && mode === "scenes") {
     if (insertById(selectedInsert)) renderInsertPanel(); else closeInspector();
   } else if (selectedScene === null) { els.inspProject.hidden = false; els.inspBody.hidden = true; els.inspInsert.hidden = true; renderProjectPanel(); }
@@ -1903,6 +1905,40 @@ function openCutAtFirstKeptWord() {
   const entry = wordSpans.find((w) => w.word.start >= at - EPSILON);
   entry?.span.scrollIntoView({ block: "start" });
 }
+
+// ---- A note to the assistant ----
+//
+// The person's words about the film, or about the scene under inspection,
+// filed in the project's inbox: wait_for_input hands them over as a message
+// with the scene named, and a session at its prompt is told directly too.
+function renderNoteBox() {
+  const show = mode === "scenes" && Boolean(compose()) && selectedInsert === null;
+  els.inspNoteWrap.hidden = !show;
+  if (!show) return;
+  const scene = selectedScene === null ? null : compose()?.scenes[selectedScene];
+  els.inspNoteLabel.textContent = scene ? "Tell the assistant about this scene" : "Tell the assistant";
+}
+
+els.inspNoteSend.addEventListener("click", async () => {
+  const text = els.inspNote.value.trim();
+  if (!text) { els.inspNoteStatus.textContent = "Say what should change."; return; }
+  const scene = selectedScene === null ? null : compose()?.scenes[selectedScene];
+  const about = scene ? { index: selectedScene, label: scene.type === "stage" ? `${scene.layout} layout` : sceneBlockLabel(scene), start: scene.start, end: scene.end } : null;
+  const result = await window.fabula.sendMessage({ text, scene: about });
+  if (!result.ok) { els.inspNoteStatus.textContent = result.error; els.inspNoteStatus.classList.add("is-error"); return; }
+  els.inspNoteStatus.classList.remove("is-error");
+  if (assistantRunning) {
+    const where = about ? ` about scene ${about.index} (${about.label}, ${fmt(about.start)}–${fmt(about.end)})` : "";
+    window.fabula.assistantInput(`From the window${where}, also in the inbox: ${text}\r`);
+    els.inspNoteStatus.textContent = "Told the assistant. Watch the pane.";
+  } else {
+    els.inspNoteStatus.textContent = "Filed for the assistant; it reads the inbox when it starts or listens.";
+  }
+  els.inspNote.value = "";
+});
+els.inspNote.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); els.inspNoteSend.click(); }
+});
 
 // ---- Chrome events ----
 

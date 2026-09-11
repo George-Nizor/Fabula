@@ -1247,6 +1247,21 @@ app.whenReady().then(() => {
     if (result.ok) core.inbox.appendInbox(projectDir(), { type: "insert-chosen", insertId, optionId });
     return result;
   });
+  // A note from the window, about the film or one scene: filed in the
+  // inbox, where wait_for_input hands it to the assistant as a message.
+  ipcMain.handle("fabula:message", (event, message) => {
+    const dir = projectDir();
+    if (!dir || !core) return { ok: false, error: "No project is open." };
+    const text = typeof message?.text === "string" ? message.text.trim() : "";
+    if (!text) return { ok: false, error: "Say what should change." };
+    if (text.length > 2000) return { ok: false, error: "Keep a note under 2000 characters." };
+    const scene = message.scene && Number.isInteger(message.scene.index)
+      ? { index: message.scene.index, label: String(message.scene.label ?? "").slice(0, 120), start: Number(message.scene.start) || 0, end: Number(message.scene.end) || 0 }
+      : null;
+    core.inbox.appendInbox(dir, { type: "message", text, ...(scene ? { scene } : {}) });
+    event.sender.send("fabula:state", readState());
+    return { ok: true };
+  });
   ipcMain.handle("fabula:insert-note", (event, insertId, text) => {
     const note = String(text ?? "").trim().slice(0, 500);
     if (!note) return { ok: false, error: "Say what you want there." };

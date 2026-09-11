@@ -1061,7 +1061,7 @@ server.registerTool("apply_insert", {
 
 server.registerTool("wait_for_input", {
   description:
-    "Wait for the person to do something in the window: choose an option on an insert point, ask for something else on one (type insert-other, with their words), or send a message (type message). Returns the events as soon as there are any, or none after wait_seconds; call it again to keep listening. This is the dialogue: after set_inserts, or when asked to listen, sit in this loop (not unprompted — an idle poll spends the person's usage on nothing); answer an insert-other by adding an option to that insert (set_inserts keeps the rest) and apply_insert it, answer a message by doing what it asks, and say what you did.",
+    "Wait for the person to do something in the window: choose an option on an insert point, ask for something else on one (type insert-other, with their words), or send a note from the inspector (type message, with their text; when it was written with a scene inspected, `scene` names its index, label and seconds — that scene is what the note is about). Returns the events as soon as there are any, or none after wait_seconds; call it again to keep listening. This is the dialogue: after set_inserts, or when asked to listen, sit in this loop (not unprompted — an idle poll spends the person's usage on nothing); answer an insert-other by adding an option to that insert (set_inserts keeps the rest) and apply_insert it, answer a message by doing what it asks, and say what you did.",
   inputSchema: { wait_seconds: waitSchema },
 }, async ({ wait_seconds }) => {
   const dir = currentProjectDir();

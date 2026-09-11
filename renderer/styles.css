@@ -1086,6 +1086,12 @@ input[type="color"] {
 }
 
 .insp-status { font-size: var(--t-sm); color: var(--faint); transition: opacity 300ms; }
+
+/* The note to the assistant sits at the foot of the inspector, under
+   whatever panel is open, separated by a rule. */
+.insp-note { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+.insp-note .insp-field { margin-top: 0.3rem; }
+.insp-note .insp-status { line-height: 1.35; }
 .insp-status.is-error { color: var(--cut); }
 
 /* ---- Dock: transport + timeline ---- */

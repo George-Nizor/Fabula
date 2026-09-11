@@ -91,9 +91,13 @@ as a background job (`scripts/job.mjs first_pass`): transcribe, scan the framing
 its frames land in `framing-scan.json` and `framing/`; a pillarbox crop is applied by itself, a
 camera inset never is, because only a look at the frames tells one from a plain head), and
 propose cuts at a 0.8 s minimum pause. The
-person reviews the cuts in the Cut step: struck words and pauses toggle, and dragging across
-words cuts them by hand. **Approve the cut and compose** in the Cut inspector starts the clean
-render and either tells the running session in its terminal or starts one with `--task compose`.
+person reviews the cuts in the Cut step: struck words and pauses toggle, dragging across
+words cuts them by hand, and dragging across struck words keeps just those (`keep_words` is
+the same gesture on the belt). **Approve the cut and compose** in the Cut inspector starts the
+clean render and either tells the running session in its terminal or starts one with `--task
+compose`. Once the film is composed the same button reads **Refresh the clean cut** when a cut
+has moved, and the window re-anchors the scenes itself when the new transcript lands; you may
+still find `compose.json` stale in `status` if the person refreshed from the Export step.
 Your work begins there and is the composition. If `status` shows
 no `framing.json` but a scan exists, look at the frames and `set_framing` first.
 
@@ -117,7 +121,9 @@ always has a plan). The window shows the points in the transcript and the timeli
 previews and picks, or asks for something else in words (`get_inserts` reads what they chose). Then sit in `wait_for_input`: an
 `insert-chosen` event needs nothing from you; an `insert-other` carries their words — add an
 option that does what they asked (`set_inserts` with the same ids keeps everything else),
-`apply_insert` it, and say so; a `message` is a request in plain words about anything — do it,
+`apply_insert` it, and say so; a `message` is a request in plain words, typed into the box at
+the foot of the Scenes inspector — with a scene inspected it carries `scene` (index, label,
+seconds) and is about that scene — do it,
 then keep listening. Leave the loop when they say they are done; render only with approval.
 
 Tuning that matters on real recordings: the first pass already ran `cut_pass` at a 0.8 s
