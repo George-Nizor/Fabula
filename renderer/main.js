@@ -193,10 +193,17 @@ function totalSeconds() {
   return mode === "cut" ? review().duration : composeDuration();
 }
 
+// The draft on the stage (showDraft) is the same film on the same clock, so
+// the transport, the timeline and the playhead act on whichever is showing;
+// the stage underneath is kept at the same moment for when it comes back.
+let draftShowing = false;
+const transport = () => (draftShowing ? els.draftPlayer : els.video);
+
 function seek(t, { follow = true } = {}) {
   const total = totalSeconds();
   const at = Math.min(Math.max(t, 0), Math.max(total - 0.05, 0));
   els.video.currentTime = at;
+  if (draftShowing) els.draftPlayer.currentTime = at;
   if (follow) followTime(at);
 }
 
@@ -2114,9 +2121,10 @@ els.timeline.addEventListener("pointerdown", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement) || target.dataset.seek !== undefined || target.dataset.insert !== undefined) return;
   if (!target.closest(".tl-lane, .tl-ruler")) return;
-  scrub = { wasPlaying: !els.video.paused, pointerId: event.pointerId };
+  const video = transport();
+  scrub = { video, wasPlaying: !video.paused, pointerId: event.pointerId };
   stopShuttle();
-  if (scrub.wasPlaying) els.video.pause();
+  if (scrub.wasPlaying) video.pause();
   els.timeline.setPointerCapture(event.pointerId);
   document.body.classList.add("is-scrubbing");
   seek(timeAtPointer(event.clientX), { follow: false });
@@ -2129,7 +2137,7 @@ els.timeline.addEventListener("pointermove", (event) => {
 const endScrub = (event) => {
   if (!scrub || event.pointerId !== scrub.pointerId) return;
   document.body.classList.remove("is-scrubbing");
-  if (scrub.wasPlaying) els.video.play().catch(() => {});
+  if (scrub.wasPlaying) scrub.video.play().catch(() => {});
   scrub = null;
 };
 els.timeline.addEventListener("pointerup", endScrub);
@@ -2467,35 +2475,55 @@ const PAUSE_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><rect x="2.4
 // not; K stops both. Space and the button are plain play/pause at 1×.
 function stopShuttle() {
   shuttle = 0;
-  if (els.video.playbackRate !== 1) els.video.playbackRate = 1;
+  for (const video of [els.video, els.draftPlayer]) if (video.playbackRate !== 1) video.playbackRate = 1;
 }
 function shuttleForward() {
-  if (shuttle < 0 || els.video.paused) { stopShuttle(); els.video.play().catch(() => {}); return; }
-  els.video.playbackRate = Math.min(els.video.playbackRate * 2, 4);
+  const video = transport();
+  if (shuttle < 0 || video.paused) { stopShuttle(); video.play().catch(() => {}); return; }
+  video.playbackRate = Math.min(video.playbackRate * 2, 4);
 }
 function shuttleBack() {
-  if (!els.video.paused) els.video.pause();
-  els.video.playbackRate = 1;
+  const video = transport();
+  if (!video.paused) video.pause();
+  video.playbackRate = 1;
   shuttle = shuttle < 0 ? Math.max(shuttle * 2, -4) : -1;
   lastTick = performance.now();
   els.playpause.innerHTML = PAUSE_ICON;
 }
 
+// How the focus got where it is, for Space: Tab moves it by keyboard, a
+// press of the pointer does not.
+let focusedByKeyboard = false;
+document.addEventListener("pointerdown", () => { focusedByKeyboard = false; }, true);
+document.addEventListener("keydown", (event) => { if (event.key === "Tab") focusedByKeyboard = true; }, true);
+
+// The button shows what the picture on the stage is doing, whichever it is.
+function syncPlayButton() {
+  const playing = !transport().paused || shuttle < 0;
+  els.playpause.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+  els.playpause.setAttribute("aria-label", playing ? "Pause" : "Play");
+}
+
 els.playpause.addEventListener("click", () => {
   if (shuttle < 0) { stopShuttle(); els.playpause.innerHTML = PLAY_ICON; return; }
   stopShuttle();
-  if (els.video.paused) els.video.play();
-  else els.video.pause();
+  const video = transport();
+  if (video.paused) video.play().catch(() => {});
+  else video.pause();
 });
-els.video.addEventListener("play", () => {
-  shuttle = 0;
-  els.playpause.innerHTML = PAUSE_ICON;
-  els.playpause.setAttribute("aria-label", "Pause");
-});
-els.video.addEventListener("pause", () => {
-  els.playpause.innerHTML = PLAY_ICON;
-  els.playpause.setAttribute("aria-label", "Play");
-});
+for (const video of [els.video, els.draftPlayer]) {
+  video.addEventListener("play", () => {
+    if (video !== transport()) return;
+    shuttle = 0;
+    els.playpause.innerHTML = PAUSE_ICON;
+    els.playpause.setAttribute("aria-label", "Pause");
+  });
+  video.addEventListener("pause", () => {
+    if (video !== transport()) return;
+    els.playpause.innerHTML = PLAY_ICON;
+    els.playpause.setAttribute("aria-label", "Play");
+  });
+}
 els.video.addEventListener("loadedmetadata", () => {
   if (mode === "scenes" && compose()) { els.timeTotal.textContent = fmt(composeDuration(), false); renderSceneTimeline(); }
   else if (els.video.videoWidth) setFrameAspect(els.video.closest(".videoframe"), els.video.videoWidth / els.video.videoHeight);
@@ -2531,24 +2559,33 @@ document.addEventListener("keydown", (event) => {
   }
   if (typing || !state || els.player.hidden || sheetOpen) return;
   if (event.code === "Space") {
+    // A clicked button keeps the focus, and Space would press it again on
+    // release (Watch the draft, restarting the film). Space is the
+    // transport's, unless the button was reached with Tab. (:focus-visible
+    // cannot tell: a key press makes a clicked button match it.)
+    const focused = document.activeElement;
+    if (focused instanceof HTMLButtonElement || focused instanceof HTMLVideoElement) {
+      if (focused instanceof HTMLButtonElement && focusedByKeyboard) return;
+      focused.blur();
+    }
     event.preventDefault();
     els.playpause.click();
   } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     const step = (event.shiftKey ? 10 : 2) * (event.key === "ArrowLeft" ? -1 : 1);
-    seek(els.video.currentTime + step);
+    seek(transport().currentTime + step);
   } else if (event.key === "," || event.key === ".") {
     event.preventDefault();
     stopShuttle();
-    els.video.pause();
-    seek(els.video.currentTime + (event.key === "." ? 1 : -1) / 30);
+    transport().pause();
+    seek(transport().currentTime + (event.key === "." ? 1 : -1) / 30);
   } else if (event.key === "j" || event.key === "J") {
     event.preventDefault();
     shuttleBack();
   } else if (event.key === "k" || event.key === "K") {
     event.preventDefault();
     stopShuttle();
-    els.video.pause();
+    transport().pause();
     els.playpause.innerHTML = PLAY_ICON;
   } else if (event.key === "l" || event.key === "L") {
     event.preventDefault();
@@ -2599,14 +2636,15 @@ function tick() {
   }
   if (!state || els.player.hidden || !onStage()) return;
   const stamp = performance.now();
-  if (shuttle < 0 && els.video.paused && !scrub) {
+  const video = transport();
+  if (shuttle < 0 && video.paused && !scrub) {
     const dt = Math.min((stamp - lastTick) / 1000, 0.25);
-    const back = Math.max(els.video.currentTime + shuttle * dt, 0);
-    els.video.currentTime = back;
+    const back = Math.max(video.currentTime + shuttle * dt, 0);
+    video.currentTime = back;
     if (back <= 0) { stopShuttle(); els.playpause.innerHTML = PLAY_ICON; }
   }
   lastTick = stamp;
-  const now = els.video.currentTime;
+  const now = video.currentTime;
   let total;
 
   if (mode === "cut") {
@@ -2639,6 +2677,10 @@ function tick() {
       const transform = scale > 1 ? `scale(${scale})` : "";
       if (els.video.style.transform !== transform) els.video.style.transform = transform;
     }
+  } else if (draftShowing) {
+    // The draft carries its own picture: nothing to paint under it.
+    total = composeDuration();
+    els.timeNow.textContent = fmt(now);
   } else {
     total = composeDuration();
     els.timeNow.textContent = fmt(now);
@@ -2664,7 +2706,7 @@ function tick() {
     } else if (!els.clip.paused) els.clip.pause();
   }
 
-  if ((!els.video.paused || shuttle < 0) && !scrub && !panning) followTime(now);
+  if ((!video.paused || shuttle < 0) && !scrub && !panning) followTime(now);
   const lane = laneBox();
   const box = els.timeline.getBoundingClientRect();
   const visible = total / view().zoom;
@@ -2684,7 +2726,7 @@ function tick() {
     highlighted = current;
     // Long recordings: keep the spoken word in view while playing, without
     // fighting a reader who has scrolled away while paused.
-    if (current && !els.video.paused && !document.body.classList.contains("rail-collapsed")) {
+    if (current && !video.paused && !document.body.classList.contains("rail-collapsed")) {
       const rail = els.transcript.getBoundingClientRect();
       const word = current.getBoundingClientRect();
       if (word.top < rail.top + 24 || word.bottom > rail.bottom - 24) current.scrollIntoView({ block: "center" });
@@ -3349,6 +3391,9 @@ els.makingRender.addEventListener("click", () => setMode("export"));
 els.makingWatch.addEventListener("click", () => {
   if (compose() && mode !== "scenes") setMode("scenes");
   showDraft(true);
+  // Watching is from the top, the way someone will meet the film.
+  seek(0);
+  els.draftPlayer.play().catch(() => {});
 });
 
 // ---- The draft on the stage ----
@@ -3357,7 +3402,7 @@ els.makingWatch.addEventListener("click", () => {
 // same size, with its own controls. Notes sent while it shows say where in
 // the draft they are about.
 
-let draftShowing = false;
+// (draftShowing and transport() are declared with seek(), which uses them.)
 const draftUrl = () => state?.draft?.url ?? null;
 
 function renderStageSwitch() {
@@ -3370,6 +3415,7 @@ function renderStageSwitch() {
 
 function showDraft(show) {
   const url = draftUrl();
+  const was = draftShowing;
   draftShowing = Boolean(show && url);
   document.body.classList.toggle("draft-showing", draftShowing);
   els.draftPlayer.hidden = !draftShowing;
@@ -3382,9 +3428,14 @@ function showDraft(show) {
       els.draftPlayer.src = `${url}?v=${encodeURIComponent(at)}`;
     }
     if (!els.video.paused) els.video.pause();
+    // The draft opens at the moment the stage was showing...
+    if (!was) els.draftPlayer.currentTime = els.video.currentTime;
   } else {
     els.draftPlayer.pause();
+    // ...and the stage comes back at the moment the draft was showing.
+    if (was) els.video.currentTime = els.draftPlayer.currentTime;
   }
+  syncPlayButton();
   renderStageSwitch();
 }
 
