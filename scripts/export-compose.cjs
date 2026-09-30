@@ -16,14 +16,20 @@
 //
 //   npx electron --no-sandbox --no-zygote scripts/export-compose.cjs [--from=s] [--to=s] [--out=file] [--fresh] media/<project>
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, protocol } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const os = require("node:os");
 const { spawn, spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
+// Motion scenes draw in sandboxed frames that load only over this scheme.
+const motionProtocol = require(path.join(REPO_ROOT, "electron", "motion-protocol.cjs"));
+motionProtocol.registerMotionScheme(protocol);
+// Every page here may host a motion frame: sealed off the network (motion-protocol.cjs).
+app.on("web-contents-created", (_event, contents) => motionProtocol.sealMotionFrames(contents));
 
 // A voice quieter than this, with nothing levelling it, is worth warning
 // about at the render gate: platforms play at -14 to -16 LUFS.
@@ -51,6 +57,9 @@ const flag = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(n
 const dirArg = argv.filter((arg) => !arg.startsWith("--")).pop();
 const projectDir = path.resolve(REPO_ROOT, dirArg ?? "");
 const fresh = argv.includes("--fresh");
+// Keep each chunk's captured states and graph after encoding, for looking
+// at what a render was actually given.
+const keepWork = argv.includes("--keep-work");
 
 const sha1 = (text) => crypto.createHash("sha1").update(text).digest("hex").slice(0, 16);
 const fmt = (seconds) => `${Math.floor(seconds / 60)}:${(seconds - Math.floor(seconds / 60) * 60).toFixed(1).padStart(4, "0")}`;
@@ -66,6 +75,17 @@ function run(args, label) {
     child.stderr.on("data", (chunk) => { err += chunk; });
     child.once("error", reject);
     child.once("close", (code) => (code === 0 ? resolve() : reject(new Error(`${label} failed (${code}): ${err.slice(-800)}`))));
+  });
+}
+
+// ffmpeg at its default level, for a filter that reports what it measured.
+function ffmpegLog(args, label) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(FFMPEG, ["-hide_banner", "-nostats", ...args], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.once("error", reject);
+    child.once("close", (code) => (code === 0 ? resolve(err) : reject(new Error(`${label} failed (${code}): ${err.slice(-800)}`))));
   });
 }
 
@@ -145,14 +165,9 @@ async function main() {
   if (draft) say(`draft at ${Math.round(scale * 100)}%: ${stage.width}×${stage.height}`);
   const scenes = engine.resolveScenes(templates.refreshTemplates(composeFile.scenes ?? [], { format: formats.resolveFormat(meta).id }), words, { durationSeconds: duration });
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
-  for (const scene of scenes) {
-    if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
-    for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
-    if (scene.graphic?.kind === "custom") {
-      const base = assetUrl("assets/");
-      scene.graphic = { ...scene.graphic, html: scene.graphic.html.replaceAll("assets/", base), css: (scene.graphic.css ?? "").replaceAll("assets/", base) };
-    }
-  }
+  const projectState = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "project-state.mjs")).href);
+  projectState.attachSceneMedia(projectDir, scenes, assetUrl);
+  motionProtocol.handleMotionProtocol(protocol, { projectDir: () => projectDir });
   const theme = themes.resolveTheme(composeFile.theme ?? null);
   if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
   const accent = theme.accent;
@@ -166,10 +181,13 @@ async function main() {
     captions: engine.captionsBurnedIn(composeFile.captions) ? phrases : null,
     wordSpans: engine.resolveCaptions(words),
     stage,
+    // A draft is a smaller stage; a motion scene still draws at the film's
+    // own pixels and is scaled down, so its type sits where the film's will.
+    logicalStage: fullStage,
     theme,
     punchSpans,
   };
-  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
+  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds, stage });
 
   const from = Math.round(Math.max(Number(flag("from") ?? 0), 0) * FPS) / FPS;
   const to = Math.min(Number(flag("to") ?? duration), duration);
@@ -179,7 +197,7 @@ async function main() {
   // and its own chunk cache is pruned after it. A preview span is neither.
   const wholeOutput = flag("from") === undefined && flag("to") === undefined;
   label = wholeFilm ? "Rendering the film" : draft && wholeOutput ? "Rendering a draft" : "Rendering a preview span";
-  const chunkSeconds = Number(flag("chunk") ?? plan.DEFAULT_CHUNK_SECONDS);
+  const chunkSeconds = Number(flag("chunk") ?? plan.chunkSecondsFor(to - from, PARALLEL_ENCODES));
   const chunks = plan.chunkPlan(from, to, FPS, chunkSeconds);
   const total = chunks.reduce((n, c) => n + c.frames, 0);
 
@@ -188,7 +206,7 @@ async function main() {
   // Leftovers of an interrupted run are never resumable: their captures
   // belong to a chunk hash that may no longer exist.
   for (const entry of fs.readdirSync(cacheDir)) {
-    if (entry.endsWith(".work")) fs.rmSync(path.join(cacheDir, entry), { recursive: true, force: true });
+    if (entry.endsWith(".work") || entry.startsWith("sound-")) fs.rmSync(path.join(cacheDir, entry), { recursive: true, force: true });
   }
   const clipFiles = [...new Set(scenes.filter((s) => s.graphic?.kind === "clip").map((s) => s.graphic.src))];
   const media = { clean: stamp(cleanVideo), screen: hasScreen ? stamp(screenVideo) : null, clips: Object.fromEntries(clipFiles.map((src) => [src, stamp(path.join(projectDir, src))])) };
@@ -196,7 +214,7 @@ async function main() {
   // The painter's own files are part of every chunk's identity: a change to
   // a stylesheet or the overlay script is a new picture, and a cached chunk
   // from the old one must never be stitched in.
-  const painter = sha1(["overlays.js", "overlays.css", "fonts.css", "export.html", "export-page.js"]
+  const painter = sha1(["overlays.js", "overlays.css", "fonts.css", "export.html", "export-page.js", "motion/host.html", "motion/runtime.js"]
     .map((name) => fs.readFileSync(path.join(REPO_ROOT, "renderer", name), "utf8")).join("\n"));
   const context = { scenes, timeline, captions: compose.captions, wordSpans: compose.wordSpans, theme, stage, videoAspect, media, fps: FPS, punch: punchSpans, encoder: encoder.join(" "), painter };
   for (const chunk of chunks) {
@@ -207,8 +225,83 @@ async function main() {
   const todo = chunks.filter((chunk) => !chunk.ready);
   say(`${total} frames over ${fmt(from)}–${fmt(to)} of ${fmt(duration)} in ${chunks.length} chunks, ${chunks.length - todo.length} cached${hasScreen ? ", with a screen track" : ""}${punchSpans.length ? `, ${punchSpans.filter((s) => s.scale > 1).length} punch-ins` : ""}, ${encoder[1]}`);
 
+  // The sound: the clean cut's voice as it is, or the voice normalised with
+  // a music bed under it, ducked from the transcript (core/audio-engine.mjs).
+  // It lives only in the stitch, so a change to it never re-renders a chunk,
+  // and it is made alongside the picture rather than after it: the level is
+  // converged with audio-only passes (the graph measured on its own, no
+  // encode), then the track is encoded once while the chunks render, and the
+  // stitch copies it in. Re-encoding the whole AAC track up to three times
+  // after the picture, while the level settled, was most of a long film's
+  // stitch. Input 0 is a placeholder so the graph's inputs keep the numbers
+  // they were written with (1 = the voice).
+  const span = to - from;
+  const audioSeek = span < duration - 0.01 ? ["-ss", String(from), "-t", String(span)] : [];
+  const audioEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "audio-engine.mjs")).href);
+  const musicSrc = composeFile.audio?.music?.src;
+  const musicPath = musicSrc ? path.join(projectDir, musicSrc) : null;
+  if (musicSrc && !fs.existsSync(musicPath)) throw new Error(`the music bed ${musicSrc} is not in the project; import_audio puts it there`);
+  // The voice's measured loudness, from the bed's own setting when it was
+  // measured there, else from the clean render's measurement when it
+  // describes this clean cut — so a target set before the clean cut existed
+  // (a short's) still lands exactly.
+  const cleanAudio = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "out", "clean-audio.json"), "utf8")); } catch { return null; }
+  })();
+  const voiceLoudness = composeFile.audio?.voice?.measured
+    ?? (cleanAudio && cleanAudio.identity === cleanMap.identity && typeof cleanAudio.voiceLoudness === "number" ? cleanAudio.voiceLoudness : undefined);
+  const graphFor = (voiceTrimDb) => audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceLoudness, voiceTrimDb, clips: scenes, clipPath: (src) => path.join(projectDir, src), effectPath: (src) => path.join(projectDir, src) });
+  const soundInputs = (graph) => ["-f", "lavfi", "-t", "0.04", "-i", "color=c=black:s=16x16", ...audioSeek, "-i", cleanVideo, ...graph.inputs];
+  const loudnessOf = async (graph) => {
+    const file = path.join(cacheDir, `sound-measure-${sha1(graph.filter)}.txt`);
+    fs.writeFileSync(file, `${graph.filter.trimEnd()};\n${graph.map}ebur128=framelog=quiet[measured]\n`);
+    try {
+      const log = await ffmpegLog([...soundInputs(graph), "-/filter_complex", file, "-map", "[measured]", "-f", "null", "-"], "measuring the sound");
+      const match = log.match(/\bI:\s+(-?\d+(?:\.\d+)?)\s+LUFS/);
+      return match ? Number(match[1]) : null;
+    } finally { fs.rmSync(file, { force: true }); }
+  };
+  const note = (text) => console.log(`[${new Date().toISOString()}] ${text}`);
+  const makeSound = async () => {
+    let sound = graphFor(0);
+    if (!sound) return { track: null };
+    const parts = [sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"];
+    if (sound.nats?.length) parts.push(`${sound.nats.length} clip(s) with their own sound under it`);
+    if (sound.hits?.length) parts.push(`${sound.hits.length} sound effect(s)`);
+    if (composeFile.audio?.voice?.loudness != null) parts.push(`voice to ${composeFile.audio.voice.loudness} LUFS`);
+    note(`sound: ${parts.join(", ")}`);
+    // The ceiling takes a little off a voice that needed a lot of gain:
+    // measure what the graph makes and trim the difference in, a few times
+    // at most, before anything is encoded.
+    let level = null;
+    if (sound.voiceTarget !== null && sound.voiceTarget !== undefined && wholeOutput) {
+      let trim = 0;
+      for (let pass = 0; pass < 4; pass += 1) {
+        level = await loudnessOf(sound);
+        if (typeof level !== "number" || Math.abs(level - sound.voiceTarget) <= 0.3 || pass === 3) break;
+        trim += sound.voiceTarget - level;
+        note(`voice measured ${level} LUFS against ${sound.voiceTarget}; the gain ${trim >= 0 ? "up" : "down"} ${Math.abs(trim).toFixed(1)} dB`);
+        sound = graphFor(trim);
+      }
+      if (typeof level === "number") parts.push(`measured ${level} LUFS`);
+    }
+    const soundFile = path.join(cacheDir, `sound-${sha1(sound.filter)}.txt`);
+    const track = path.join(cacheDir, `sound-${sha1(sound.filter + JSON.stringify([sound.inputs, audioSeek]))}.m4a`);
+    fs.writeFileSync(soundFile, sound.filter);
+    try {
+      await run([...soundInputs(sound), "-/filter_complex", soundFile, "-map", sound.map, "-c:a", "aac", "-b:a", "192k", "-vn", track], "sound");
+    } finally { fs.rmSync(soundFile, { force: true }); }
+    note(`sound encoded${typeof level === "number" ? `, voice at ${level} LUFS` : ""}`);
+    return { track, summary: `sound: ${parts.join(", ")}` };
+  };
+  // Settled, never rejected: a failure is thrown at the stitch, where the
+  // render would have met it anyway, and not as an unhandled rejection in
+  // the middle of a capture.
+  const soundJob = makeSound().then((value) => value, (error) => ({ error }));
+
   const assetsDir = path.join(cacheDir, `assets-${sha1(JSON.stringify({ theme, stage, dims, v: plan.RENDERER_VERSION }))}`);
   const encodes = [];
+  const motionProblems = new Set();
   if (todo.length > 0) {
     // Capture runs in several browsers at once, one chunk each: the
     // captures are the critical path, and each renderer is its own
@@ -230,6 +323,9 @@ async function main() {
       clearTimeout(watchdog);
       const contents = window.webContents;
       if (!contents.isPainting()) contents.startPainting();
+      // Every capture waits for two painted frames; at the default 60 Hz
+      // that wait was most of a capture. The pixels are the same.
+      contents.setFrameRate(240);
       contents.debugger.attach("1.3");
       await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)}, { media: false })`);
       return window;
@@ -274,6 +370,7 @@ async function main() {
     const captureSlots = pool(windows);
     const encodeSlots = pool(Array.from({ length: PARALLEL_ENCODES }, (_, i) => i));
     let encoded = 0;
+    let liveEncodes = 0;
     let failure = null;
 
     const captureChunk = async (contents, chunk, tag, work) => {
@@ -304,13 +401,21 @@ async function main() {
           }
           states[layer].push({ at: i / FPS, file });
         }
+        // Every state on the film's own clock. The image demuxer reads a PNG
+        // on a 1/25 s grid unless told otherwise, and states a film frame
+        // apart (every frame of a motion scene or a build) then share a
+        // timestamp: ffmpeg drops or pushes them, and a long motion scene
+        // left the layer seconds out of step — the cover that vanished two
+        // seconds early in the first made film. So each file is read at the
+        // film's rate, and durations carry enough digits that thousands of
+        // them do not add up to a frame.
         const list = ["ffconcat version 1.0"];
         states[layer].forEach((state, k) => {
           const next = states[layer][k + 1];
           const durationSeconds = (next ? next.at : chunk.frames / FPS) - state.at;
-          list.push(`file '${state.file}'`, `duration ${durationSeconds.toFixed(4)}`);
+          list.push(`file '${state.file}'`, `option framerate ${FPS}`, `duration ${durationSeconds.toFixed(6)}`);
         });
-        list.push(`file '${states[layer].at(-1).file}'`);
+        list.push(`file '${states[layer].at(-1).file}'`, `option framerate ${FPS}`);
         fs.writeFileSync(path.join(work, `${layer}.txt`), list.join("\n") + "\n");
       }
 
@@ -330,6 +435,16 @@ async function main() {
         if (!clipScenes.find((x) => x.start === c.start && x.end === c.end && x.src === c.src)) clipScenes.push({ start: c.start, end: c.end, rect: c.rect, src: c.src, in: c.in, fit: c.fit, edgeIn: c.edgeIn, edgeOut: c.edgeOut });
       }
       const screens = [...(hasScreen ? plan.screenPlacements(screenScenes, chunk) : []), ...plan.clipPlacements(clipScenes, chunk)];
+      // What the motion scenes said while this chunk was captured. One that
+      // stopped answering stops the render: its frames would be wrong, and
+      // the film would wait on it at every frame. An error one threw goes in
+      // the log for whoever reads it (wait_render hands the tail over).
+      const problems = await contents.executeJavaScript("__motionErrors()").catch(() => ({}));
+      for (const [src, errors] of Object.entries(problems ?? {})) {
+        const stuck = errors.find((error) => /did not draw within/.test(error));
+        if (stuck) throw new Error(`${stuck}, so the render stops rather than film it wrong. preview_motion ${path.basename(src, ".html")} shows what it does; a render(t) that never returns is the usual cause`);
+        for (const error of errors) motionProblems.add(`${src}: ${error}`);
+      }
       const captured = states.under.length + states.over.length;
       say(`${tag}: ${captured} states captured in ${((Date.now() - captureStart) / 1000).toFixed(1)}s (under ${states.under.length}, over ${states.over.length}, screens ${screens.length}); ${encoded} of ${todo.length} encoded`);
       return screens;
@@ -342,10 +457,11 @@ async function main() {
       const D = String(chunk.frames / FPS);
       const seek = chunk.start > 0 ? ["-ss", String(chunk.start)] : [];
       const args = [
-        "-loop", "1", "-framerate", String(FPS), "-t", D, "-i", field,
-        "-loop", "1", "-framerate", String(FPS), "-t", D, "-i", glow,
+        // Stills are read once; the graph repeats them (render-plan ONCE).
+        "-framerate", String(FPS), "-i", field,
+        "-framerate", String(FPS), "-i", glow,
         ...seek, "-t", D, "-i", cleanVideo,
-        "-loop", "1", "-framerate", String(FPS), "-t", D, "-i", headMask,
+        "-framerate", String(FPS), "-i", headMask,
         "-f", "concat", "-safe", "0", "-i", path.join(work, "under.txt"),
         "-f", "concat", "-safe", "0", "-i", path.join(work, "over.txt"),
       ];
@@ -354,18 +470,21 @@ async function main() {
         // own offset, for as long as its card is on.
         if (screen.src) args.push("-ss", String(screen.offset), "-t", String(Math.max(0.1, screen.end - Math.max(0, screen.start))), "-i", path.join(projectDir, screen.src));
         else args.push(...seek, "-t", D, "-i", screenVideo);
-        args.push("-loop", "1", "-framerate", String(FPS), "-t", D, "-i", screenMask(screen.rect.w, screen.rect.h));
+        args.push("-framerate", String(FPS), "-i", screenMask(screen.rect.w, screen.rect.h));
       }
       args.push(
-        "-filter_complex_threads", "4", "-/filter_complex", graphFile,
+        // The filter graph is the encode's bottleneck: give it the cores the
+        // other running encodes are not using.
+        "-filter_complex_threads", String(Math.max(4, Math.floor(os.cpus().length / Math.max(1, liveEncodes)))), "-/filter_complex", graphFile,
         "-map", "[out]", "-r", String(FPS), "-frames:v", String(chunk.frames),
         ...encoder,
         "-an", path.join(work, "chunk.mp4"),
       );
       const encodeStart = Date.now();
-      await run(args, tag);
+      liveEncodes += 1;
+      try { await run(args, tag); } finally { liveEncodes -= 1; }
       fs.renameSync(path.join(work, "chunk.mp4"), chunk.cached);
-      fs.rmSync(work, { recursive: true, force: true });
+      if (!keepWork) fs.rmSync(work, { recursive: true, force: true });
       encoded += 1;
       say(`${tag} encoded in ${((Date.now() - encodeStart) / 1000).toFixed(1)}s; ${encoded} of ${todo.length} encoded`);
     };
@@ -402,74 +521,33 @@ async function main() {
     if (failure) throw failure;
   }
 
+  if (motionProblems.size) say(`WARNING: motion scenes reported errors while they were filmed — ${[...motionProblems].slice(0, 6).join("; ")}${motionProblems.size > 6 ? ` (and ${motionProblems.size - 6} more)` : ""}. preview_motion shows each scene with its errors.`);
+
   // The stitch: every chunk copied in order, the clean cut's audio alongside.
   say(`stitching ${chunks.length} chunks`);
   const list = ["ffconcat version 1.0", ...chunks.map((chunk) => `file '${chunk.cached}'`)];
   const listFile = path.join(cacheDir, `stitch-${sha1(list.join("\n"))}.txt`);
   fs.writeFileSync(listFile, list.join("\n") + "\n");
-  const span = to - from;
-  const audioSeek = span < duration - 0.01 ? ["-ss", String(from), "-t", String(span)] : [];
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const partial = outPath.replace(/\.mp4$/, ".partial.mp4");
-  // The sound: the clean cut's voice as it is, or the voice normalised with
-  // a music bed under it, ducked from the transcript (core/audio-engine.mjs).
-  // Audio lives only in the stitch, so a change to it never re-renders a
-  // chunk.
-  const audioEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "audio-engine.mjs")).href);
-  const musicSrc = composeFile.audio?.music?.src;
-  const musicPath = musicSrc ? path.join(projectDir, musicSrc) : null;
-  if (musicSrc && !fs.existsSync(musicPath)) throw new Error(`the music bed ${musicSrc} is not in the project; import_audio puts it there`);
-  // The voice's measured loudness, from the bed's own setting when it was
-  // measured there, else from the clean render's measurement when it
-  // describes this clean cut — so a target set before the clean cut existed
-  // (a short's) still lands exactly.
-  const cleanAudio = (() => {
-    try { return JSON.parse(fs.readFileSync(path.join(projectDir, "out", "clean-audio.json"), "utf8")); } catch { return null; }
-  })();
-  const voiceLoudness = composeFile.audio?.voice?.measured
-    ?? (cleanAudio && cleanAudio.identity === cleanMap.identity && typeof cleanAudio.voiceLoudness === "number" ? cleanAudio.voiceLoudness : undefined);
-  const stitch = async (voiceTrimDb) => {
-    const sound = audioEngine.audioGraph({ audio: composeFile.audio, words, from, span, musicPath, voiceLoudness, voiceTrimDb, clips: scenes, clipPath: (src) => path.join(projectDir, src), effectPath: (src) => path.join(projectDir, src) });
-    const soundFile = path.join(cacheDir, `sound-${sha1(sound?.filter ?? "")}.txt`);
-    if (sound) fs.writeFileSync(soundFile, sound.filter);
-    await run([
-      "-f", "concat", "-safe", "0", "-i", listFile,
-      ...audioSeek, "-i", cleanVideo,
-      ...(sound ? sound.inputs : []),
-      ...(sound ? ["-/filter_complex", soundFile, "-map", "0:v", "-map", sound.map, "-c:a", "aac", "-b:a", "192k"] : ["-map", "0:v", "-map", "1:a", "-c:a", "copy"]),
-      "-c:v", "copy", "-movflags", "+faststart", "-shortest",
-      partial,
-    ], "stitch");
-    if (sound) fs.rmSync(soundFile, { force: true });
-    return sound;
-  };
-  const sound = await stitch(0);
-  if (sound) say(`sound: ${sound.windows ? `music bed under the voice, up in ${sound.windows.length} pause(s)` : "voice only"}${sound.nats?.length ? `, ${sound.nats.length} clip(s) with their own sound under it` : ""}${sound.hits?.length ? `, ${sound.hits.length} sound effect(s)` : ""}${composeFile.audio?.voice?.loudness != null ? `, voice to ${composeFile.audio.voice.loudness} LUFS` : ""}`);
+  const made = await soundJob;
+  if (made.error) throw made.error;
+  if (made.track) say(made.summary);
   // A film nobody can hear is not a film. The clean render measured the
   // voice; when nothing is normalising it and it sits well under what
   // platforms play at, say so here, where the person is watching the render
   // — status says it too, but nobody has to read status to press render.
   if (wholeOutput && composeFile.audio?.voice?.loudness == null) {
-    let measured = null;
-    try {
-      measured = JSON.parse(fs.readFileSync(path.join(projectDir, "out", "clean-audio.json"), "utf8")).voiceLoudness;
-    } catch { measured = null; }
+    const measured = cleanAudio?.voiceLoudness;
     if (typeof measured === "number" && measured < QUIET_VOICE_LUFS) {
       say(`WARNING: the voice measures ${measured} LUFS and nothing is levelling it; platforms play at -14 to -16, so this film will be far too quiet. set_audio voice_loudness -16 (a film) or -14 (a short) and render again — the sound is only the stitch, so it takes seconds.`);
     }
   }
-  // The ceiling takes a little off a voice that needed a lot of gain. The
-  // stitch is seconds, so measure what came out and go once more with the
-  // difference trimmed in.
-  if (sound?.voiceTarget !== null && sound?.voiceTarget !== undefined && wholeOutput) {
-    let trim = 0;
-    for (let pass = 0; pass < 3; pass += 1) {
-      const got = pipeline.measureLoudness(partial);
-      if (typeof got !== "number" || Math.abs(got - sound.voiceTarget) <= 0.3) { if (pass) say(`voice now ${got} LUFS`); break; }
-      trim += sound.voiceTarget - got;
-      say(`voice measured ${got} LUFS against ${sound.voiceTarget}; stitching again with the gain ${trim >= 0 ? "up" : "down"} ${Math.abs(trim).toFixed(1)} dB`);
-      await stitch(trim);
-    }
+  if (made.track) {
+    await run(["-f", "concat", "-safe", "0", "-i", listFile, "-i", made.track, "-map", "0:v", "-map", "1:a", "-c", "copy", "-movflags", "+faststart", "-shortest", partial], "stitch");
+    fs.rmSync(made.track, { force: true });
+  } else {
+    await run(["-f", "concat", "-safe", "0", "-i", listFile, ...audioSeek, "-i", cleanVideo, "-map", "0:v", "-map", "1:a", "-c:a", "copy", "-c:v", "copy", "-movflags", "+faststart", "-shortest", partial], "stitch");
   }
   fs.renameSync(partial, outPath);
   fs.rmSync(listFile, { force: true });

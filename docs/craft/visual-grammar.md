@@ -8,9 +8,9 @@ visible too. Landscape and vertical differ in what fits, so both are given.
 | The speaker… | First choice | Also | Layout (wide) | Layout (tall) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | says a number | `stat` | `big-number`, `trio`, `progress` | side | side | One number, one label. The context line goes on `big-number`. |
-| gives several numbers | `chart` | `trio`, `split` | side / full | band / cutaway | Four bars at most in a tall frame; three numbers read better than six bars anywhere. |
+| gives several numbers | `chart` | `trio`, `share` | side / full | band / cutaway | Four bars at most in a tall frame; three numbers read better than six bars anywhere. |
 | lists things | `list` | `steps`, `ranking`, `teaser` | side | side | Five items in a wide frame, three in a tall one. `ranking` when the order is the point. |
-| compares two things | `compare` | `before-after`, `scale`, `split` | side / full | cutaway | `compare` is two lists; `before-after` is two states; `scale` is a judgment. |
+| compares two things | `compare` | `before-after`, `scale`, `share` | side / full | cutaway | `compare` is two lists; `before-after` is two states; `scale` is a judgment. |
 | describes a change | `before-after` | `progress`, `timeline` | full | cutaway | The sweep is the change. |
 | explains how something works | `flow` | `steps`, `custom` diagram | cutaway | cutaway | Let it build with the explanation: split one flow into two scenes if the speaker takes their time. |
 | places things in time | `timeline` | `headline`, `section` | cutaway | cutaway | Three to six moments. A single date is a `headline` or a callout, not a timeline. |
@@ -53,7 +53,7 @@ Full-stage (pair with `cutaway` or `full`): `hook`, `word`, `trio`, `timeline`, 
 platform's elements).
 
 Column (sit in `side` or `pip` beside the head; in `full` or a `cutaway` they are blown up to the stage, which rarely reads well): `big-number`,
-`definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `split`, `question`. In a tall
+`definition`, `keys`, `progress`, `alert`, `receipt`, `post`, `share`, `question`. In a tall
 film "beside the head" is the strip under it, about a quarter as tall as it is wide, and a
 column template sizes itself for that strip; a `question` there is a line, not a poster.
 

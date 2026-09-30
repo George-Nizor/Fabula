@@ -32,6 +32,15 @@ test("model IDs remain literal arguments; provider effort mappings and default i
   assert.equal(composing.persona, "editor");
   assert.match(composing.args.at(-1), /^Today you are working as a film editor/);
   assert.match(composing.args.at(-1), /adopt_persona with persona "editor"/);
+  // A task's session is told to work, a bare one to wait; never both, or
+  // Make it into a video stops to ask the question its brief answered.
+  const making = buildLaunch({ provider: "claude", model: "", effort: "", task: "make" }).args.at(-1);
+  assert.match(making, /pressed Make it into a video/);
+  assert.doesNotMatch(making, /wait for my instruction|Do not render until I ask/);
+  assert.doesNotMatch(composing.args.at(-1), /wait for my instruction/);
+  const bare = buildLaunch({ provider: "claude", model: "", effort: "" }).args.at(-1);
+  assert.match(bare, /wait for my instruction here/);
+  assert.match(bare, /Do not render until I ask/);
   const farming = buildLaunch({ provider: "codex", model: "", effort: "", persona: "farmer" });
   assert.equal(farming.persona, "farmer");
   assert.ok(farming.args.includes('mcp_servers.fabula.env={FABULA_PERSONA="farmer"}'), "codex's server learns the persona");

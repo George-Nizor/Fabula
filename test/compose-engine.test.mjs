@@ -390,3 +390,25 @@ test("a card hangs through a seam only inside its own layout: a cutaway's card d
   ], words, { durationSeconds: 15 });
   assert.equal(inside[1].end, inside[2].start);
 });
+
+test("each motion document is its own kind of card in the variety read", async () => {
+  const { describeVariety } = await import("../core/compose-engine.mjs");
+  const card = (src, start) => ({ type: "graphic", start, end: start + 5, graphic: { kind: "motion", src } });
+  const different = describeVariety([card("motion/a.html", 0), card("motion/b.html", 10), card("motion/c.html", 20), card("motion/d.html", 30)], 60);
+  assert.ok(!different.some((note) => /cards in a row|of 4 cards are/.test(note)), different.join(" | "));
+  const same = describeVariety([card("motion/a.html", 0), card("motion/a.html", 10), card("motion/a.html", 20)], 60);
+  assert.ok(same.some((note) => /3 motion a cards in a row/.test(note)), same.join(" | "));
+});
+
+test("a return to the head too short to be shown is reported, a blip is not", async () => {
+  const { bridgedReturns } = await import("../core/compose-engine.mjs");
+  const stage = (layout, start, end) => ({ type: "stage", layout, start, end });
+  const scenes = [stage("cutaway", 10, 20), stage("full", 22.2, 30), stage("side", 31.7, 40), stage("pip", 45, 50)];
+  const gaps = bridgedReturns(scenes, 60);
+  assert.equal(gaps.length, 1, JSON.stringify(gaps));
+  assert.deepEqual([gaps[0].start, gaps[0].end, gaps[0].seconds, gaps[0].layout], [20, 22.2, 2.2, "cutaway"]);
+  // A short stage scene inside a long one does not end the long one: the
+  // gap runs from the side's end, not the pip's.
+  const nested = bridgedReturns([stage("side", 0, 10), stage("pip", 2, 5), stage("cutaway", 12.5, 20)], 60);
+  assert.deepEqual(nested.map((gap) => [gap.start, gap.end, gap.layout]), [[10, 12.5, "side"]]);
+});

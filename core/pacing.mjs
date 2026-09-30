@@ -33,13 +33,13 @@ export const PACE = {
   vertical: { firstVisual: 1.5, stillStretch: 6 },
 };
 
-export function describePacing(scenes, { duration = 0, format = "landscape", shortForm = false, captions = "none", transition, transitionSeconds } = {}) {
+export function describePacing(scenes, { duration = 0, format = "landscape", shortForm = false, captions = "none", transition, transitionSeconds, stage } = {}) {
   const notes = [];
   const shape = format === "vertical" ? "vertical" : "landscape";
   const budget = WORD_BUDGET[shape];
   const pace = shortForm ? PACE.vertical : PACE[shape];
   const visuals = scenes.filter((scene) => scene.type !== "stage").sort((a, b) => a.start - b.start);
-  const timeline = resolveLayoutTimeline(scenes, duration, { transition, transitionSeconds });
+  const timeline = resolveLayoutTimeline(scenes, duration, { transition, transitionSeconds, stage });
 
   // Every instant the picture changes: a visual arrives or leaves, or the
   // layout moves. What lies between two of them is a still.
@@ -54,6 +54,12 @@ export function describePacing(scenes, { duration = 0, format = "landscape", sho
       const shares = scene.graphic.template === "before-after" ? [0.5] : revealShares(reveals);
       for (const share of shares) changes.add(scene.start + share * (scene.end - scene.start));
     }
+  }
+  // A motion scene moves the whole time it is on: it is never a still,
+  // however long it holds. A tick every two seconds says so.
+  for (const scene of visuals) {
+    if (scene.graphic?.kind !== "motion") continue;
+    for (let t = scene.start + 2; t < scene.end; t += 2) changes.add(t);
   }
   for (const segment of timeline) changes.add(segment.start);
   const ticks = [...changes].filter((t) => t >= 0 && t <= duration).sort((a, b) => a - b);

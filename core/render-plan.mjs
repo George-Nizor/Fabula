@@ -8,8 +8,15 @@ import { layoutRects, layoutAt, transitionAt, headDrawRect, MAX_TRANSITION_SECON
 import { punchScaleAt } from "./shot-engine.mjs";
 import { gradeFilters } from "./themes.mjs";
 
-export const RENDERER_VERSION = "layered-3"; // 2: punch-ins placed here; 3: themed, time-driven painter
+export const RENDERER_VERSION = "layered-4"; // 2: punch-ins placed here; 3: themed, time-driven painter; 4: plates on the film's clock, a deterministic vignette
 export const DEFAULT_CHUNK_SECONDS = 120;
+// How long a chunk should be for a span: short enough that every capture
+// window and every encoder has work (a film shorter than one chunk used to
+// render in one window and one ffmpeg), long enough that a chunk's fixed
+// costs stay small. A tweak re-renders at most this much.
+export function chunkSecondsFor(span, encoders = 4) {
+  return Math.min(Math.max(Math.ceil(span / (2 * encoders)), 6), 30);
+}
 
 const num = (v) => {
   const s = Number(v.toFixed(3)).toString();
@@ -261,6 +268,11 @@ export function chunkIdentity(chunk, context) {
   // and a chunk keeps its cached pixels when the shot after it moved.
   const touching = (item) => overlaps(item.start, item.end, chunk.start - lead, chunk.end + lead);
   const kineticInside = scenes.some((scene) => scene.type === "kinetic" && within(scene));
+  // What moves to the words: kinetic type reads the spans inside the chunk,
+  // and a motion scene reads every word spoken over it (fabula.words) — a
+  // word re-timed anywhere in the scene can move a frame in this chunk.
+  const motionInside = scenes.filter((scene) => scene.graphic?.kind === "motion" && within(scene));
+  const heard = (span) => (kineticInside && within(span)) || motionInside.some((scene) => span.start >= scene.start - 0.05 && span.start < scene.end);
   return JSON.stringify({
     renderer: RENDERER_VERSION,
     chunk: [chunk.start, chunk.end],
@@ -269,7 +281,7 @@ export function chunkIdentity(chunk, context) {
     timeline: timeline.filter(touching).map((s) => [s.start, s.end, s.layout, s.corner ?? null, s.transition ?? null, s.transitionSeconds ?? null]),
     scenes: scenes.filter(within),
     captions: captions ? captions.filter(within) : null,
-    wordSpans: kineticInside ? wordSpans.filter(within) : null,
+    wordSpans: kineticInside || motionInside.length ? wordSpans.filter(heard) : null,
     punch: punchPlacements(punch, chunk).map((s) => [s.start, s.end, s.scale]),
     media,
     encoder: encoder ?? null, // chunks are stitched by copy; one encoder per film
@@ -312,6 +324,9 @@ export function clipPlacements(clipScenes, chunk) {
     });
 }
 
+// A still input read once and repeated for as long as the graph wants it.
+const ONCE = "loop=loop=-1:size=1:start=0,";
+
 // One chunk's ffmpeg graph. Inputs, in order: 0 field, 1 glow, 2 head track,
 // 3 head mask (at the track's own size), 4 under states, 5 over states, then
 // a screen track and mask pair per screen placement. The caller only adds
@@ -350,7 +365,7 @@ function maskLines(head, canvas, fade) {
   const place = (base, tag, enable) =>
     `[${base}][${tag}]overlay=x='${win.x}':y='${win.y}':eval=frame:format=auto${enable ? `:enable='${enable}'` : ""}`;
   const lines = [];
-  if (!head.cropped || croppedAt !== null) lines.push(`[3:v]format=rgba,scale=w='${win.w}':h='${win.h}':eval=frame:flags=bicubic[msz]`);
+  if (!head.cropped || croppedAt !== null) lines.push(`[3:v]${ONCE}format=rgba,scale=w='${win.w}':h='${win.h}':eval=frame:flags=bicubic[msz]`);
   if (head.cropped) lines.push(`color=c=white:${canvas},format=rgba,scale=w='${win.w}':h='${win.h}':eval=frame[msq]`);
   lines.push(`color=c=black:${canvas},format=rgba[mbase]`);
   if (croppedAt === null) {
@@ -378,8 +393,10 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
   const punched = punchPlacements(punch, chunk);
   const fade = head.alpha === "1" ? "" : `,eq=brightness='(${head.alpha})-1':eval=frame`;
   const lines = [];
-  lines.push("[0:v]format=rgba[base0]");
-  lines.push("[1:v]format=rgba[glow]");
+  // The field, the glow and the masks are single pictures: decoded once and
+  // repeated by the graph, rather than decoded again for every frame.
+  lines.push(`[0:v]${ONCE}format=rgba[base0]`);
+  lines.push(`[1:v]${ONCE}format=rgba[glow]`);
   lines.push(`[base0][glow]overlay=x='${glow.x}':y='${glow.y}':eval=frame:format=auto[b1]`);
   let base = "b1";
   screens.forEach((screen, k) => {
@@ -393,10 +410,10 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
       ? `scale=${rect.w}:${rect.h}:force_original_aspect_ratio=increase:flags=bicubic,crop=${rect.w}:${rect.h}`
       : `scale=${rect.w}:${rect.h}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${rect.w}:${rect.h}:-1:-1:color=0x0b0e12`;
     lines.push(`[${video}:v]${fill},format=rgba[sc${k}]`);
-    lines.push(`[${mask}:v]format=gray[sm${k}]`);
+    lines.push(`[${mask}:v]${ONCE}format=gray[sm${k}]`);
     // A scene already in progress when the chunk starts has faded in
     // already; fading it in again at the boundary would replay the fade
-    // every two minutes of a long screen scene.
+    // at every chunk boundary of a long screen scene.
     const fadeIn = screen.start >= 0 && screen.fadeIn !== false ? `fade=t=in:st=${num(screen.start)}:d=${num(screen.fade)}:alpha=1,` : "";
     const fadeOut = screen.fadeOut !== false ? `fade=t=out:st=${num(fadeOutAt)}:d=${num(screen.fade)}:alpha=1` : "null";
     // A clip whose scene begins inside the chunk waits, transparent, until
@@ -424,7 +441,7 @@ export function chunkGraph({ chunk, timeline, videoAspect, stage, glowSize, scre
     // splitting after the scale to re-attach the alpha was tried and tore,
     // the two branches landing a frame apart while a glide changed the size.
     lines.push(`[2:v]${graded.pre}${graded.post ? `${graded.post},` : ""}format=rgba[h0]`);
-    lines.push(`[3:v]format=gray${fade}[hm]`);
+    lines.push(`[3:v]${ONCE}format=gray${fade}[hm]`);
     lines.push(`[h0][hm]alphamerge,scale=w='${head.w}':h='${head.h}':eval=frame:flags=bicubic[head]`);
     lines.push(`[bu][head]overlay=x='${head.x}':y='${head.y}':eval=frame:format=auto[bh]`);
   } else {

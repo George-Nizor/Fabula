@@ -616,7 +616,7 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
     },
   },
 
-  split: {
+  share: {
     label: "Share bar",
     about: "One bar divided into two to five parts by their share, with a legend. Where the whole goes: time, money, attention.",
     when: "Parts of a whole. A chart compares amounts; this shows a division.",
@@ -628,9 +628,9 @@ ${p.shade > 0 ? `.t-line, .t-where { color: #ffffff; text-shadow: 0 0.3cqh 1.5cq
       const total = p.items.reduce((sum, it) => sum + Math.max(it.value, 0), 0) || 1;
       const shares = p.items.map((it) => Math.max(it.value, 0) / total);
       const tones = [ACCENT, ACCENT2, `color-mix(in srgb, ${ACCENT} 55%, ${TEXT})`, MUTED, `color-mix(in srgb, ${TEXT} 35%, ${INK})`];
-      const html = `<div class="t t-split">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-bar">${p.items.map((it, i) => `<div class="t-seg" style="--s:${shares[i].toFixed(4)}; --c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.05, each: 0.12, dur: 0.35 })}"></div>`).join("")}</div><div class="t-legend">${p.items.map((it, i) => `<div class="t-key" style="--c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.25, each: 0.12, dur: 0.3 })}"><span class="t-swatch"></span><span>${esc(it.label)}</span><span class="t-pct">${Math.round(shares[i] * 100)}%</span></div>`).join("")}</div></div>`;
+      const html = `<div class="t t-share">${p.title ? `<div class="t-kicker">${esc(p.title)}</div>` : ""}<div class="t-bar">${p.items.map((it, i) => `<div class="t-seg" style="--s:${shares[i].toFixed(4)}; --c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.05, each: 0.12, dur: 0.35 })}"></div>`).join("")}</div><div class="t-legend">${p.items.map((it, i) => `<div class="t-key" style="--c:${tones[i]}; --k:${arrive(p, i, p.items.length, { from: 0.25, each: 0.12, dur: 0.3 })}"><span class="t-swatch"></span><span>${esc(it.label)}</span><span class="t-pct">${Math.round(shares[i] * 100)}%</span></div>`).join("")}</div></div>`;
       const css = `${base(portrait, strip)}
-.t-split { gap: 2.4cqh; }
+.t-share { gap: 2.4cqh; }
 .t-bar { display: flex; height: ${strip ? "8cqi" : `min(${portrait ? "14.4" : "9"}cqh, 10cqi)`}; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, ${TEXT} 10%, transparent); }
 .t-seg { flex: calc(var(--s) * var(--k)) 0 0; background: var(--c); }
 .t-legend { display: flex; flex-wrap: wrap; gap: 1cqh 2.4cqi; }
@@ -769,6 +769,14 @@ TEMPLATES.thumbnail = {
 };
 
 export const TEMPLATE_IDS = Object.keys(TEMPLATES);
+// Names a template used to have. The share bar was "split" until split
+// became a layout (split screen) and a treatment's head state: one word for
+// two things invites the wrong one. A plan written with the old name still
+// renders, and is written back under the new one.
+const TEMPLATE_ALIASES = { split: "share" };
+// Every name a plan may carry: the ids, and the old names a stored plan
+// read back and written again still holds.
+export const TEMPLATE_NAMES = [...TEMPLATE_IDS, ...Object.keys(TEMPLATE_ALIASES)];
 // The templates whose items can be spread over the span (`pace: "span"`).
 export const PACED_TEMPLATES = TEMPLATE_IDS.filter((id) => TEMPLATES[id].fields.pace);
 // How many things a rendered template reveals, for the pacing read.
@@ -807,9 +815,10 @@ function describeField(spec) {
 
 // The custom graphic a template becomes. `format` is the project's delivery
 // shape; a template lays itself out differently in a tall frame.
-export function renderTemplate(id, params = {}, { format = "landscape", full } = {}) {
+export function renderTemplate(name, params = {}, { format = "landscape", full } = {}) {
+  const id = TEMPLATE_ALIASES[name] ?? name;
   const template = TEMPLATES[id];
-  if (!template) throw new Error(`unknown template "${id}"; describe_templates lists ${TEMPLATE_IDS.join(", ")}`);
+  if (!template) throw new Error(`unknown template "${name}"; describe_templates lists ${TEMPLATE_IDS.join(", ")}`);
   const checked = checkParams(template, params ?? {}, id);
   const portrait = format === "vertical";
   // A column card in a tall film is a strip under the head, not a column.

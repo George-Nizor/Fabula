@@ -6,9 +6,18 @@
 // questions and get the same rectangles and the same opacity.
 
 export const DEFAULT_STAGE = { width: 1920, height: 1080 };
-export const LAYOUTS = new Set(["focus", "pip", "side", "band", "full", "cutaway"]);
-export const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
+export const LAYOUTS = new Set(["focus", "pip", "side", "split", "band", "full", "cutaway"]);
+export const FULL_STAGE_KINDS = new Set(["cover", "section", "custom", "motion"]);
 export const PIP_CORNERS = new Set(["br", "bl", "tr", "tl"]);
+
+// A corner names where the head sits. On pip and full it is the corner of
+// the frame; on side and split only its letters matter: r puts the head on
+// the right (left by default), and in a tall frame b puts a split's head in
+// the bottom half (top by default). One field, so a plan written for one
+// layout reads sensibly under another and nothing new has to be carried
+// through the timeline, the render's identity or the inspector.
+const headOnRight = (corner) => typeof corner === "string" && corner.endsWith("r");
+const headAtBottom = (corner) => typeof corner === "string" && corner.startsWith("b");
 
 // ---- How the picture changes at a layout boundary ----
 //
@@ -71,7 +80,26 @@ export function transitionSecondsOf(value) {
   return Math.min(Math.max(value, MIN_TRANSITION_SECONDS), MAX_TRANSITION_SECONDS);
 }
 
-const sameLayout = (a, b) => a.layout === b.layout && (a.corner ?? null) === (b.corner ?? null);
+// Two placed layouts are one shot when they put the head in the same place.
+// A corner matters only where it moves the head: every corner for pip and
+// full; left or right for a wide side or split; top or bottom for a tall
+// split; not at all for a tall side, band, focus or cutaway. Comparing the
+// raw letters faded the head out and back between a split br and a split
+// tr — the same rectangle. Without the frame's shape (a read that draws
+// nothing) both halves of the corner count, which can only keep a boundary
+// that was not needed, never lose one that was.
+function placementKey(segment, tall) {
+  const corner = segment.corner ?? null;
+  if (segment.layout === "pip" || segment.layout === "full") return corner ?? "br";
+  if (segment.layout === "side") return tall === true ? "" : String(headOnRight(corner));
+  if (segment.layout === "split") {
+    if (tall === true) return String(headAtBottom(corner));
+    if (tall === false) return String(headOnRight(corner));
+    return `${headOnRight(corner)}|${headAtBottom(corner)}`;
+  }
+  return "";
+}
+const sameLayout = (a, b, tall) => a.layout === b.layout && placementKey(a, tall) === placementKey(b, tall);
 
 // Stage scenes -> a gapless timeline over [0, duration]; anywhere no layout
 // is declared, the head holds focus. Each segment carries the transition
@@ -100,7 +128,9 @@ export function resolveLayoutTimeline(resolvedScenes, durationSeconds, options =
     cursor = Math.max(cursor, scene.end);
   }
   if (cursor < durationSeconds) segments.push({ start: cursor, end: durationSeconds, layout: "focus", transition: filmTransition, transitionSeconds: filmSeconds });
-  return settleTimeline(segments.filter((segment) => segment.end > segment.start), durationSeconds);
+  const stage = options.stage;
+  const tall = stage && stage.width > 0 && stage.height > 0 ? stage.height > stage.width : undefined;
+  return settleTimeline(segments.filter((segment) => segment.end > segment.start), durationSeconds, { tall });
 }
 
 // Bridges short returns to focus between placed segments, absorbs segments
@@ -113,7 +143,7 @@ export function resolveLayoutTimeline(resolvedScenes, durationSeconds, options =
 // dart the rule exists to prevent, and worse than a flight because it is a
 // hard cut in and out. What a cutaway gets instead is a lower floor of its
 // own: nothing travels, so a brief one is an edit rather than a dart.
-export function settleTimeline(segments, durationSeconds) {
+export function settleTimeline(segments, durationSeconds, { tall } = {}) {
   let out = segments.map((s) => ({ ...s }));
   for (let pass = 0; pass < 4; pass += 1) {
     let changed = false;
@@ -156,7 +186,7 @@ export function settleTimeline(segments, durationSeconds) {
     // Same layout twice in a row is one segment; the first one's entrance
     // is the one that was ever seen, so its transition is the one kept.
     for (let i = 0; i + 1 < out.length; i += 1) {
-      if (!sameLayout(out[i], out[i + 1])) continue;
+      if (!sameLayout(out[i], out[i + 1], tall)) continue;
       out[i] = { ...out[i], end: out[i + 1].end };
       out.splice(i + 1, 1);
       changed = true;
@@ -283,14 +313,35 @@ function landscapeRects(layout, corner, videoAspect, stage) {
   if (layout === "side") {
     // The head takes at most 46% of the width, so wide footage (16:9 or
     // wider) still leaves the visuals a column worth reading; square or
-    // portrait footage keeps its taller 62% frame.
+    // portrait footage keeps its taller 62% frame. A right-hand corner
+    // mirrors it: the column on the left, the head on the right.
     const h = Math.min(H * 0.62, (W * 0.46) / videoAspect);
     const w = h * videoAspect;
     const x = W * 0.055;
     const contentX = x + w + W * 0.045;
+    const contentW = W - contentX - W * 0.055;
+    if (headOnRight(corner)) {
+      return {
+        video: { x: W - x - w, y: (H - h) / 2, w, h },
+        content: { x: W * 0.055, y: H * 0.14, w: contentW, h: H * 0.72 },
+      };
+    }
     return {
       video: { x, y: (H - h) / 2, w, h },
-      content: { x: contentX, y: H * 0.14, w: W - contentX - W * 0.055, h: H * 0.72 },
+      content: { x: contentX, y: H * 0.14, w: contentW, h: H * 0.72 },
+    };
+  }
+  if (layout === "split") {
+    // Split screen: the head fills one half of the frame edge to edge,
+    // cropped to it like a picture, and the visual owns the other half.
+    // The strongest two-subject shot there is — the speaker and the thing
+    // they are talking about, given the same weight.
+    const right = headOnRight(corner);
+    const half = W / 2;
+    return {
+      fit: "cover",
+      video: { x: right ? half : 0, y: 0, w: half, h: H },
+      content: { x: (right ? 0 : half) + W * 0.04, y: H * 0.1, w: half - W * 0.08, h: H * 0.8 },
     };
   }
   if (layout === "band") {
@@ -380,6 +431,25 @@ function portraitRects(layout, corner, videoAspect, stage) {
       fit: "contain",
       video: { x: (W - w) / 2, y: top, w, h },
       content: { x: W * 0.06, y: below, w: W * 0.88, h: Math.max(captionFloor - below, H * 0.1) },
+    };
+  }
+  if (layout === "split") {
+    // Split screen in a tall frame is top and bottom: the head fills one
+    // half edge to edge, cropped, and the visual owns the other. A bottom
+    // corner puts the head underneath — the reaction shot, the thing first
+    // and the face under it — with the visual above, clear of the captions.
+    const half = H / 2;
+    if (headAtBottom(corner)) {
+      return {
+        fit: "cover",
+        video: { x: 0, y: half, w: W, h: half },
+        content: { x: W * 0.06, y: H * 0.07, w: W * 0.88, h: half - H * 0.1 },
+      };
+    }
+    return {
+      fit: "cover",
+      video: { x: 0, y: 0, w: W, h: half },
+      content: { x: W * 0.06, y: half + H * 0.025, w: W * 0.88, h: captionFloor - half - H * 0.025 },
     };
   }
   if (layout === "side") {

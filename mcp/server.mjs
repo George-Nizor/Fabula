@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -54,7 +55,7 @@ import {
 } from "../scripts/project-state.mjs";
 import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
 import { suggestClips, createShort } from "../scripts/shorts.mjs";
-import { describeTemplates, expandTemplates, TEMPLATE_IDS } from "../core/templates.mjs";
+import { describeTemplates, expandTemplates, TEMPLATE_IDS, TEMPLATE_NAMES } from "../core/templates.mjs";
 import { readStory, editorialCuts } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
@@ -66,16 +67,19 @@ import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core
 import { punchPlan, punchSpans, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { critiqueFilm } from "../core/critic-engine.mjs";
 import { searchAudio, fetchAudio, SAFE_LICENSES } from "../scripts/audio-library.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
+import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, bridgedReturns, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
-import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS } from "../core/stage-engine.mjs";
+import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS, MIN_DWELL_SECONDS as MIN_DWELL_FLOOR, resolveLayoutTimeline } from "../core/stage-engine.mjs";
 import { reanchorScenes } from "../core/reanchor.mjs";
 import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describeLook, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
 import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mjs";
 import { configuredProjectsRoot, configuredMusicRoot, writeMusicRoot } from "../scripts/settings.cjs";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
+import { validateDirection, directionBrief, describeDirection, directionRefusal, rulesFor, LATITUDE_IDS, LATITUDES } from "../core/direction.mjs";
+import { validateMotionDoc, describeMotion, MOTION_LIBS, MOTION_NAME_RE } from "../core/motion.mjs";
+import { validateTreatment, describeTreatment } from "../core/treatment.mjs";
 
 // media/ beside the checkout, or the folder fabula.settings.json names; read
 // per call so a change made in the window applies to the next tool call.
@@ -92,13 +96,24 @@ const pointerFile = () => path.join(mediaRoot(), "current-project.json");
 // new one up, and the write goes through on the next call if it is still
 // meant. The tools that move the pointer take it up themselves.
 let answeredProject = null;
-let activeTool = null;
+// Each tool call carries its own record — its name, and the note its line in
+// the activity log gets — so calls that run at once (an assistant makes them
+// in parallel) never read or write each other's.
+const callScope = new AsyncLocalStorage();
+const activeToolName = () => callScope.getStore()?.tool ?? null;
+function noteActivity(note) {
+  const scope = callScope.getStore();
+  if (scope) scope.note = note;
+}
 const READ_TOOLS = new Set([
   "status", "list_projects", "get_scenes", "get_theme", "list_cuts", "get_framing", "get_inserts", "describe_kit", "describe_templates",
   "adopt_persona", "read_craft", "read_story", "review_plan", "review_film", "check_scenes", "preview_frame", "preview_sheet", "film_sheet",
   "list_clean_words", "list_themes", "list_assets", "list_music", "search_images", "suggest_clips", "wait_render", "wait_for_input",
+  "get_direction", "get_treatment", "describe_motion", "read_motion", "list_motion", "preview_motion",
 ]);
 const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project"]);
+// Polls that say nothing about the work; the window's log leaves them out.
+const QUIET_TOOLS = new Set(["status", "wait_for_input", "list_projects"]);
 // Tools that leave the pointer somewhere else than they found it; the
 // project they answered for is read back off the file when they finish.
 const MOVES_POINTER = new Set([...POINTER_TOOLS, "create_short"]);
@@ -156,6 +171,7 @@ function electronBinary() {
 function currentProjectDir() {
   if (!fs.existsSync(pointerFile())) throw new Error("no open project; switch_project one from list_projects, or open_project a recording");
   const pointer = JSON.parse(fs.readFileSync(pointerFile(), "utf8"));
+  const activeTool = activeToolName();
   const writing = activeTool !== null && !READ_TOOLS.has(activeTool) && !POINTER_TOOLS.has(activeTool);
   if (writing && answeredProject !== null && answeredProject !== pointer.dir) {
     throw new Error(`the open project changed from "${answeredProject}" to "${pointer.dir}" since the last call — the person switched in the window. Nothing was written. status reads the new project; call ${activeTool} again if it is still meant for "${pointer.dir}", or switch_project back.`);
@@ -207,6 +223,72 @@ function readPunch(dir) {
   } catch {
     return null;
   }
+}
+
+// The person's direction for this film (the window's Make it into a video
+// sheet writes it), or null when nobody gave one.
+// A direction that no longer validates (edited by hand, say) still says how
+// closely to hold to the kit: its latitude is kept when it is one, the rest
+// falls back to the defaults, and `problem` says what is wrong — status and
+// get_direction show it. Reading it as no direction at all let a strict
+// film's edits through as if it were guided.
+function readDirection(dir) {
+  const file = path.join(dir, "direction.json");
+  if (!fs.existsSync(file)) return null;
+  let raw = null;
+  try { raw = readJson(file); } catch (error) {
+    return { ...validateDirection({}), problem: `direction.json is not readable JSON (${error.message}); the defaults apply until it is written again` };
+  }
+  try { return validateDirection(raw); } catch (error) {
+    const latitude = typeof raw?.latitude === "string" && LATITUDE_IDS.includes(raw.latitude) ? raw.latitude : undefined;
+    return { ...validateDirection({ latitude, startedAt: raw?.startedAt }), problem: `direction.json does not validate (${error.message}); its latitude still applies and the rest are defaults until it is written again` };
+  }
+}
+
+function readTreatment(dir) {
+  const file = path.join(dir, "treatment.json");
+  if (!fs.existsSync(file)) return null;
+  try { return readJson(file); } catch { return null; }
+}
+
+// The optional animation libraries actually installed in this checkout.
+const installedMotionLibs = () => Object.entries(MOTION_LIBS).filter(([, lib]) => fs.existsSync(path.join(REPO_ROOT, lib.file))).map(([name]) => name);
+
+// What the plan writes validate against beyond the words: the libraries a
+// motion scene may name, and what the person's direction rules out.
+function checkPlan(dir, scenes, words) {
+  validateScenes(scenes, words, { motionLibs: installedMotionLibs() });
+  const refusal = directionRefusal(scenes, readDirection(dir), { existing: onDiskScenes(dir) });
+  if (refusal) throw new Error(refusal);
+}
+
+function onDiskScenes(dir) {
+  try { return readComposeConfig(dir).scenes ?? []; } catch { return []; }
+}
+
+// What the window shows while the assistant works: one line per tool call,
+// appended to <project>/activity.jsonl. The window reads the tail and turns
+// it into the Making panel's phases; nothing else depends on it.
+const ACTIVITY_KEEP_LINES = 400;
+function recordActivity(dir, entry) {
+  if (!dir) return;
+  const file = path.join(dir, "activity.jsonl");
+  try {
+    fs.appendFileSync(file, JSON.stringify(entry) + "\n");
+    if (fs.statSync(file).size > 192 * 1024) {
+      const all = fs.readFileSync(file, "utf8").trim().split("\n");
+      // The window's start mark for the run stays, however long ago: the
+      // Making panel reads the run from it.
+      const mark = all.slice(0, -ACTIVITY_KEEP_LINES).findLast((line) => line.includes('"mark":"start"'));
+      writeTextAtomic(file, [...(mark ? [mark] : []), ...all.slice(-ACTIVITY_KEEP_LINES)].join("\n") + "\n");
+    }
+  } catch { /* the log is a courtesy to the window; a failed append costs nothing */ }
+}
+
+function writeTextAtomic(file, text) {
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, text);
+  fs.renameSync(temp, file);
 }
 
 const rectSchema = z.object({
@@ -300,8 +382,10 @@ The first pass (transcript, framing scan, cut proposals) runs by itself when the
 // a write from a read (see answeredProject).
 {
   const register = server.registerTool.bind(server);
-  server.registerTool = (name, spec, handler) => register(name, spec, async (...args) => {
-    activeTool = name;
+  server.registerTool = (name, spec, handler) => register(name, spec, (...args) => callScope.run({ tool: name, note: null }, async () => {
+    const scope = callScope.getStore();
+    const started = Date.now();
+    let failure = null;
     try {
       const answer = await handler(...args);
       // Only a tool that finished takes the pointer up: one that failed
@@ -310,8 +394,19 @@ The first pass (transcript, framing scan, cut proposals) runs by itself when the
         try { answeredProject = fs.existsSync(pointerFile()) ? JSON.parse(fs.readFileSync(pointerFile(), "utf8")).dir : null; } catch { /* the next read takes it up */ }
       }
       return answer;
-    } finally { activeTool = null; }
-  });
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      if (answeredProject !== null && !QUIET_TOOLS.has(name)) {
+        recordActivity(path.join(mediaRoot(), answeredProject), {
+          at: new Date().toISOString(), tool: name, ms: Date.now() - started, ok: failure === null,
+          ...(scope.note ? { note: String(scope.note).slice(0, 160) } : {}),
+          ...(failure ? { error: String(failure.message ?? failure).split("\n")[0].slice(0, 200) } : {}),
+        });
+      }
+    }
+  }));
 }
 
 // A template expanded with the scene's index on any refusal, so "items needs
@@ -330,6 +425,10 @@ function assertAssets(dir, scenes) {
   scenes.forEach((scene, index) => {
     const graphic = scene.graphic;
     if (!graphic) return;
+    if (graphic.kind === "motion") {
+      if (missing(graphic.src)) throw new Error(`scene ${index}: no motion document ${graphic.src}; write_motion writes one, list_motion shows what exists`);
+      return;
+    }
     if (missing(graphic.src)) throw new Error(`scene ${index}: no such asset ${graphic.src}; list_assets shows what exists, fetch_image / import_image / search_images bring one in`);
     if (graphic.kind === "clip" && graphic.sound && !probeHasAudio(path.join(dir, graphic.src))) throw new Error(`scene ${index}: ${graphic.src} has no sound track, so sound: true has nothing to play; drop sound, or import_clip the source again (imports before today were made without one)`);
     for (const item of graphic.items ?? []) {
@@ -1066,6 +1165,16 @@ server.registerTool("set_inserts", {
     note: earlier.get(insert.id)?.note ?? null,
   }));
   validateInserts(shaped, words);
+  // Every option answers to the direction, not only the one applied now: the
+  // person can pick any of them in the window, and that path has no check.
+  const direction = readDirection(dir);
+  const existing = previous.scenes ?? [];
+  for (const insert of shaped) {
+    for (const option of insert.options) {
+      const refusal = directionRefusal(option.scenes, direction, { existing });
+      if (refusal) throw new Error(`insert ${insert.id}, option ${option.id}: ${refusal}`);
+    }
+  }
   // Scenes of inserts that no longer exist go with them.
   const keep = new Set(shaped.map((insert) => insert.id));
   let config = { ...previous, inserts: shaped, scenes: (previous.scenes ?? []).filter((scene) => !scene.insertId || keep.has(scene.insertId)) };
@@ -1076,7 +1185,7 @@ server.registerTool("set_inserts", {
     else if (apply_first !== false) config = applyInsertChoice(config, insert.id, insert.options[0].id);
     else config = applyInsertChoice(config, insert.id, null);
   }
-  validateScenes(config.scenes, words);
+  checkPlan(dir, config.scenes, words);
   writeComposeConfig(dir, config);
   return ok({ inserts: config.inserts.map((insert) => ({ id: insert.id, chosen: insert.chosen, options: insert.options.map((o) => o.id) })), scenes: config.scenes.length });
 });
@@ -1106,7 +1215,7 @@ server.registerTool("apply_insert", {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const config = applyInsertChoice(readComposeConfig(dir), id, option_id);
-  validateScenes(config.scenes, words);
+  checkPlan(dir, config.scenes, words);
   writeComposeConfig(dir, config);
   return ok({ id, chosen: option_id, scenes: config.scenes.length });
 });
@@ -1135,7 +1244,7 @@ server.registerTool("wait_for_input", {
 
 server.registerTool("set_scenes", {
   description:
-    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them), and three that take the WHOLE stage: cover (a still edge to edge with a big title and subtitle, optional tint), section (a chapter heading: number, title, subtitle), custom (your own html + css for this one moment: scoped, no scripts or external loads, animate with the CSS variables --q (0→1 over the first 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh units measure the stage; pictures as assets/name.png). All motion is a pure function of scene progress. stage scenes place the talking head on the canvas for their span — layout focus (the head is the picture: large and centred in a wide frame, edge to edge and cropped in a tall one), pip (small corner card; optional corner br/bl/tr/tl), side (the visual beside the head: a right-hand column in a wide frame, the bottom half in a tall one), band (the head WHOLE in the recording's own shape across the width, the visual under it — the shot for a wide moment a vertical crop would ruin), cutaway (camera completely hidden, narration continues; use for B-roll and explanatory diagrams — it gets full's content rect), or full (the visuals own the stage, the head a small corner card; pair it with cover/section/custom) — anywhere undeclared, the head holds focus. describe_kit says which shape this project is and what each layout means in it. How each boundary is crossed is the look's transition (set_theme): dissolve fades the head out and back without moving it, glide flies it between rectangles, cut changes everything on one frame; a stage scene may name its own to override the film's for that one boundary. The engine bridges returns to focus shorter than 3 s and absorbs placed segments shorter than that, so do not plan flights closer together than a breath. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
+    `Replace the project's scene plan (declarative, whole-plan-at-once). Scene types: ${[...SCENE_TYPES].join(", ")}. title carries text, an optional subtitle and a style (${[...TITLE_STYLES].join("/")}; block is the broadcast lower third); callout carries text and a style (${[...CALLOUT_STYLES].join("/")}); styles default to the theme's. graphic carries an animated insert card — kind ${[...GRAPHIC_KINDS].join("/")}: chart (items with numeric values, bars grow in), stat (one big count-up number with prefix/suffix), list (items reveal with checks), image (a still from assets/ with motion ${[...IMAGE_MOTIONS].join("/")}), screen (the recording's own screen track in sync beside the head — only inside get_framing's screenSpans, with a stage pip or side layout), quote (text + by), compare (left/right columns with title and items, a VS badge), steps (numbered items joined by a line), ring (value 0–100 with label, drawn as an arc), logos (items with src pictures from assets/ — fetch_image gets them), and four that take the WHOLE stage: cover (a still edge to edge with a big title and subtitle, optional tint), section (a chapter heading: number, title, subtitle), custom (your own html + css for this one moment: scoped, no scripts or external loads, animate with the CSS variables --q (0→1 over the first 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh units measure the stage; pictures as assets/name.png), and motion (your own animation written as code — a document under motion/ written by write_motion, drawn at every frame; src "motion/<name>.html", optional params, libs, full, over, fade; describe_motion is the contract). All motion is a pure function of time. stage scenes place the talking head on the canvas for their span — layout focus (the head is the picture: large and centred in a wide frame, edge to edge and cropped in a tall one), pip (small corner card; optional corner br/bl/tr/tl), side (the visual beside the head: a right-hand column in a wide frame, the bottom half in a tall one; corner br/tr puts the head on the right instead), split (split screen: the head fills one half of the frame edge to edge, cropped like a picture, the visual owns the other half; corner br/tr puts the head on the right, and in a tall frame bl/br puts it in the bottom half), band (the head WHOLE in the recording's own shape across the width, the visual under it — the shot for a wide moment a vertical crop would ruin), cutaway (camera completely hidden, narration continues; use for B-roll and explanatory diagrams — it gets full's content rect), or full (the visuals own the stage, the head a small corner card; pair it with cover/section/custom) — anywhere undeclared, the head holds focus. describe_kit says which shape this project is and what each layout means in it. How each boundary is crossed is the look's transition (set_theme): dissolve fades the head out and back without moving it, glide flies it between rectangles, cut changes everything on one frame; a stage scene may name its own to override the film's for that one boundary. The engine bridges returns to focus shorter than 3 s and absorbs placed segments shorter than that, so do not plan flights closer together than a breath. Scenes anchor to clean-transcript word ids; captions turns phrase captions on (their look is the theme's captionStyle). Theme and punch-ins are kept unless given; set_theme owns the look. The Compose tab previews everything live; render_final bakes it, re-rendering only the chunks that changed.`,
   inputSchema: {
     scenes: z.array(z.object({
       type: z.enum([...SCENE_TYPES]),
@@ -1152,7 +1261,7 @@ server.registerTool("set_scenes", {
       flair: z.boolean().optional().describe("title only: a particle burst behind the text"),
       insert_id: z.string().optional().describe("the insert point this scene was chosen for (carried from get_scenes; do not invent)"),
       layout: z.enum([...LAYOUTS]).optional().describe("stage scenes only"),
-      corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage pip/full only"),
+      corner: z.enum(["br", "bl", "tr", "tl"]).optional().describe("stage scenes: the corner for pip/full; on side and split, r (br/tr) puts the head on the right, and on a tall split b (bl/br) puts it at the bottom"),
     transition: z.enum([...TRANSITIONS]).optional().describe("stage scenes only: how this one boundary is crossed, overriding the theme's transition for it"),
       graphic: z.object({
         kind: z.enum([...GRAPHIC_KINDS]),
@@ -1173,10 +1282,13 @@ server.registerTool("set_scenes", {
         tint: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("cover: colour of the shade over the still"),
         html: z.string().max(20000).optional().describe("custom only: the markup"),
         css: z.string().max(10000).optional().describe("custom only: styles, scoped to the card"),
-        full: z.boolean().optional().describe("custom only: false keeps it inside the layout's content rect instead of the whole stage"),
-        over: z.boolean().optional().describe("custom only: draw it OVER the head rather than under — words on the face, with the shade the thumbnail template draws; the first frame of a short, a line over a focus shot. Under a cutaway it makes no difference."),
-        template: z.enum([...TEMPLATE_IDS]).optional().describe("custom only: a named graphic from describe_templates, filled in from params; html and css are generated"),
-        params: z.record(z.any()).optional().describe("custom only: the template's fields"),
+        full: z.boolean().optional().describe("custom/motion: false keeps it inside the layout's content rect instead of the whole stage"),
+        over: z.boolean().optional().describe("custom/motion: draw it OVER the head rather than under — words on the face, with the shade the thumbnail template draws; the first frame of a short, a line over a focus shot. Under a cutaway it makes no difference."),
+        libs: z.array(z.string()).max(4).optional().describe("motion only: optional animation libraries the document uses (describe_motion lists the installed ones)"),
+        seed: z.number().int().optional().describe("motion only: the seed for fabula.random and Math.random; the src by default"),
+        fade: z.boolean().optional().describe("motion only: false turns off the card's own fade in and out — the scene makes its own entrance"),
+        template: z.enum([...TEMPLATE_NAMES]).optional().describe("custom only: a named graphic from describe_templates, filled in from params; html and css are generated"),
+        params: z.record(z.any()).optional().describe("custom: the template's fields; motion: the values the document reads as fabula.params"),
         left: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         right: z.object({ title: z.string().min(1), items: z.array(z.object({ label: z.string().min(1) })).min(1).max(5) }).optional().describe("compare only"),
         items: z.array(z.object({
@@ -1213,7 +1325,7 @@ server.registerTool("set_scenes", {
     graphic: scene.graphic,
     ...((scene.insert_id ?? scene.insertId) ? { insertId: scene.insert_id ?? scene.insertId } : {}),
   })), { format: projectFormat(dir) });
-  validateScenes(shaped, words);
+  checkPlan(dir, shaped, words);
   assertAssets(dir, shaped);
   const previous = readComposeConfig(dir);
   const mergedTheme = theme ? { ...(previous.theme ?? {}), ...theme } : previous.theme;
@@ -1239,8 +1351,8 @@ server.registerTool("set_scenes", {
   // rule against a repetitive film is worth nothing if it only lives in a
   // document read at the start of the session.
   const { warnings, variety, pacing } = readBackPlan(dir, shaped, words, config.theme, config.captions);
-  const look = describeLook(config.theme, listSavedThemes(mediaRoot()));
-  if (!look.chosen && shaped.length > 0) warnings.push(look.hint);
+  const look = describeLook(config.theme, listSavedThemes(mediaRoot()), { direction: readDirection(dir) });
+  if (!look.chosen && shaped.length > 0 && look.hint) warnings.push(look.hint);
   return ok({
     scenes: shaped.length, captions: config.captions, theme: config.theme ?? null, punch: config.punch ?? null,
     warnings, variety, pacing,
@@ -1257,7 +1369,7 @@ server.registerTool("review_plan", {
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
   const read = readBackPlan(dir, config.scenes ?? [], words, config.theme, config.captions);
-  const look = describeLook(config.theme, listSavedThemes(mediaRoot()));
+  const look = describeLook(config.theme, listSavedThemes(mediaRoot()), { direction: readDirection(dir) });
   return ok({
     scenes: (config.scenes ?? []).length,
     format: projectFormat(dir),
@@ -1313,6 +1425,12 @@ server.registerTool("critique_film", {
   },
 }, async ({ sound }) => {
   const dir = currentProjectDir();
+  return ok(critiqueNow(dir, { sound }));
+});
+
+// The measurable review of the film as it stands: critique_film's answer,
+// and the gate a By the book direction puts in front of the real render.
+function critiqueNow(dir, { sound } = {}) {
   const shape = resolveFormat(projectFormat(dir));
   const words = cleanWords(dir);
   const config = readComposeConfig(dir);
@@ -1353,7 +1471,11 @@ server.registerTool("critique_film", {
 
   const audio = {
     target: config.audio?.voice?.loudness ?? null,
-    measured: readJson(path.join(dir, "out", "clean-audio.json"))?.voiceLoudness ?? null,
+    measured: (() => {
+      // A clean render that could not measure the voice writes no file.
+      const file = path.join(dir, "out", "clean-audio.json");
+      try { return fs.existsSync(file) ? readJson(file)?.voiceLoudness ?? null : null; } catch { return null; }
+    })(),
     music: config.audio?.music ?? null,
     effectsAt: effectSounds(config.audio?.effects, words, { from: 0, span: duration }),
     swells: swellWindows(words, duration).length,
@@ -1363,12 +1485,12 @@ server.registerTool("critique_film", {
     Object.assign(audio, { rendered: heard.integrated, truePeak: heard.truePeak, range: heard.range, noiseFloor: heard.noiseFloor });
   }
 
-  return ok({
+  return {
     ...critiqueFilm({ format: shape, words, keeps, punchSpans: spans, cuts, scenes, plan, audio, output, assets, seconds: duration }),
     looked: { seconds: Number(duration.toFixed(2)), keeps: keeps.length, shots: spans.length, scenes: scenes.length, pictures: Object.keys(assets).length, rendered: exists, pacing: read.pacing?.stats ?? null },
     hint: "Fix every fault, then look at preview_sheet or film_sheet yourself for the half this cannot measure — docs/craft/critic.md is the judgment that goes with it.",
-  });
-});
+  };
+}
 
 server.registerTool("review_film", {
   description:
@@ -1498,9 +1620,12 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   const resolved = resolveScenes(scenes, words, { durationSeconds: duration });
   const theme = resolveTheme(themeConfig ?? {});
   const shape = resolveFormat(projectFormat(dir));
+  // The timeline as the painter settles it: the frame's shape decides
+  // whether two corners are one placement.
+  const timing = { transition: theme.transition, transitionSeconds: theme.transitionSeconds, stage: shape.stage };
   const pacing = describePacing(resolved, {
     duration, format: shape.id, shortForm: shape.shortForm, captions: captionMode(captions),
-    transition: theme.transition, transitionSeconds: theme.transitionSeconds,
+    ...timing,
   });
   const warnings = [];
   const spans = readCleanMap(dir)?.screenSpans ?? [];
@@ -1511,11 +1636,14 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
       ? `scene ${index}: screen graphic over ${scene.start.toFixed(1)}–${scene.end.toFixed(1)}s is outside every screen span (${spans.map((s) => `${s.start.toFixed(1)}–${s.end.toFixed(1)}s`).join(", ")})`
       : `scene ${index}: a screen graphic, but the recording has no screen track (detect_framing found no screen beside the head)`);
   });
-  for (const hidden of hiddenFullStage(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
+  for (const hidden of hiddenFullStage(resolved, duration, timing)) {
     warnings.push(`scene ${hidden.index}: the full-stage ${hidden.kind} is drawn under the head, and the ${hidden.layouts.join("/")} layout puts the head in front of it for ${hidden.seconds}s. Give its span a stage scene with layout cutaway (no camera) or full (the head as a corner card).`);
   }
   for (const short of absorbedStages(resolved, duration)) {
     warnings.push(`scene ${short.index}: a ${short.layout} layout of ${short.seconds}s is under the ${short.floor}s dwell floor and will be absorbed into its neighbour; a card planned for it lands wherever the neighbour puts cards. Give it more words, or drop the stage scene.`);
+  }
+  for (const gap of bridgedReturns(resolved, duration)) {
+    warnings.push(`the return to the head from ${gap.start}s to ${gap.end}s (${gap.seconds}s, between scenes ${gap.after} and ${gap.before}) is under the ${MIN_DWELL_FLOOR}s dwell floor, so the ${gap.layout} layout holds through it and the face never shows. If the face was meant there, end scene ${gap.after} earlier so the return lasts ${MIN_DWELL_FLOOR}s or more; if not, extend it to meet scene ${gap.before}.`);
   }
   for (const over of overFullStage(resolved)) {
     warnings.push(`scene ${over.index}: the ${over.type} sits over the full-stage ${over.card} for ${over.seconds}s and lands on its text. Put the words in the card, or move the ${over.type} to a moment the head holds.`);
@@ -1534,7 +1662,9 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
   resolved.forEach((scene, index) => {
     const graphic = scene.graphic;
     if (!graphic) return;
-    if (graphic.over && !["thumbnail", "cta", "lower-third"].includes(graphic.template)) {
+    // A motion scene over the head is a choice the scene can make good on:
+    // it is told where the head is and can frame it or point at it.
+    if (graphic.over && graphic.kind !== "motion" && !["thumbnail", "cta", "lower-third"].includes(graphic.template)) {
       warnings.push(`scene ${index}: over: true draws the ${graphic.template ?? graphic.kind} on top of the head; only thumbnail, cta (with a shade) and lower-third are made for the face. Drop over, and give it a cutaway or full stage scene.`);
     }
     if (graphic.template === "lower-third" && !graphic.over) {
@@ -1544,11 +1674,11 @@ function readBackPlan(dir, scenes, words, themeConfig, captions) {
       warnings.push(`scene ${index}: a cta in the long film; the ask belongs in a short, and a film ends on the head or the spoken word (docs/craft/editor.md).`);
     }
   });
-  const holes = uncoveredCutaways(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
+  const holes = uncoveredCutaways(resolved, duration, timing);
   for (const hole of holes) {
     warnings.push(`the camera is off from ${hole.start}s to ${hole.end}s and nothing is on the stage: a cutaway needs a visual over its whole span. Extend the card either side of it, or drop the cutaway there.`);
   }
-  for (const empty of emptyPlacedLayouts(resolved, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds })) {
+  for (const empty of emptyPlacedLayouts(resolved, duration, timing)) {
     warnings.push(`the ${empty.layout} layout holds from ${empty.start}s to ${empty.end}s with nothing in the room it makes: the head is made small for nothing. Extend the card to the layout's end, or end the stage scene with the card (a short return to the head before the next layout is bridged away, so the layout stays).`);
   }
   return { resolved, warnings, holes, variety: describeVariety(resolved, duration), pacing };
@@ -1562,7 +1692,7 @@ const sceneEdits = (dir, mutate) => {
   // A template named in a patch or an added scene is rendered here, so what
   // is written is always a complete custom graphic.
   const scenes = expandPlan(edited, { format: projectFormat(dir) });
-  validateScenes(scenes, words);
+  checkPlan(dir, scenes, words);
   assertAssets(dir, scenes);
   config.scenes = scenes;
   config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
@@ -1590,7 +1720,7 @@ const scenePatchShape = {
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   flair: z.boolean().nullable().optional(),
   layout: z.enum([...LAYOUTS]).nullable().optional(),
-  corner: z.enum(["br", "bl", "tr", "tl"]).nullable().optional(),
+  corner: z.enum(["br", "bl", "tr", "tl"]).nullable().optional().describe("pip/full: the corner; side/split: br/tr puts the head on the right"),
   transition: z.enum([...TRANSITIONS]).nullable().optional(),
   fromWordId: z.number().int().min(0).optional().describe("The same as from_word_id, as get_scenes spells it"),
   toWordId: z.number().int().min(0).optional().describe("The same as to_word_id, as get_scenes spells it"),
@@ -1644,7 +1774,7 @@ server.registerTool("check_scenes", {
   const dir = currentProjectDir();
   const words = cleanWords(dir);
   const shaped = expandPlan(scenes.map(shapeScene), { format: projectFormat(dir) });
-  validateScenes(shaped, words);
+  checkPlan(dir, shaped, words);
   assertAssets(dir, shaped);
   const config = readComposeConfig(dir);
   const read = readBackPlan(dir, shaped, words, config.theme, captions ?? config.captions);
@@ -1715,7 +1845,8 @@ server.registerTool("describe_kit", {
   layouts: {
     focus: "the head is the picture; the default anywhere no layout is declared. Landscape: large and centred. Vertical: edge to edge, cropped to the tall frame, with anything shown over it in the lower third.",
     pip: "a small corner card; takes a corner (br/bl/tr/tl). Uncropped in both shapes.",
-    side: "the visual beside the head. Landscape: head left, content column right. Vertical: head across the top half, cropped, the visual owning the bottom.",
+    side: "the visual beside the head. Landscape: head left, content column right (corner br/tr mirrors it: head right). Vertical: head across the top half, cropped, the visual owning the bottom.",
+    split: "split screen — the speaker and the thing given the same weight. The head fills one half of the frame edge to edge, cropped like a picture; the visual owns the other half. Landscape: left/right halves (corner br/tr puts the head on the right). Vertical: top/bottom halves (corner bl/br puts the head at the bottom, the visual above it).",
     band: "the head WHOLE, in the recording's own shape, across the width, with the visual under it. In a tall frame this is the shot for a moment a crop would ruin — a wide gesture, a screen, two people. In a landscape film it is close to focus and rarely worth naming.",
     full: "the visuals own the stage, the head a small corner card; takes a corner",
     cutaway: "no camera at all — the visual carries the narration. Cover its whole span with a graphic.",
@@ -1743,6 +1874,7 @@ server.registerTool("describe_kit", {
     cover: "WHOLE STAGE: a still edge to edge with title, subtitle, optional tint",
     section: "WHOLE STAGE: a chapter heading — number, title, subtitle",
     custom: "WHOLE STAGE by default (full: false for the content rect; over: true to draw it over the head — the thumbnail and the shaded cta are made for that): a named template from describe_templates, or your own html + css for one moment; scoped, no scripts or external loads. Animate from --q (0→1 over 1.8 s), --p (0→1 over the span) and --alpha; cqw/cqh measure the stage; pictures as assets/name.png",
+    motion: "WHOLE STAGE by default: your own animation written as code — HTML, CSS, SVG, Canvas or WebGL in a document under motion/ (write_motion writes it and shows you frames), drawn at every frame of the film on the scene's own clock. src \"motion/<name>.html\", optional params, libs, full, over, fade. For the moments that must MOVE to make sense — a mechanism assembling itself, a route drawing on a map, type choreographed to the words — and for the film's signature moment. describe_motion is the contract; the person's direction may encourage, allow or refuse it (get_direction).",
   },
   sceneTypes: [...SCENE_TYPES],
   titleStyles: [...TITLE_STYLES],
@@ -1755,6 +1887,7 @@ server.registerTool("describe_kit", {
   fonts: VENDORED_FONTS,
   templates: `${TEMPLATE_IDS.length} named graphics the kit has no fixed shape for — ${TEMPLATE_IDS.join(", ")} — each filled in from a few fields and laid out for this shape. describe_templates lists the fields; write one as graphic: { kind: "custom", template: "<id>", params: { … } }. Reach for a template before writing html by hand.`,
   editing: "set_scenes writes a whole plan; update_scenes / add_scenes / remove_scenes change part of one and leave the rest alone — use those for every change after the first pass.",
+  direction: "get_direction is the person's brief when they pressed Make it into a video: what the film is for, and how closely to follow the kit — free (design it), guided (the kit first), strict (only the kit and templates; motion scenes and hand-written custom graphics are refused, and the real render waits until critique_film finds no fault). set_treatment writes the film's idea before its scenes.",
   sound: `set_audio puts a music bed under the voice (import_audio brings the file in), ducked from the transcript's own pauses, and can normalise the voice; audio lives only in the stitch so it costs seconds, not minutes.`,
   reading: "read_story marks the transcript up before you compose (sections, the opening, the ending, every drawable moment, the figures); draft_scenes turns it into a skeleton; review_plan and every plan write return the variety and pacing reads and the collision warnings; preview_sheet tiles the plan, film_sheet the rendered film, and render_final draft: true renders the whole film at half size to look at in motion.",
   craft: `adopt_persona (${PERSONA_IDS.join(" or ")}) hands you the brief and the craft guides for the job at hand; read_craft has the rest, including a visual grammar of what goes with what is said and a set of reference styles.`,
@@ -1904,6 +2037,241 @@ server.registerTool("describe_templates", {
 
 // describe_kit is legitimate with no project open — it is what to read before
 // there is one — so the shape it describes falls back to the default.
+// ---- Direction, treatment and motion: making a film on the person's brief ----
+
+server.registerTool("get_direction", {
+  description:
+    "The person's direction for this film, written when they pressed Make it into a video in the window: what the film is for, how closely to hold to the house style (latitude: free — design it, the kit is a starting point; guided — the kit first, your own graphics where no template fits; strict — only the kit and the named templates, every fault fixed before the real render), which look to wear, whether you may bring in music, sound effects and pictures from the web, their notes, and whether to render a draft when the plan is done. Read it FIRST when making a video: it replaces asking them. The brief it returns is written as instructions — follow them. Null when they gave none: then you compose with them step by step.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const direction = readDirection(dir);
+  if (!direction) {
+    return ok({ direction: null, hint: "No direction has been given; the person composes with you step by step. Ask what the film is for before choosing the look. set_direction records one when they tell you in words." });
+  }
+  return ok({
+    direction: describeDirection(direction),
+    brief: directionBrief(direction),
+    latitudes: Object.fromEntries(LATITUDE_IDS.map((id) => [id, `${LATITUDES[id].label}: ${LATITUDES[id].summary}`])),
+  });
+});
+
+server.registerTool("set_direction", {
+  description:
+    "Record a change to the person's direction when they tell you one in words — \"go wild with it\" is latitude free, \"keep it to our templates\" is strict, \"no music\" is music: false. Merges into what is there; the window's Make it into a video sheet writes the same file. Never change it on your own judgment: it is theirs.",
+  inputSchema: {
+    latitude: z.enum([...LATITUDE_IDS]).optional().describe("free (Free hand), guided (the default), strict (By the book)"),
+    purpose: z.string().max(300).optional().describe("What the film is for and who it is for"),
+    look: z.string().max(80).optional().describe("auto (you choose), keep, brand:<id> or preset:<id>"),
+    music: z.boolean().optional(),
+    effects: z.boolean().optional(),
+    web: z.boolean().optional().describe("May pictures and sounds be brought in from the web"),
+    notes: z.string().max(2000).optional(),
+    render: z.enum(["draft", "none"]).optional().describe("draft: render a draft when the plan is reviewed, without asking"),
+  },
+}, async (args) => {
+  const dir = currentProjectDir();
+  const given = Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined));
+  const merged = validateDirection({ ...(readDirection(dir) ?? {}), ...given });
+  writeJsonAtomic(path.join(dir, "direction.json"), merged);
+  noteActivity(LATITUDES[merged.latitude].label);
+  return ok({ direction: describeDirection(merged), brief: directionBrief(merged) });
+});
+
+const treatmentSpan = {
+  fromWordId: z.number().int().min(0).optional(),
+  toWordId: z.number().int().min(0).optional(),
+  from_word_id: z.number().int().min(0).optional().describe("the same as fromWordId"),
+  to_word_id: z.number().int().min(0).optional(),
+};
+
+server.registerTool("set_treatment", {
+  description:
+    "Write the film's treatment before placing a scene: the logline (one sentence — what the film SAYS), who it is for, two or three candidate shapes and the one you chose (the first idea is usually the cliché), the signature moment (the one gesture only this film makes, where its turn lands, anchored to its words), and the beats in order — each a word span, what happens in the story, what the viewer sees, and where the head is (on, corner, side, split, band, gone). Plus the sound plan and the look in a line each. The window shows it to the person while you work, so write it for them. The recording cannot be reordered: beats run in its order. Replaces the previous treatment; get_treatment reads it back.",
+  inputSchema: {
+    logline: z.string().max(200),
+    purpose: z.string().max(300).optional(),
+    shapes: z.array(z.object({ name: z.string().max(60), why: z.string().max(240).optional() })).max(4).optional().describe("The structures you considered"),
+    shape: z.string().max(240).optional().describe("The one chosen, and why"),
+    // Either spelling of the word ids, as every other write tool takes them;
+    // validateTreatment says which is missing.
+    signature: z.object({ what: z.string().max(240), ...treatmentSpan }).optional(),
+    beats: z.array(z.object({
+      ...treatmentSpan,
+      beat: z.string().max(120).describe("What happens in the story here"),
+      picture: z.string().max(200).optional().describe("What the viewer sees"),
+      head: z.enum(["on", "corner", "side", "split", "band", "gone"]).optional().describe("Where the talking head is"),
+    })).min(1).max(40),
+    sound: z.string().max(240).optional(),
+    look: z.string().max(240).optional(),
+  },
+}, async (args) => {
+  const dir = currentProjectDir();
+  let words = null;
+  try { words = cleanWords(dir); } catch { words = null; }
+  const treatment = { ...validateTreatment(args, words), updatedAt: new Date().toISOString() };
+  writeJsonAtomic(path.join(dir, "treatment.json"), treatment);
+  noteActivity(treatment.logline);
+  return ok({
+    treatment: describeTreatment(treatment),
+    hint: "Now compose to it: every scene should serve a beat, and the signature moment gets the film's biggest gesture — often a motion scene (describe_motion) when the direction allows one.",
+  });
+});
+
+server.registerTool("get_treatment", {
+  description: "The film's treatment as written by set_treatment — the logline, the shape, the signature moment and the beats — or null. Read it before changing the plan, so a change serves the film's idea rather than just the moment.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  return ok({ treatment: readTreatment(dir) });
+});
+
+const motionPreviewShape = z.object({
+  seconds: z.number().min(0.5).max(120).optional().describe("How long to sample; the placed scene's span by default, else 6"),
+  frames: z.number().int().min(1).max(24).optional().describe("Tiles across it, 6 by default"),
+  at: z.number().min(0).optional().describe("With frames: 1, the one instant to draw"),
+  layout: z.enum([...LAYOUTS]).optional().describe("The stage under it: the placed scene's layout by default, else cutaway; pip, full, side or split put a hatched block where the head would be"),
+  corner: z.enum(["br", "bl", "tr", "tl"]).optional(),
+  params: z.record(z.any()).optional().describe("Params to draw it with; the placed scene's by default"),
+  full: z.boolean().optional().describe("false draws it in the layout's content rect instead of the whole stage"),
+  scene: z.number().int().min(0).optional().describe("Which placement to draw it as, by get_scenes index, when the document is placed more than once; otherwise the one whose params match"),
+});
+
+// The span and params a motion document is drawn with in the plan, when it
+// is placed, so its preview samples the seconds it actually plays for. One
+// document may be placed several times (params make it several scenes): the
+// placement asked for by index, else the one whose params match, else the
+// first.
+function motionPlacement(dir, src, { index: wanted, params } = {}) {
+  try {
+    const words = cleanWords(dir);
+    const config = readComposeConfig(dir);
+    const duration = filmDuration(dir, words);
+    const scenes = resolveScenes(config.scenes ?? [], words, { durationSeconds: duration });
+    const placed = scenes.map((scene, i) => ({ scene, i })).filter(({ scene }) => scene.graphic?.kind === "motion" && scene.graphic.src === src);
+    const same = (a, b) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+    const hit = (wanted !== undefined ? placed.find(({ i }) => i === wanted) : null)
+      ?? (params ? placed.find(({ scene }) => same(scene.graphic.params, params)) : null)
+      ?? placed[0];
+    if (!hit) return null;
+    const index = hit.i;
+    const scene = scenes[index];
+    // The layout it plays under, so the sheet draws it in the same box: a
+    // full: false scene in a split is half the frame, not a cutaway's room.
+    const mid = (scene.start + scene.end) / 2;
+    const stage = resolveLayoutTimeline(scenes, duration).find((segment) => segment.start <= mid && mid < segment.end);
+    return {
+      index, start: Number(scene.start.toFixed(3)), seconds: Number((scene.end - scene.start).toFixed(2)),
+      params: scene.graphic.params ?? {}, full: scene.graphic.full !== false, libs: scene.graphic.libs ?? [],
+      seed: scene.graphic.seed ?? null, fade: scene.graphic.fade !== false, over: scene.graphic.over === true,
+      layout: stage?.layout ?? null, corner: stage?.corner ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function motionPreview(dir, src, preview = {}) {
+  const placed = motionPlacement(dir, src, { index: preview.scene, params: preview.params });
+  const args = [`--motion=${src}`, `--seconds=${preview.seconds ?? placed?.seconds ?? 6}`, `--frames=${preview.frames ?? 6}`];
+  if (preview.at !== undefined) args.push(`--at=${preview.at}`);
+  const layout = preview.layout ?? placed?.layout;
+  if (layout) args.push(`--layout=${layout}`);
+  const corner = preview.corner ?? (layout === placed?.layout ? placed?.corner : null);
+  if (corner) args.push(`--corner=${corner}`);
+  const params = preview.params ?? placed?.params;
+  if (params && Object.keys(params).length) args.push(`--params=${JSON.stringify(params)}`);
+  if ((preview.full ?? placed?.full) === false) args.push("--full=false");
+  if (placed?.libs?.length) args.push(`--libs=${placed.libs.join(",")}`);
+  // Its noise, its fade and which side of the head it is drawn on, as placed.
+  if (Number.isInteger(placed?.seed)) args.push(`--seed=${placed.seed}`);
+  if (placed && !placed.fade) args.push("--fade=false");
+  if (placed?.over) args.push("--over=true");
+  // Where it plays in the film, so the sheet hands it the same words.
+  if (placed) args.push(`--start=${placed.start}`);
+  return runFrame(dir, args);
+}
+
+server.registerTool("describe_motion", {
+  description:
+    "How to write a motion scene: your own animation as a small HTML document — markup, CSS and a script — that Fabula draws at every frame of the film in a sandboxed frame (no network, no timers, a clock set by the film). The canvas and its size, the scene clock, the fabula.* helpers (scene, random, ease, range, spring, stagger, split, asset, timeline), the theme as CSS variables, the head's rectangle, the rules, and a worked example. Read it once before your first write_motion. docs/craft/motion.md (read_craft motion) is the craft: when a moment deserves motion, and what makes it read.",
+  inputSchema: {},
+}, async () => {
+  const format = projectFormatSafe();
+  let direction = null;
+  try { direction = describeDirection(readDirection(currentProjectDir())); } catch { direction = null; }
+  return ok({
+    ...describeMotion({ stage: stageOf(format), fonts: VENDORED_FONTS, libs: installedMotionLibs() }),
+    direction: direction ? `${direction.label}: motion scenes are ${direction.motion} under this direction.` : "No direction given: motion scenes are allowed where no template carries the idea.",
+  });
+});
+
+server.registerTool("write_motion", {
+  description:
+    "Write a motion scene — motion/<name>.html in the project — and see it: returns a contact sheet of frames across it (the file path; LOOK at it) and any error the scene threw. Place it with a graphic scene { kind: \"motion\", src: \"motion/<name>.html\" } over the words it belongs to, usually under a cutaway (the scene owns the stage) or a full/pip layout (the head in a corner, ctx.head says where). Writing the same name again replaces it, and every scene placing it redraws. describe_motion is the contract; refused under a By the book direction.",
+  inputSchema: {
+    name: z.string().regex(MOTION_NAME_RE).describe("lowercase-with-dashes; the file is motion/<name>.html"),
+    html: z.string().min(1).max(200000).describe("The document: <style>, markup, <script> with fabula.scene({ setup, render })"),
+    preview: z.union([z.literal(false), motionPreviewShape]).optional().describe("How to draw the contact sheet; false skips it"),
+  },
+}, async ({ name, html, preview }) => {
+  const dir = currentProjectDir();
+  const rules = rulesFor(readDirection(dir));
+  if (rules.motion === "refused") throw new Error(`the person's direction is ${rules.label}: only the kit and the named templates, no motion scenes. Nothing was written.`);
+  const { notes } = validateMotionDoc(html);
+  const src = `motion/${name}.html`;
+  fs.mkdirSync(path.join(dir, "motion"), { recursive: true });
+  const existed = fs.existsSync(path.join(dir, src));
+  writeTextAtomic(path.join(dir, src), html);
+  noteActivity(src);
+  const placed = motionPlacement(dir, src, preview ? { index: preview.scene, params: preview.params } : {});
+  const answer = { src, bytes: Buffer.byteLength(html), replaced: existed, notes, placedAt: placed ? `scene ${placed.index} (${placed.seconds}s)` : null };
+  if (preview === false) return ok({ ...answer, hint: "preview_motion draws it when you want to look." });
+  try {
+    const sheet = await motionPreview(dir, src, preview ?? {});
+    return ok({ ...answer, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors, hint: sheet.errors?.length ? "The scene reported errors: fix them and write again." : "Look at the sheet: does each frame read, is the type inside the frame, does the motion arrive where the words do?" });
+  } catch (error) {
+    return ok({ ...answer, sheet: null, errors: [error.message], hint: "Written, but it could not be drawn; the error says why." });
+  }
+});
+
+server.registerTool("preview_motion", {
+  description: "Draw a motion scene again without rewriting it: a contact sheet across its span (or one instant with frames: 1 and at). Placed, it is drawn as it plays — the placement's span, words, params, layout and corner — unless you give others. Seconds, not minutes; no clean cut needed.",
+  inputSchema: { name: z.string().regex(MOTION_NAME_RE), ...motionPreviewShape.shape },
+}, async ({ name, ...preview }) => {
+  const dir = currentProjectDir();
+  const src = `motion/${name}.html`;
+  if (!fs.existsSync(path.join(dir, src))) throw new Error(`no motion document ${src}; list_motion shows what exists`);
+  const sheet = await motionPreview(dir, src, preview);
+  return ok({ src, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors });
+});
+
+server.registerTool("read_motion", {
+  description: "A motion scene's document as written, to change part of it and write it back.",
+  inputSchema: { name: z.string().regex(MOTION_NAME_RE) },
+}, async ({ name }) => {
+  const dir = currentProjectDir();
+  const src = `motion/${name}.html`;
+  if (!fs.existsSync(path.join(dir, src))) throw new Error(`no motion document ${src}; list_motion shows what exists`);
+  return ok({ src, html: fs.readFileSync(path.join(dir, src), "utf8") });
+});
+
+server.registerTool("list_motion", {
+  description: "The project's motion scenes: each document under motion/, its size, and which scenes place it.",
+  inputSchema: {},
+}, async () => {
+  const dir = currentProjectDir();
+  const folder = path.join(dir, "motion");
+  const names = fs.existsSync(folder) ? fs.readdirSync(folder).filter((file) => /\.html$/.test(file)).sort() : [];
+  const scenes = readComposeConfig(dir).scenes ?? [];
+  return ok({
+    motion: names.map((file) => {
+      const src = `motion/${file}`;
+      return { src, bytes: fs.statSync(path.join(folder, file)).size, usedBy: scenes.map((scene, index) => (scene.graphic?.kind === "motion" && scene.graphic.src === src ? index : null)).filter((index) => index !== null) };
+    }),
+  });
+});
+
 function projectFormatSafe() {
   try { return projectFormat(currentProjectDir()); } catch { return DEFAULT_FORMAT; }
 }
@@ -2125,9 +2493,10 @@ server.registerTool("get_theme", {
   description: "The project's theme as written (preset plus overrides), as resolved (every token the stage uses), and whether anyone actually chose it — an unset theme resolves to the studio preset and is easy to mistake for a decision. Also lists the brands this person has saved. Read before set_theme: the person may have changed it in the window.",
   inputSchema: {},
 }, async () => {
-  const config = readComposeConfig(currentProjectDir()).theme ?? {};
+  const dir = currentProjectDir();
+  const config = readComposeConfig(dir).theme ?? {};
   return ok({
-    config, resolved: resolveTheme(config), look: describeLook(config, listSavedThemes(mediaRoot())),
+    config, resolved: resolveTheme(config), look: describeLook(config, listSavedThemes(mediaRoot()), { direction: readDirection(dir) }),
     assets: listAssets(path.join(currentProjectDir(), "assets")),
   });
 });
@@ -2307,7 +2676,7 @@ server.registerTool("reanchor_scenes", {
       config.scenes[entry.index].fromWordId = entry.fromWordId;
       config.scenes[entry.index].toWordId = entry.toWordId;
     }
-    validateScenes(config.scenes ?? [], newWords);
+    validateScenes(config.scenes ?? [], newWords, { motionLibs: installedMotionLibs() });
     config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
     if (!config.cutIdentity) delete config.cutIdentity;
     writeComposeConfig(dir, config);
@@ -2325,7 +2694,7 @@ server.registerTool("reanchor_scenes", {
 
 server.registerTool("render_final", {
   description:
-    "The composited render, as a background job: the head and screen tracks are placed on the film's stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached two-minute chunks — a tweak re-renders the chunks it touched, the rest is copied with the untouched audio. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range, or out/draft.mp4 at half size with draft: true. A whole film is minutes, a draft a fraction of that; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
+    "The composited render, as a background job: the head and screen tracks are placed on the film's stage by ffmpeg from the stage engine's own numbers (punch-ins included), the overlays are captured from the same runtime the preview uses only where they change, and the film is built in cached chunks of six to thirty seconds — a tweak re-renders the chunks it touched and copies the rest, and the sound is made alongside the picture and copied in beside it. Writes out/final.mp4, or out/preview-<from>-<to>.mp4 for a word range, or out/draft.mp4 at half size with draft: true. A whole film is minutes, a draft a fraction of that; the window shows progress. Returns when done or, past wait_seconds, as still running (then wait_render). Never re-renders the clean cut.",
   inputSchema: {
     from_word_id: z.number().int().min(0).optional().describe("Render only from this clean word…"),
     to_word_id: z.number().int().min(0).optional().describe("…to this clean word (inclusive)"),
@@ -2347,6 +2716,22 @@ server.registerTool("render_final", {
   if (!cleanCurrent(map, plan, paths.clean)) {
     warnings.push("clean.mp4 is stale: the cut list or framing changed after it was rendered. The film renders from the clean cut on disk; render_clean → retranscribe_clean → re-anchor if the change was meant.");
   }
+  // By the book: the real render waits until nothing measurable is broken.
+  // A draft and a preview span are how the faults get found, so they pass.
+  const direction = readDirection(dir);
+  if (!draft && from_word_id === undefined && to_word_id === undefined && rulesFor(direction).id === "strict") {
+    const ruled = directionRefusal(readComposeConfig(dir).scenes ?? [], direction);
+    if (ruled) throw new Error(`the person's direction is By the book, and the plan still holds what it rules out — ${ruled.replace(/;? ?nothing was written\.?$/, "")}. Replace it before the real render, or render a draft to look at.`);
+    const review = critiqueNow(dir, { sound: false });
+    // What this render replaces is no reason to refuse it: a final.mp4 that
+    // is out of date, or of the wrong shape or length, is what it fixes.
+    const replaced = (finding) => finding.kind === "wrong-shape" || finding.kind === "wrong-length" || (finding.kind === "stale" && /^final\.mp4\b/.test(finding.what ?? ""));
+    const faults = review.findings.filter((finding) => finding.severity === "fault" && !replaced(finding));
+    if (faults.length) {
+      throw new Error(`the person's direction is By the book, and critique_film finds ${faults.length} fault${faults.length === 1 ? "" : "s"} to fix before the real render: ${faults.slice(0, 5).map((f) => f.what ?? f.title ?? JSON.stringify(f)).join("; ")}. Fix them (critique_film lists each with its fix), or render a draft to look at.`);
+    }
+  }
+  noteActivity(draft ? "draft" : (from_word_id !== undefined || to_word_id !== undefined ? "preview span" : "film"));
   const options = { fresh, ...(draft ? { draft: true } : {}) };
   let output = draft ? path.join(dir, "out", "draft.mp4") : paths.final;
   if (from_word_id !== undefined || to_word_id !== undefined) {
@@ -2381,7 +2766,7 @@ server.registerTool("wait_render", {
 });
 
 server.registerTool("status", {
-  description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics, whether a look has been chosen (and the brands this person has saved), the running background job if any, what is stale and which tool fixes it. Read it before repeating a step.",
+  description: "Current project state: what is staged, transcribed, reviewed, and rendered, with cut statistics, whether a look has been chosen (and the brands this person has saved), the person's direction (their brief from Make it into a video) and the film's treatment when they exist, the motion scenes written, the running background job if any, what is stale and which tool fixes it. Read it before repeating a step.",
   inputSchema: {},
 }, async () => {
   if (!fs.existsSync(pointerFile())) return ok({ project: null, root: mediaRoot(), hint: "no project is open: list_projects shows what exists, switch_project opens one, open_project starts one from a recording" });
@@ -2414,7 +2799,7 @@ server.registerTool("status", {
   };
   if (state.reviewed) Object.assign(state, reviewStats(readReview(dir)));
   state.punch = readPunch(dir);
-  state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()));
+  state.look = describeLook(readComposeConfig(dir).theme, listSavedThemes(mediaRoot()), { direction: readDirection(dir) });
   state.clean = cleanSummary(dir, { measure: true });
   {
     const target = readComposeConfig(dir).audio?.voice?.loudness;
@@ -2424,6 +2809,14 @@ server.registerTool("status", {
   // Who this session is working as: adopted in the session, else what the
   // launcher said.
   state.persona = adoptedPersona ?? (PERSONA_IDS.includes(process.env.FABULA_PERSONA) ? process.env.FABULA_PERSONA : null);
+  // The person's brief, when they pressed Make it into a video, and the
+  // film's idea as written down; get_direction and get_treatment in full.
+  state.direction = describeDirection(readDirection(dir));
+  state.treatment = describeTreatment(readTreatment(dir));
+  {
+    const folder = path.join(dir, "motion");
+    state.motion = fs.existsSync(folder) ? fs.readdirSync(folder).filter((file) => /\.html$/.test(file)).map((file) => `motion/${file}`) : [];
+  }
   // What is in out/ that a person would hand over: the film, previews, the
   // caption files, the thumbnail, the chapter list, the credits.
   state.deliverables = outputs(dir).map(({ name, kind, bytes }) => ({ name, kind, bytes }));

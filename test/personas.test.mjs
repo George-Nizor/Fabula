@@ -40,15 +40,15 @@ test("the craft guides only name templates and tools that exist", () => {
   const server = fs.readFileSync(path.join(ROOT, "mcp/server.mjs"), "utf8");
   const tools = new Set([...server.matchAll(/registerTool\("([a-z_]+)"/g)].map((m) => m[1]));
   const kit = new Set(["stat", "chart", "list", "steps", "ring", "quote", "compare", "image", "clip", "logos", "screen", "cover", "section", "custom", "kinetic", "callout", "title",
-    "focus", "side", "pip", "band", "full", "cutaway", "glide", "dissolve", "cut", "karaoke", "block", "bar", "pop", "tilt", "kenburns", "open",
+    "focus", "side", "split", "pip", "band", "full", "cutaway", "glide", "dissolve", "cut", "karaoke", "block", "bar", "pop", "tilt", "kenburns", "open", "motion",
     "studio", "broadcast", "paper", "neon", "mono", "ink", "slate", "signal", "dawn", "terminal", "bloom", "pastel"]);
   for (const doc of Object.values(CRAFT_DOCS)) {
     const text = fs.readFileSync(path.join(ROOT, doc), "utf8");
     for (const [, name] of text.matchAll(/`([a-z][a-z0-9_-]+)`/g)) {
       // Tool parameters the guides name beside the tool.
-      if (tools.has(name) || ["from_word_id", "voice_loudness", "level", "duck", "ramp", "fade", "music", "pace", "params", "auto", "none", "shade", "over", "variants", "voice_clean", "grade"].includes(name)) continue;
+      if (tools.has(name) || ["from_word_id", "voice_loudness", "level", "duck", "ramp", "fade", "music", "pace", "params", "auto", "none", "shade", "over", "variants", "voice_clean", "grade", "scene"].includes(name)) continue;
       if (name.includes("_")) assert.fail(`${doc} names a tool that does not exist: ${name}`);
-      else if (!name.includes(".") && !["true", "false", "full", "shorts", "md", "custom", "band", "editor"].includes(name)) {
+      else if (!name.includes(".") && !["true", "false", "full", "shorts", "md", "custom", "band", "editor", "vh"].includes(name)) {
         assert.ok(templates.has(name) || kit.has(name), `${doc} names something the kit does not have: ${name}`);
       }
     }

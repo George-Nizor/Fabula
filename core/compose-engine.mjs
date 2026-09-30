@@ -13,9 +13,10 @@ function path_isAbsoluteLike(p) {
 
 import { LAYOUTS, PIP_CORNERS, TRANSITIONS, FULL_STAGE_KINDS, MIN_DWELL_SECONDS, resolveLayoutTimeline } from "./stage-engine.mjs";
 import { validateTheme as validateThemeConfig, TITLE_STYLES, CALLOUT_STYLES } from "./themes.mjs";
+import { validateMotionGraphic } from "./motion.mjs";
 
 export const SCENE_TYPES = new Set(["title", "callout", "graphic", "stage", "kinetic"]);
-export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "clip", "screen", "quote", "compare", "steps", "ring", "logos", "cover", "section", "custom"]);
+export const GRAPHIC_KINDS = new Set(["chart", "stat", "list", "image", "clip", "screen", "quote", "compare", "steps", "ring", "logos", "cover", "section", "custom", "motion"]);
 export const CLIP_FITS = new Set(["cover", "contain"]);
 // What a custom graphic may not carry: anything that runs, loads, or
 // navigates. Motion comes from the --p and --t variables the painter sets.
@@ -49,9 +50,15 @@ function assertItems(items, at, kind, { min = 1, max = 6, needValue = false, nee
   }
 }
 
-function validateGraphic(graphic, at) {
+function validateGraphic(graphic, at, options = {}) {
   if (!graphic || typeof graphic !== "object") throw new Error(`${at}: graphic spec is required`);
   if (!GRAPHIC_KINDS.has(graphic.kind)) throw new Error(`${at}: unknown graphic kind "${graphic.kind}"`);
+  // motion: the assistant's own animation, a document under motion/ drawn
+  // frame by frame by the sandboxed runtime (core/motion.mjs is the contract).
+  if (graphic.kind === "motion") {
+    validateMotionGraphic(graphic, at, options.motionLibs ? { libs: options.motionLibs } : {});
+    return;
+  }
   // screen: the recording's own screen track in the content rect; nothing
   // to declare beyond an optional label. Whether a screen exists at that
   // moment is the render map's business, reported as a warning upstream.
@@ -132,7 +139,9 @@ function validateGraphic(graphic, at) {
   assertItems(graphic.items, at, graphic.kind, { min: 1, max: graphic.kind === "steps" ? 5 : 6, needValue: graphic.kind === "chart" });
 }
 
-export function validateScenes(scenes, words) {
+// options.motionLibs: the optional motion libraries installed here (the
+// server knows; core does no I/O). Without it every known library passes.
+export function validateScenes(scenes, words, options = {}) {
   const byId = new Map(words.map((word) => [word.id, word]));
   scenes.forEach((scene, index) => {
     const at = `scene ${index}`;
@@ -151,7 +160,7 @@ export function validateScenes(scenes, words) {
     // the file doing nothing and read as if it did.
     if (scene.type !== "graphic" && scene.graphic !== undefined) throw new Error(`${at}: a ${scene.type} scene does not carry a graphic; a card is a graphic scene`);
     if (scene.type !== "stage" && (scene.layout !== undefined || scene.corner !== undefined)) throw new Error(`${at}: layout belongs on a stage scene; a ${scene.type} scene takes none (add a stage scene over the same words)`);
-    if (scene.type === "graphic") validateGraphic(scene.graphic, at);
+    if (scene.type === "graphic") validateGraphic(scene.graphic, at, options);
     else if (scene.type === "title") {
       if (!scene.text || typeof scene.text !== "string") throw new Error(`${at}: text is required`);
       if (scene.style !== undefined && !TITLE_STYLES.has(scene.style)) throw new Error(`${at}: title style must be one of ${[...TITLE_STYLES].join(", ")}`);
@@ -240,6 +249,33 @@ export function absorbedStages(scenes, durationSeconds = Infinity) {
     const seconds = scene.end - scene.start;
     if (seconds < floor - 0.01) out.push({ index, layout: scene.layout, seconds: Number(seconds.toFixed(1)), floor });
   });
+  return out;
+}
+
+// Returns to the head the dwell rule will not show: the head alone between
+// two placed layouts for less than the floor is bridged — the layout before
+// holds through it — so a planned "back to the face" of a sentence or two
+// never appears. Worth hearing when it is long enough to have been meant —
+// two seconds, about the shortest sentence; a pause between two layouts is
+// exactly what the rule is for. Scenes are resolved (seconds).
+export function bridgedReturns(scenes, durationSeconds = Infinity) {
+  const staged = scenes
+    .map((scene, index) => ({ scene, index }))
+    .filter(({ scene }) => scene.type === "stage" && scene.layout && scene.layout !== "focus")
+    .sort((a, b) => a.scene.start - b.scene.start);
+  const out = [];
+  // The gap is measured from the latest end so far, not the previous
+  // scene's: a short stage scene inside a long one does not end the long one.
+  let reach = staged[0];
+  for (let i = 1; i < staged.length; i += 1) {
+    const before = reach;
+    const after = staged[i];
+    if (after.scene.end > reach.scene.end) reach = after;
+    const gap = after.scene.start - before.scene.end;
+    if (gap >= 2 && gap < MIN_DWELL_SECONDS - 0.01 && after.scene.start < durationSeconds) {
+      out.push({ after: before.index, before: after.index, start: Number(before.scene.end.toFixed(2)), end: Number(after.scene.start.toFixed(2)), seconds: Number(gap.toFixed(1)), layout: before.scene.layout });
+    }
+  }
   return out;
 }
 
@@ -579,7 +615,9 @@ export function emptyPlacedLayouts(scenes, durationSeconds = 0, options = {}) {
 // In a full layout the head is a corner card and the graphic owns the stage;
 // in a cutaway there is no head. Under focus, side or band the head covers
 // most or all of it — in a tall frame, all of it — and the plan looks
-// complete while the picture shows a face. Reported by scene index.
+// complete while the picture shows a face. A motion scene is also at home
+// under pip: it is told where the head is (ctx.head) and composes around
+// the corner card, which a kit card cannot. Reported by scene index.
 export function hiddenFullStage(scenes, durationSeconds = 0, options = {}) {
   const timeline = resolveLayoutTimeline(scenes, durationSeconds, options);
   const hidden = [];
@@ -587,7 +625,8 @@ export function hiddenFullStage(scenes, durationSeconds = 0, options = {}) {
     if (scene.type !== "graphic" || !scene.graphic) return;
     const fullStage = FULL_STAGE_KINDS.has(scene.graphic.kind) && scene.graphic.full !== false;
     if (!fullStage || scene.graphic.over) return; // over the head, it is never behind it
-    const covering = timeline.filter((segment) => segment.start < scene.end && segment.end > scene.start && !["full", "cutaway"].includes(segment.layout));
+    const open = scene.graphic.kind === "motion" ? ["full", "cutaway", "pip"] : ["full", "cutaway"];
+    const covering = timeline.filter((segment) => segment.start < scene.end && segment.end > scene.start && !open.includes(segment.layout));
     if (!covering.length) return;
     const seconds = covering.reduce((sum, segment) => sum + Math.min(segment.end, scene.end) - Math.max(segment.start, scene.start), 0);
     if (seconds < 0.25) return;
@@ -617,8 +656,12 @@ export function describeVariety(scenes, durationSeconds = 0) {
   const staged = scenes.filter((scene) => scene.type === "stage" && scene.layout);
 
   // A template is its own kind of card: six different templates in a row
-  // are six shapes, not six "custom" cards.
-  const kindOf = (scene) => scene.graphic.template ?? scene.graphic.kind;
+  // are six shapes, not six "custom" cards. So is a motion document: each is
+  // a picture designed for its moment, and one document placed twice (with
+  // different params) is still one design.
+  const kindOf = (scene) => (scene.graphic.kind === "motion" && scene.graphic.src
+    ? `motion ${String(scene.graphic.src).replace(/^motion\//, "").replace(/\.html$/, "")}`
+    : scene.graphic.template ?? scene.graphic.kind);
   for (const run of runsOfSame(cards, kindOf)) {
     if (run.length >= 3) {
       notes.push(`${run.length} ${run.value} cards in a row, ${at(run.from.start)}–${at(run.to.end)}. The same card kind twice running reads as a template; change the shape or let the head hold the frame between them.`);

@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { flattenWords } from "../core/cut-engine.mjs";
 import { resolveFormat, ceilingOf, validateFormat } from "../core/formats.mjs";
 import {
@@ -21,6 +22,49 @@ import {
 export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean"];
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
+// A motion document's identity is its content: a rewritten scene is a new
+// picture, so the window reloads its frame and the render's chunk identity
+// changes, while touching the file without changing it changes nothing.
+// Hashed once per size and mtime; the window asks every half second.
+const motionStamps = new Map();
+export function motionStamp(dir, src) {
+  const file = path.join(dir, src);
+  try {
+    const stat = fs.statSync(file);
+    const key = `${stat.size}:${stat.mtimeMs}`;
+    const hit = motionStamps.get(file);
+    if (hit?.key === key) return hit.stamp;
+    const stamp = crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+    motionStamps.set(file, { key, stamp });
+    return stamp;
+  } catch {
+    return "missing";
+  }
+}
+
+// Every reader of a plan — the window, the film's render, the single frame —
+// turns the plan's project-relative sources into what its page can load, and
+// does it here so the three cannot drift: a URL for every picture and clip,
+// assets/ rewritten inside a custom card's markup, and a content stamp on
+// every motion scene. assetUrl maps a project-relative path to a URL.
+export function attachSceneMedia(dir, scenes, assetUrl) {
+  for (const scene of scenes ?? []) {
+    const graphic = scene?.graphic;
+    if (!graphic) continue;
+    if (graphic.kind === "motion") {
+      scene.graphic = { ...graphic, stamp: motionStamp(dir, graphic.src) };
+      continue;
+    }
+    if (graphic.src) graphic.url = assetUrl(graphic.src);
+    for (const item of graphic.items ?? []) if (item?.src) item.url = assetUrl(item.src);
+    if (graphic.kind === "custom" && typeof graphic.html === "string") {
+      const base = assetUrl("assets/");
+      scene.graphic = { ...graphic, html: graphic.html.replaceAll("assets/", base), css: (graphic.css ?? "").replaceAll("assets/", base) };
+    }
+  }
+  return scenes;
+}
 
 // Footage is referenced where it lives (source.json); a raw.<ext> copy is the
 // older staging and still honoured.

@@ -242,7 +242,11 @@ export function gradeFilters(grade) {
     pre: parts.length ? `${parts.join(",")},` : "",
     // vignette takes yuv or gray only and DROPS an alpha plane; the render
     // attaches it where no alpha is at stake (see render-plan's head routes).
-    post: g.vignette > 0 ? `vignette=angle=${(Math.PI / 5 * g.vignette).toFixed(4)}:mode=forward` : "",
+    // dither=0: the filter's dither is a random sequence advanced per pixel
+    // from the process's start, so the same frame came out differently in a
+    // whole render and in a chunk or a span. Off, it is a function of the
+    // frame alone (and faster).
+    post: g.vignette > 0 ? `vignette=angle=${(Math.PI / 5 * g.vignette).toFixed(4)}:mode=forward:dither=0` : "",
     css: css || "none",
     vignette: g.vignette,
   };
@@ -301,7 +305,10 @@ export function describePresets() {
 // so a project with no look at all reads as a fully specified one. Every tool
 // that reports the look says which of the two it is, because "the look is
 // already decided" is exactly the wrong thing for an assistant to assume.
-export function describeLook(themeConfig, savedBrands = []) {
+// direction: the person's brief (core/direction.mjs), when they pressed Make
+// it into a video — then the look is theirs to name or the assistant's to
+// choose, and the hint says which instead of asking.
+export function describeLook(themeConfig, savedBrands = [], { direction = null } = {}) {
   const config = themeConfig ?? {};
   const overrides = Object.keys(config).filter((key) => config[key] !== undefined && config[key] !== null);
   const chosen = overrides.length > 0;
@@ -316,7 +323,15 @@ export function describeLook(themeConfig, savedBrands = []) {
     logo: Boolean(resolved.logo),
     savedBrands: brands,
   };
-  if (!chosen) {
+  const wanted = direction?.look ?? null;
+  const named = (list) => list.map((b) => `${b.name} (${b.id})`).join(", ");
+  if (!chosen && wanted && wanted !== "keep") {
+    look.hint = wanted.startsWith("brand:")
+      ? `No look has been chosen yet; the person's brief asks for their brand ${wanted.slice(6)} — set_theme with use: "${wanted.slice(6)}" before planning scenes.`
+      : wanted.startsWith("preset:")
+        ? `No look has been chosen yet; the person's brief asks for the ${wanted.slice(7)} preset — set_theme with preset "${wanted.slice(7)}" before planning scenes.`
+        : `No look has been chosen yet, and the person's brief leaves it to you (get_direction): choose one${brands.length ? ` — their saved ${brands.length === 1 ? "brand" : "brands"} ${named(brands)}, or a preset` : " from the presets"} — set_theme it before planning scenes, and say why in a line. Do not stop to ask.`;
+  } else if (!chosen && wanted !== "keep") {
     look.hint = brands.length
       ? `No look has been chosen; the film would render in the default ${resolved.preset} preset. This person has saved ${brands.length === 1 ? "a brand" : "brands"}: ${brands.map((b) => `${b.name} (${b.id})`).join(", ")}. Ask whether the film uses one — set_theme with use: "<id>" — before planning scenes.`
       : `No look has been chosen; the film would render in the default ${resolved.preset} preset. Ask what the film is for and set_theme (list_themes shows the presets) before planning scenes.`;

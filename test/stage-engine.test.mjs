@@ -217,3 +217,61 @@ test("a sliver of head at either end folds into the placed segment beside it", (
   const shot = resolveLayoutTimeline([{ type: "stage", layout: "cutaway", start: 2, end: 8 }], 30);
   assert.equal(shot[0].layout, "focus");
 });
+
+test("a split screen gives the head one half edge to edge and the visual the other", () => {
+  const W = DEFAULT_STAGE.width;
+  const H = DEFAULT_STAGE.height;
+  const left = layoutRects("split", null, 16 / 9, DEFAULT_STAGE);
+  assert.equal(left.fit, "cover");
+  assert.deepEqual(left.video, { x: 0, y: 0, w: W / 2, h: H });
+  assert.ok(left.content.x >= W / 2 && left.content.x + left.content.w <= W, "the visual owns the right half");
+  const right = layoutRects("split", "tr", 16 / 9, DEFAULT_STAGE);
+  assert.deepEqual(right.video, { x: W / 2, y: 0, w: W / 2, h: H });
+  assert.ok(right.content.x + right.content.w <= W / 2, "the visual owns the left half");
+  // A tall frame splits top and bottom; a bottom corner puts the head under.
+  const tall = { width: 1080, height: 1920 };
+  const top = layoutRects("split", null, 16 / 9, tall);
+  assert.deepEqual(top.video, { x: 0, y: 0, w: 1080, h: 960 });
+  assert.ok(top.content.y >= 960 && top.content.y + top.content.h <= 1920 * 0.78 + 0.01, "the visual sits under it, above the caption floor");
+  const bottom = layoutRects("split", "bl", 16 / 9, tall);
+  assert.deepEqual(bottom.video, { x: 0, y: 960, w: 1080, h: 960 });
+  assert.ok(bottom.content.y + bottom.content.h <= 960, "the visual sits above it");
+});
+
+test("a right-hand corner mirrors the side layout", () => {
+  const W = DEFAULT_STAGE.width;
+  const plain = layoutRects("side", null, 16 / 9, DEFAULT_STAGE);
+  const mirrored = layoutRects("side", "br", 16 / 9, DEFAULT_STAGE);
+  assert.equal(mirrored.fit, "contain");
+  assert.ok(Math.abs(mirrored.video.x - (W - plain.video.x - plain.video.w)) < 0.001);
+  assert.equal(mirrored.video.w, plain.video.w);
+  assert.ok(mirrored.content.x + mirrored.content.w <= mirrored.video.x, "the column is left of the head");
+  assert.equal(mirrored.content.w, plain.content.w);
+  // Left is the default, and says so either way.
+  assert.deepEqual(layoutRects("side", "tl", 16 / 9, DEFAULT_STAGE), plain);
+});
+
+test("two placements are one shot when the head does not move", () => {
+  const wide = { width: 1920, height: 1080 };
+  const tall = { width: 1080, height: 1920 };
+  const pair = (layout, a, b) => [
+    { type: "stage", layout, corner: a, start: 0, end: 10 },
+    { type: "stage", layout, corner: b, start: 10, end: 20 },
+  ];
+  const count = (scenes, stage) => resolveLayoutTimeline(scenes, 20, { transition: "dissolve", stage }).length;
+  // A wide split cares only for left or right; a tall one for top or bottom.
+  assert.equal(count(pair("split", "br", "tr"), wide), 1);
+  assert.equal(count(pair("split", "br", "bl"), wide), 2);
+  assert.equal(count(pair("split", "tr", "tl"), tall), 1);
+  assert.equal(count(pair("split", "br", "tr"), tall), 2);
+  // A side with no corner and one with a left corner are the same; a tall
+  // side ignores the corner entirely.
+  assert.equal(count(pair("side", undefined, "bl"), wide), 1);
+  assert.equal(count(pair("side", "bl", "br"), tall), 1);
+  // pip and full take every corner, br when none is named.
+  assert.equal(count(pair("pip", undefined, "br"), wide), 1);
+  assert.equal(count(pair("pip", "br", "tr"), wide), 2);
+  // Without the shape, both halves of the corner count: a boundary kept,
+  // never one lost.
+  assert.equal(count(pair("split", "br", "tr"), undefined), 2);
+});

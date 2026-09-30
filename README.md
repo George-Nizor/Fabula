@@ -5,7 +5,10 @@ Raw footage in. A told story out.
 Fabula is a transcript-driven talking-head video editor: it transcribes a recording locally
 (WhisperX on CUDA), proposes cuts for dead air, fillers, and false starts, lets you review every
 cut as strikethrough text before anything renders, then plans and composites visuals around the
-speaker — with your choice of Claude Code or Codex as the editor, using your existing subscription.
+speaker — layouts that move the head around the frame, named graphics, and motion scenes the
+assistant writes as code for the moments that have to move — with your choice of Claude Code or
+Codex as the editor, using your existing subscription. One button, **Make it into a video**,
+takes a reviewed cut to a draft film from a short brief.
 
 ## Projects
 
@@ -139,12 +142,23 @@ step with the film.
    The window shows each step as it lands. Review the cuts in the Cut step: click a struck word
    or pause to keep it, drag across words and cut them by hand, or drag across struck words to
    keep just those (ctrl+F finds a phrase in a long transcript). When the cut is right, press
-   **Approve the cut and compose** at the top of the inspector: the clean cut renders and the
-   assistant takes over (one is started for you if none is running). It sets the framing where
-   the scan needed a human eye, re-transcribes the clean cut, plans layouts and scenes, and
-   renders a one-minute preview for you to check before the whole film. The window shows each step as it
-   runs and every result as it lands. The long steps are background jobs: they keep going if the
-   session that started them ends, and the window keeps showing where they are.
+   **Make it into a video…** at the top of the inspector and write a short brief: what the film
+   is for, how closely to hold to the house style — **Free hand** (the assistant designs the
+   film: its own motion graphics, the layouts the story wants, a look it sets), **Guided** (the
+   templates and the look first) or **By the book** (only the kit and your look; every fault
+   fixed before the real render) — the look, whether music, sound effects and pictures from the
+   web are allowed, and any notes. **Make the video** renders the clean cut and hands the film to
+   the assistant, which works through it without stopping to ask: it writes a treatment (the
+   film's one sentence, its shape, its signature moment, where the head goes beat by beat),
+   sets the look, composes the scenes — moving the head between the full frame, a corner, a
+   side column, a split screen and gone — writes motion scenes where a moment has to move, sets
+   the sound, reviews its own work, and renders a draft. The inspector's Making panel follows
+   it phase by phase with the treatment under it; when the draft lands, **Watch the draft** (or
+   the Live / Draft switch over the stage) plays it in the window, and a note sent while it
+   plays says where in the draft it is about. The real render waits for you. **Compose it with
+   me instead** keeps the older, step-by-step path: the assistant composes with you in its pane.
+   The long steps are background jobs: they keep going if the session that started them ends,
+   and the window keeps showing where they are.
 3. **Review in the window.** The top bar is four numbered steps. **Cut**: play with
    skip-preview, click struck words to keep them, watch the framing guides show what the render
    will pull. **Look**: the brand — a gallery of theme presets (Studio, Broadcast, Paper, Neon,
@@ -195,10 +209,11 @@ the new word ids automatically by matching the words at their ends. It is compar
 so toggling a cut and toggling it back costs nothing; only a cut list or framing that actually
 differs from what `out/clean-map.json` records renders again. The final render is layered and
 cached: the footage is placed by ffmpeg, only the overlays that change are captured, and each
-two-minute chunk under `out/chunks/` is reused until something inside it changes — so a whole film
-takes minutes and a tweaked title takes about one. Both encode on the GPU when the machine has an
-NVIDIA card (NVENC works from WSL with the ffmpeg build `npm run setup:tools` installs), and both
-run as background jobs with their progress in the window's masthead. The Export step starts them
+chunk under `out/chunks/` (six to thirty seconds of film) is reused until something inside it
+changes — so a whole film takes minutes and a tweaked title takes about one. Both encode on the
+GPU when the machine has an NVIDIA card (NVENC works from WSL with the ffmpeg build
+`npm run setup:tools` installs), and both run as background jobs with their progress in the
+window's masthead. The Export step starts them
 too — the film, or *Refresh the clean cut* after the cuts moved, which renders and re-transcribes
 only what no longer matches — with the same arguments the tools use, so it does not matter which
 side pressed the button. On Windows the window hands the job to WSL through `wsl.exe`.

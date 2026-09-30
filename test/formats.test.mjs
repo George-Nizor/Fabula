@@ -59,8 +59,9 @@ test("a tall frame crops the head where the head is the picture and keeps it who
   const band = layoutRects("band", null, SOURCE_ASPECT, stage);
   assert.equal(band.fit, "contain");
   assert.ok(band.content.y > band.video.y + band.video.h, "the visual sits under the band, not over it");
-  // Landscape crops nothing, whatever the layout.
-  for (const layout of LAYOUTS) assert.equal(layoutRects(layout, "br", SOURCE_ASPECT, FORMATS.landscape.stage).fit, "contain");
+  // Landscape crops nothing but the split screen, whose half of the frame is
+  // filled edge to edge like a picture.
+  for (const layout of LAYOUTS) assert.equal(layoutRects(layout, "br", SOURCE_ASPECT, FORMATS.landscape.stage).fit, layout === "split" ? "cover" : "contain");
 });
 
 test("covering a window that is already the footage's shape crops nothing", () => {

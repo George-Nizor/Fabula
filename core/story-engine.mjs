@@ -200,7 +200,7 @@ const DETECTORS = [
   {
     kind: "comparison",
     test: (text) => /\b(versus|vs\.?|compared (to|with)|instead of|rather than|(better|worse|faster|slower|cheaper|bigger|smaller|more|less) than|the difference between|on the other hand|whereas|as opposed to)\b/.test(lower(text)),
-    suggest: ["compare", "before-after", "scale", "split"],
+    suggest: ["compare", "before-after", "scale", "share"],
     why: "two things set against each other want to be seen side by side",
   },
   {

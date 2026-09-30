@@ -720,6 +720,28 @@
   overflow: hidden;
 }
 
+/* motion: the assistant's own scene, drawn by renderer/motion/runtime.js in a
+   sandboxed frame at the film's pixels and scaled to the card. No chrome of
+   its own: a scene that wants a card draws one. */
+.ov-graphic.kind-motion {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+.ov-motion-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
 /* cover: a still edge to edge, pushed in slowly, a shade rising from the
    bottom, the title landing word by word. */
 .ov-cover-media { position: absolute; inset: 0; background: var(--ov-field-c, #0b0e12); }
@@ -862,7 +884,9 @@
    picture and a column of buttons down the right. Captions and titles sit
    above that band, and the layouts stop their cards at the same floor. */
 .is-tall .ov-caption { bottom: 13cqh; font-size: 6cqmin; max-width: 86cqw; white-space: normal; text-align: center; line-height: 1.15; }
-.is-tall .ov-caption.style-band { bottom: 11cqh; }
+/* The band stays a strip the width of the frame; its words wrap inside the
+   same 86cqw the other styles keep to. */
+.is-tall .ov-caption.style-band { bottom: 11cqh; max-width: none; padding-inline: 7cqw; }
 .is-tall .ov-title { bottom: 22cqh; }
 
 /* The spoken word with the head on the stage: low, off the face, above the

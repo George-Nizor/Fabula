@@ -202,8 +202,97 @@ const stagger = (count, from, each, span, cap = 0.6) => {
 // share of its span: a thirty-second card builds in under two seconds, and
 // the export captures those frames, not twelve seconds of them.
 const BUILD_SECONDS = 1.8;
-const FULL_STAGE_KINDS = new Set(["cover", "section", "custom"]);
+const FULL_STAGE_KINDS = new Set(["cover", "section", "custom", "motion"]);
 let customSerial = 0;
+
+// ---- Motion scenes: the assistant's own code, in a sandboxed frame ----
+//
+// A motion graphic is a document under the project's motion/ folder, drawn
+// by renderer/motion/runtime.js inside <iframe sandbox="allow-scripts">: an
+// opaque origin with no network, no disk and no reach into this page or its
+// bridge. It draws only when told which frame to draw, so the painter tells
+// it — once per film frame (MOTION_FPS) — and the export waits for the frame
+// to say it has drawn (settled()) before it captures anything.
+const MOTION_HOST = "fabula-motion://runtime/motion/host.html";
+const MOTION_FPS = 30;
+const MOTION_SETTLE_MS = 15000;
+const motionFrames = new Map(); // token -> entry
+let motionSerial = 0;
+
+function motionEntry(frame) {
+  return motionFrames.get(frame?.dataset?.token ?? "") ?? null;
+}
+
+function motionPost(entry, message) {
+  try { entry.frame.contentWindow?.postMessage({ ...message, token: entry.token }, "*"); }
+  catch { /* the frame is going away */ }
+}
+
+// Waiters resolve when the frame has loaded and drawn the latest frame asked.
+function motionCheck(entry) {
+  const done = entry.state === "ready" && (entry.wanted === null || entry.drawn === entry.wanted.n) && !entry.inFlight;
+  if (!done && entry.state !== "gone" && entry.state !== "stuck") return;
+  const waiters = entry.waiters;
+  entry.waiters = [];
+  for (const resolve of waiters) resolve();
+}
+
+function motionPump(entry) {
+  if (entry.state !== "ready" || entry.inFlight || entry.wanted === null || entry.drawn === entry.wanted.n) return;
+  entry.inFlight = true;
+  motionPost(entry, { fabula: "seek", ...entry.wanted });
+}
+
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || typeof data !== "object" || typeof data.fabula !== "string") return;
+  for (const entry of motionFrames.values()) {
+    if (entry.frame.contentWindow !== event.source) continue;
+    if (Array.isArray(data.errors) && data.errors.length) entry.errors.push(...data.errors.slice(0, 20));
+    if (data.fabula === "hello" && entry.state === "waiting") {
+      entry.state = "loading";
+      motionPost(entry, { fabula: "load", ...entry.spec });
+    } else if (data.fabula === "ready") {
+      entry.state = "ready";
+      motionPump(entry);
+    } else if (data.fabula === "drawn") {
+      entry.inFlight = false;
+      entry.drawn = data.n;
+      motionPump(entry);
+    }
+    motionCheck(entry);
+    return;
+  }
+});
+
+function scaleMotionFrame(entry) {
+  const k = entry.card.clientWidth / entry.logical.w;
+  if (k > 0) entry.frame.style.transform = `scale(${k})`;
+}
+
+// The frames still on a stage; the rest are forgotten.
+function liveMotionFrames() {
+  for (const [token, entry] of motionFrames) {
+    if (!entry.frame.isConnected) {
+      entry.state = "gone";
+      motionCheck(entry);
+      entry.observer?.disconnect();
+      motionFrames.delete(token);
+    }
+  }
+  return [...motionFrames.values()];
+}
+
+const customReadCache = new WeakMap();
+function customReads(graphic) {
+  let hit = customReadCache.get(graphic);
+  if (!hit) {
+    const text = `${graphic.html ?? ""}${graphic.css ?? ""}`;
+    hit = { p: /--p(?![\w-])/.test(text), q: /--q(?![\w-])/.test(text) };
+    customReadCache.set(graphic, hit);
+  }
+  return hit;
+}
 
 function graphicSignature(graphic, p, t, scene) {
   const alpha = presenceAt(t, scene.start, scene.end, scene.edgeIn ? 0 : 0.45, scene.edgeOut ? 0 : 0.35);
@@ -231,8 +320,18 @@ function graphicSignature(graphic, p, t, scene) {
       return { alpha, number: r3(easeOutBack(window01(q, 0, 0.35))), rule: r3(easeOut(window01(q, 0.2, 0.4))), title: r3(easeOut(window01(q, 0.3, 0.45))), sub: r3(easeOut(window01(q, 0.6, 0.35))) };
     case "clip":
       return { alpha }; // the picture is the clip itself, placed as media
-    case "custom":
-      return { alpha, p: r2(p), q: r2(q) };
+    case "custom": {
+      // p and q step every 1% of the span and of the build, and every step
+      // is a new capture in the render — so a card moves them only when its
+      // markup reads them. Most templates read neither; the window paints
+      // every frame regardless, so the preview cannot tell the difference.
+      const reads = customReads(graphic);
+      return { alpha, p: reads.p ? r2(p) : 0, q: reads.q ? r2(q) : 0 };
+    }
+    case "motion":
+      // A new picture every film frame: the export captures each one, and
+      // the frame number is what the runtime is asked to draw.
+      return { alpha: graphic.fade === false ? 1 : alpha, n: Math.max(0, Math.round((t - scene.start) * MOTION_FPS)) };
     case "image":
       return graphic.motion === "kenburns"
         ? { alpha, zoom: r3(1 + 0.09 * easeOut(p)), pan: r3(p) }
@@ -496,6 +595,42 @@ function buildGraphic(part) {
     root.innerHTML = graphic.html;
     card.append(style, root);
   }
+  if (graphic.kind === "motion") {
+    // The frame is drawn at the scene's own pixels — the film's, whatever
+    // size this stage is shown at — and scaled to the card, so a line of
+    // type is the same size in the window, the draft and the film.
+    if (graphic.full !== false) card.classList.add("is-full");
+    const frame = document.createElement("iframe");
+    frame.className = "ov-motion-frame";
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("tabindex", "-1");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("title", "motion scene");
+    const token = `m${motionSerial += 1}`;
+    frame.dataset.token = token;
+    const logical = part.motion?.logical ?? { w: 1920, h: 1080 };
+    frame.style.width = `${logical.w}px`;
+    frame.style.height = `${logical.h}px`;
+    const entry = {
+      token, frame, card, logical, observer: null, state: "waiting", wanted: null, drawn: null, inFlight: false, waiters: [], errors: [],
+      spec: {
+        src: graphic.src, stamp: graphic.stamp ?? "", params: graphic.params ?? {}, libs: graphic.libs ?? [],
+        seed: graphic.seed ?? graphic.src, theme: part.motion?.theme ?? {}, width: logical.w, height: logical.h, span: part.motion?.span ?? 1,
+        words: part.motion?.words ?? [], head: part.motion?.head ?? null,
+      },
+    };
+    motionFrames.set(token, entry);
+    frame.src = MOTION_HOST;
+    card.append(frame);
+    // Scale the frame to whatever size the card is drawn at; a layout pass
+    // tells us, before the next paint. settled() applies it again before a
+    // capture, so a frame captured before the observer fired is not drawn
+    // at the wrong size.
+    if (typeof ResizeObserver === "function") {
+      entry.observer = new ResizeObserver(() => scaleMotionFrame(entry));
+      entry.observer.observe(card);
+    }
+  }
   if (graphic.kind === "logos") {
     const row = el("div", "ov-logos");
     for (const item of graphic.items) {
@@ -634,8 +769,19 @@ function animateKinetic(node, part) {
 function animateGraphic(card, part) {
   const { graphic, sig } = part;
   setOpacity(card, sig.alpha);
-  card.style.transform = `translateY(${r3((1 - sig.alpha) * 3)}cqh)`;
+  // A motion scene owns its own movement; the card only fades.
+  card.style.transform = graphic.kind === "motion" ? "" : `translateY(${r3((1 - sig.alpha) * 3)}cqh)`;
   switch (graphic.kind) {
+    case "motion": {
+      const entry = motionEntry(card.querySelector(".ov-motion-frame"));
+      if (!entry) break;
+      const n = sig.n;
+      if (entry.wanted?.n !== n) {
+        entry.wanted = { n, t: n / MOTION_FPS, p: part.motion?.span ? Math.min(n / MOTION_FPS / part.motion.span, 1) : 0, film: part.motion?.film ?? 0, head: part.motion?.head ?? null };
+        motionPump(entry);
+      }
+      break;
+    }
     case "stat": {
       card.querySelector(".ov-stat-value").textContent = `${graphic.prefix ?? ""}${sig.value}${graphic.suffix ?? ""}`;
       card.querySelector(".ov-stat-value").style.transform = `scale(${sig.slam})`;
@@ -831,7 +977,7 @@ function animate(node, part, stage, theme) {
     node.style.top = pct(part.rect.y, stage.height);
     node.style.width = pct(part.rect.w, stage.width);
     node.style.height = pct(part.rect.h, stage.height);
-    node.style.borderRadius = `${(part.rect.w * HEAD_RADIUS * theme.radius / stage.width) * 100}cqw`;
+    node.style.borderRadius = part.square ? "0" : `${(part.rect.w * HEAD_RADIUS * theme.radius / stage.width) * 100}cqw`;
     return;
   }
   animators[part.kind]?.(node, part);
@@ -839,7 +985,14 @@ function animate(node, part, stage, theme) {
 
 // What identifies a part across frames (its element is kept while this
 // holds) and what would need a rebuild (its structure changed under it).
-const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => (w.emph ? `${w.text}*` : w.text)), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone, low: part.low });
+// A motion frame is loaded once with the look, the words, the span and its
+// size; it cannot be told them again. So they are part of what makes the
+// card: change the accent or re-cut the words under it, and the window loads
+// the scene afresh, as the export would, rather than showing the old one.
+const motionLoad = (part) => (part.graphic?.kind === "motion" && part.motion
+  ? { theme: part.motion.theme, span: part.motion.span, logical: part.motion.logical, words: part.motion.words?.map((w) => `${w.text}@${w.t0}-${w.t1}`) }
+  : null);
+const structural = (part) => JSON.stringify({ kind: part.kind, style: part.style, text: part.text, subtitle: part.subtitle, flair: part.flair !== null && part.flair !== undefined, words: part.words?.map((w) => (w.emph ? `${w.text}*` : w.text)), graphic: part.graphic, rect: part.rect, column: part.column, avoid: part.avoid, logo: part.logo, watermark: part.watermark, watermarkCorner: part.watermarkCorner, tone: part.tone, low: part.low, motion: motionLoad(part) });
 
 window.FabulaStage = {
   glowAt,
@@ -879,7 +1032,7 @@ window.FabulaStage = {
     // layer every time the signature changes, and a soft drop shadow under a
     // fading head does not need thirty of them per boundary.
     if (layout && stage && alpha > 0.005) {
-      parts.push({ key: "shadow", kind: "shadow", layer: "under", rect: roundRect(layout.video), alpha: Math.round(alpha * 20) / 20 });
+      parts.push({ key: "shadow", kind: "shadow", layer: "under", rect: roundRect(layout.video), alpha: Math.round(alpha * 20) / 20, square: layout.fit === "cover" });
     }
     let screen = null;
     let clip = null;
@@ -898,7 +1051,29 @@ window.FabulaStage = {
         const rect = full && stage ? { x: 0, y: 0, w: stage.width, h: stage.height } : (contentRect ? roundRect(contentRect) : null);
         // A custom graphic may ask to sit OVER the head — words on the face,
         // with the shade its template draws — rather than under it.
-        parts.push({ key, kind: "graphic", layer: scene.graphic.over ? "over" : "under", graphic: scene.graphic, sig, rect, accent: scene.accent });
+        const part = { key, kind: "graphic", layer: scene.graphic.over ? "over" : "under", graphic: scene.graphic, sig, rect, accent: scene.accent };
+        if (scene.graphic.kind === "motion" && rect && stage) {
+          // The scene draws at the film's own pixels (logicalStage: a draft
+          // renders a smaller stage, the scene must not know), and is told
+          // where the head is in those pixels so it can frame or avoid it.
+          const logicalStage = compose.logicalStage ?? stage;
+          const logical = { w: Math.round(rect.w * logicalStage.width / stage.width), h: Math.round(rect.h * logicalStage.height / stage.height) };
+          const k = logical.w / rect.w;
+          const video = layout?.video;
+          const head = video
+            ? { x: Math.round((video.x - rect.x) * k), y: Math.round((video.y - rect.y) * k), w: Math.round(video.w * k), h: Math.round(video.h * k), visible: (layout.alpha ?? 1) > 0.05 && !layout.headHidden }
+            : { x: 0, y: 0, w: 0, h: 0, visible: false };
+          // The words spoken over the scene, timed from its start, so its
+          // choreography can land on the narration (fabula.word("thrust")).
+          const spoken = (compose.wordSpans ?? [])
+            .filter((w) => w.start >= scene.start - 0.05 && w.start < scene.end)
+            .map((w) => ({ text: w.text, t0: r3(w.start - scene.start), t1: r3(w.end - scene.start) }));
+          part.motion = {
+            logical, span: r3(scene.end - scene.start), film: r3(t), head, words: spoken,
+            theme: { accent: theme.accent, accent2: theme.accent2, text: theme.text, muted: theme.muted, ink: theme.ink, card: theme.card, field: theme.field, fonts: theme.fonts },
+          };
+        }
+        parts.push(part);
         if (scene.graphic.kind === "screen" && rect && stage) {
           screen = { rect: roundRect(screenRect(scene, rect, stage)), alpha: sig.alpha, start: scene.start, end: scene.end, edgeIn: Boolean(scene.edgeIn), edgeOut: Boolean(scene.edgeOut) };
         }
@@ -965,7 +1140,9 @@ window.FabulaStage = {
     if (theme.logo || theme.watermark) {
       parts.push({ key: "brand", kind: "brand", layer: "over", logo: theme.logo ? { ...theme.logo, url: theme.logoUrl ?? theme.logo.src } : null, watermark: theme.watermark, watermarkCorner: watermarkCorner(theme, layout, stage) });
     }
-    for (const part of parts) part.sigText = JSON.stringify(part);
+    // A motion scene's words are handed over once, when its frame loads;
+    // they are not a per-frame difference and stay out of the signature.
+    for (const part of parts) part.sigText = JSON.stringify(part.motion ? { ...part, motion: { ...part.motion, words: part.motion.words.length } } : part);
     return { t, stage, layout, parts, screen, clip, theme };
   },
 
@@ -1014,7 +1191,55 @@ window.FabulaStage = {
       ordered.push(node);
     }
     for (const leftover of existing.values()) leftover.remove();
-    overlayEl.replaceChildren(...(glow ? [glow] : []), ...ordered);
+    // Every node into place with as few moves as possible: a node already
+    // where it belongs is not touched. Taking an iframe out of the document
+    // reloads it (a motion scene would start again every time a caption
+    // changed), and re-inserting every child each change was layout work the
+    // window did for nothing. moveBefore keeps a frame alive across a move.
+    const wanted = glow ? [glow, ...ordered] : ordered;
+    let cursor = overlayEl.firstChild;
+    for (const node of wanted) {
+      if (node === cursor) { cursor = cursor.nextSibling; continue; }
+      if (node.parentNode === overlayEl && typeof overlayEl.moveBefore === "function") {
+        try { overlayEl.moveBefore(node, cursor); continue; } catch { /* fall back to a plain insert */ }
+      }
+      overlayEl.insertBefore(node, cursor);
+    }
+    while (cursor) { const next = cursor.nextSibling; cursor.remove(); cursor = next; }
+    // Frames taken off the stage are forgotten now: the window never calls
+    // settled(), and every message used to walk the dead ones too.
+    liveMotionFrames();
+  },
+
+  // Resolves once every motion scene on a stage has drawn the frame it was
+  // last asked for. The export awaits it before capturing; a scene that
+  // never answers is given up on after MOTION_SETTLE_MS and says so.
+  settled() {
+    return Promise.all(liveMotionFrames().map((entry) => new Promise((resolve) => {
+      scaleMotionFrame(entry);
+      // A frame that stopped answering once is not waited on again: fifteen
+      // seconds a frame, over a thirty-second scene, was hours of nothing.
+      if (entry.state === "stuck") { resolve(); return; }
+      const timer = setTimeout(() => {
+        entry.errors.push(`the motion scene ${entry.spec.src} did not draw within ${MOTION_SETTLE_MS / 1000} s`);
+        entry.waiters = entry.waiters.filter((waiter) => waiter !== finish);
+        entry.state = "stuck";
+        resolve();
+      }, MOTION_SETTLE_MS);
+      const finish = () => { clearTimeout(timer); resolve(); };
+      entry.waiters.push(finish);
+      motionCheck(entry);
+    })));
+  },
+
+  // What the motion scenes on the stage have reported going wrong, by
+  // document: a thrown error, a refused timer, a picture that would not load.
+  motionErrors() {
+    const out = {};
+    for (const entry of liveMotionFrames()) {
+      if (entry.errors.length) out[entry.spec.src] = [...new Set([...(out[entry.spec.src] ?? []), ...entry.errors])];
+    }
+    return out;
   },
 
   // Position the head card (and the screen track, when the project has
@@ -1047,7 +1272,9 @@ window.FabulaStage = {
       headEl.style.top = pct(rect.y, stage.height);
       headEl.style.width = pct(rect.w, stage.width);
       headEl.style.height = pct(rect.h, stage.height);
-      headEl.style.borderRadius = `${(rect.w * HEAD_RADIUS * theme.radius / stage.width) * 100}cqw`;
+      // A cropped head is a picture and takes square corners, as the export's
+      // mask does (render-plan maskLines); a contained one is a rounded card.
+      headEl.style.borderRadius = layout.fit === "cover" ? "0" : `${(rect.w * HEAD_RADIUS * theme.radius / stage.width) * 100}cqw`;
       const video = headEl.querySelector("video");
       if (video) {
         const transform = plan.punch > 1 ? `scale(${plan.punch})` : "";

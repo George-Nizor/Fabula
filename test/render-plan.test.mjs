@@ -84,6 +84,13 @@ test("chunk identity changes with what touches the chunk and nothing else", () =
   assert.notEqual(chunkIdentity(chunk, { ...base, punch: zoomed }), a);
   const farPunch = [...punch, { start: 500, end: 510, scale: 1.15 }];
   assert.equal(chunkIdentity(chunk, { ...base, punch: farPunch }), a); // a punch outside the chunk does not matter
+  // A motion scene hears every word spoken over it: a word re-timed later in
+  // the scene, past this chunk's end, is still a new picture in this chunk.
+  const motion = { type: "graphic", start: 100, end: 160, graphic: { kind: "motion", src: "motion/orbit.html" } };
+  const heard = { ...base, scenes: [...base.scenes, motion], wordSpans: [{ text: "orbit", start: 150, end: 150.5 }] };
+  const b = chunkIdentity(chunk, heard);
+  assert.notEqual(chunkIdentity(chunk, { ...heard, wordSpans: [{ text: "orbit", start: 152, end: 152.5 }] }), b);
+  assert.equal(chunkIdentity(chunk, { ...heard, wordSpans: [...heard.wordSpans, { text: "after", start: 170, end: 171 }] }), b, "a word after the scene is not heard");
 });
 
 test("screen placements are chunk-local with a linearised presence fade", () => {
@@ -117,7 +124,7 @@ test("a chunk with a punch takes the canvas route: convert, zoom, mask at stage 
   const graph = chunkGraph({ chunk, timeline, videoAspect: aspect, stage, glowSize: 1728, screens: [], punch });
   inOrder(graph, [
     "[2:v]format=rgba,scale=w='(", "color=c=black@0:s=1920x1080:r=30:d=12", "[hbase][hz]overlay",
-    "[3:v]format=rgba,scale=w='", "color=c=black:s=1920x1080", "[mbase][msz]overlay", ",format=gray[cardmask]",
+    "[3:v]loop=loop=-1:size=1:start=0,format=rgba,scale=w='", "color=c=black:s=1920x1080", "[mbase][msz]overlay", ",format=gray[cardmask]",
     "[hc][cardmask]alphamerge[head]", "[bu][head]overlay=0:0", "format=yuv420p[out]",
   ]);
   // Only the spans that tighten inside the chunk are written into it.
@@ -169,11 +176,11 @@ test("a film that never fades pays nothing for the fade", () => {
     const tl = resolveLayoutTimeline([{ type: "stage", layout: "pip", start: 5, end: 12 }], 40, { transition });
     assert.equal(headExpressions(tl, aspect, stage, 0).alpha, "1", transition);
     const graph = chunkGraph({ chunk: { start: 0, end: 30, frames: 900 }, timeline: tl, videoAspect: aspect, stage, glowSize: 1728, screens: [] });
-    assert.ok(graph.includes("[3:v]format=gray[hm]"), `no eq filter for ${transition}`);
+    assert.ok(graph.includes("[3:v]loop=loop=-1:size=1:start=0,format=gray[hm]"), `no eq filter for ${transition}`);
   }
   const dissolving = resolveLayoutTimeline([{ type: "stage", layout: "pip", start: 5, end: 12 }], 40, { transition: "dissolve" });
   const fading = chunkGraph({ chunk: { start: 0, end: 30, frames: 900 }, timeline: dissolving, videoAspect: aspect, stage, glowSize: 1728, screens: [] });
-  assert.ok(fading.includes("[3:v]format=gray,eq=brightness='("), "the dissolve rides the mask");
+  assert.ok(fading.includes("[3:v]loop=loop=-1:size=1:start=0,format=gray,eq=brightness='("), "the dissolve rides the mask");
   // A cutaway fades whatever the style, because the camera has to go.
   const cutaway = resolveLayoutTimeline([{ type: "stage", layout: "cutaway", start: 5, end: 12 }], 40, { transition: "glide" });
   assert.notEqual(headExpressions(cutaway, aspect, stage, 0).alpha, "1");
@@ -356,4 +363,42 @@ test("a chunk is given the boundaries it can see, and one either side for a tran
   const whole = headExpressions(timeline, 1.7778, stage, 0);
   const chunked = headExpressions(timeline, 1.7778, stage, 240, 360);
   assert.ok(chunked.alpha.length * 3 < whole.alpha.length, `${chunked.alpha.length} vs ${whole.alpha.length}`);
+});
+
+test("a landscape film with a split screen crops that half, and the export agrees with the window at every instant", () => {
+  const tl = resolveLayoutTimeline([
+    { type: "stage", layout: "split", start: 4, end: 12 },
+    { type: "stage", layout: "side", corner: "br", start: 16, end: 24 },
+    { type: "stage", layout: "split", corner: "tr", start: 28, end: 36 },
+  ], 40);
+  for (const offset of [0, 13.5]) {
+    const expr = headExpressions(tl, aspect, stage, offset);
+    assert.equal(expr.cropped, true);
+    for (let t = offset; t < 40; t += 0.05) {
+      const window = headRectAt(tl, t, aspect, stage);
+      const drawn = headDrawRect(window, aspect);
+      for (const key of ["x", "y", "w", "h"]) {
+        assert.ok(Math.abs(evaluateExpression(expr[key], { t: t - offset }) - window[key]) < 0.02, `window ${key} at t=${t.toFixed(2)}`);
+        assert.ok(Math.abs(evaluateExpression(expr.draw[key], { t: t - offset }) - drawn[key]) < 0.02, `draw ${key} at t=${t.toFixed(2)}`);
+      }
+    }
+  }
+  // The split crops; the mirrored side and focus keep the rounded card.
+  const at = headExpressions(tl, aspect, stage, 0).croppedAt;
+  assert.equal(evaluateExpression(at, { t: 1 }), 0, "focus is a card");
+  assert.equal(evaluateExpression(at, { t: 8 }), 1, "the split is a picture");
+  assert.equal(evaluateExpression(at, { t: 20 }), 0, "the mirrored side is a card");
+  assert.equal(evaluateExpression(at, { t: 32 }), 1);
+  const graph = chunkGraph({ chunk: { start: 0, end: 40, frames: 1200 }, timeline: tl, videoAspect: aspect, stage, glowSize: 1728, screens: [] });
+  assert.ok(graph.includes("[msq]") && graph.includes("[msz]"), "both masks, switched on the boundary frame");
+});
+
+test("a chunk is short enough that every window and encoder has work, and no shorter", async () => {
+  const { chunkSecondsFor } = await import("../core/render-plan.mjs");
+  assert.equal(chunkSecondsFor(23), 6, "a short: six-second chunks");
+  assert.equal(chunkSecondsFor(108), 14, "a two-minute film: eight chunks");
+  assert.equal(chunkSecondsFor(790), 30, "a long film: thirty seconds at most");
+  const { chunkPlan } = await import("../core/render-plan.mjs");
+  const chunks = chunkPlan(0, 108.3, 30, chunkSecondsFor(108.3));
+  assert.equal(chunks.reduce((n, c) => n + c.frames, 0), Math.round(108.3 * 30));
 });

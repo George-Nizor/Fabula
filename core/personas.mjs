@@ -64,6 +64,7 @@ export const CRAFT_DOCS = {
   critic: "docs/craft/critic.md",
   shorts: "docs/craft/shorts.md",
   "visual-grammar": "docs/craft/visual-grammar.md",
+  motion: "docs/craft/motion.md",
   references: "docs/craft/references.md",
   examples: "docs/craft/examples.md",
   // The two worked plans as the assistant wrote them: template ids and

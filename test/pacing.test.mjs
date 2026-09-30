@@ -88,3 +88,14 @@ test("a visual ending on the film's last frame is not counted twice", () => {
   const before = describePacing([scene("title", 10, 50, { text: "x" })], { duration: 60, format: "landscape", captions: "closed" });
   assert.ok(toEnd.stats.changesPerMinute < before.stats.changesPerMinute, `${toEnd.stats.changesPerMinute} vs ${before.stats.changesPerMinute}`);
 });
+
+test("a motion scene is never the film's longest still, however long it holds", async () => {
+  const { describePacing } = await import("../core/pacing.mjs");
+  const scenes = [
+    { type: "graphic", start: 10, end: 40, graphic: { kind: "motion", src: "motion/orbit.html" } },
+    { type: "stage", start: 10, end: 40, layout: "cutaway" },
+  ];
+  const { stats } = describePacing(scenes, { duration: 60 });
+  assert.ok(stats.longestStill.seconds <= 20, `longest still ${stats.longestStill.seconds}s`);
+  assert.ok(!(stats.longestStill.start >= 10 && stats.longestStill.end <= 40 && stats.longestStill.seconds > 2.01));
+});

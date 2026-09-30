@@ -4,9 +4,14 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell } = require("electron");
+const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell, protocol } = require("electron");
 const { AssistantSession, choiceArgs, EFFORTS: ASSISTANT_EFFORTS } = require("./assistant-session.cjs");
+const motionProtocol = require("./motion-protocol.cjs");
 const settings = require("../scripts/settings.cjs");
+
+// Motion scenes run in sandboxed frames that can load nothing but this
+// scheme; it has to be declared before the app is ready.
+motionProtocol.registerMotionScheme(protocol);
 
 // The projects live in media/ beside the checkout unless fabula.settings.json
 // names another folder (as the pipeline sees it; mapped here for this host).
@@ -50,8 +55,10 @@ Promise.all([
   import(pathToFileURL(path.join(__dirname, "..", "scripts", "shorts.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "core", "personas.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "core", "templates.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates]) => {
-  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates };
+  import(pathToFileURL(path.join(__dirname, "..", "core", "direction.mjs")).href),
+  import(pathToFileURL(path.join(__dirname, "..", "core", "making.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making]) => {
+  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making };
 })
   .catch((error) => console.error("core engines failed to load:", error));
 
@@ -143,9 +150,28 @@ function attachDerived(review, dir) {
   return review;
 }
 
+// The feed re-reads the project on every stamp change, and while a job runs
+// its progress file changes every second or so. Each reader below depends
+// on a few files; while those are unchanged it answers what it answered last
+// time, instead of re-parsing and re-resolving a thirteen-minute film for a
+// progress line.
+const memos = new Map();
+function memoized(name, dir, files, compute) {
+  const key = files.map((file) => {
+    try { const stat = fs.statSync(path.join(dir, file)); return `${stat.mtimeMs}:${stat.size}`; } catch { return "-"; }
+  }).join("|");
+  const hit = memos.get(name);
+  if (hit && hit.dir === dir && hit.key === key && hit.core === Boolean(core)) return hit.value;
+  const value = compute();
+  memos.set(name, { dir, key, core: Boolean(core), value });
+  return value;
+}
+
 function readReview(dir) {
-  const review = readJson(path.join(dir, "review.json"));
-  return review ? attachDerived(review, dir) : null;
+  return memoized("review", dir, ["review.json", "compose.json", "framing.json", "source.json"], () => {
+    const review = readJson(path.join(dir, "review.json"));
+    return review ? attachDerived(review, dir) : null;
+  });
 }
 
 // The compose stage exists once the clean render and its transcript do.
@@ -170,8 +196,23 @@ function cleanDuration(cleanVideo, words) {
   }
 }
 
+// The motion documents one by one as well as their folder: write_motion
+// renames into the folder (the folder's time moves), but a document edited
+// in place by hand moves only its own time.
+function motionEntries(dir) {
+  try { return ["motion", ...fs.readdirSync(path.join(dir, "motion")).filter((name) => name.endsWith(".html")).sort().map((name) => path.join("motion", name))]; }
+  catch { return ["motion"]; }
+}
+
 function readCompose(dir) {
   if (!core) return null;
+  return memoized("compose", dir, [
+    "compose.json", "clean.json", "review.json", "project.json", "inbox.json", ...motionEntries(dir),
+    path.join("out", "clean.mp4"), path.join("out", "clean-map.json"), path.join("out", "screen.mp4"), path.join("..", "themes"),
+  ], () => composeFromFiles(dir));
+}
+
+function composeFromFiles(dir) {
   try {
     const cleanVideo = path.join(dir, "out", "clean.mp4");
     const cleanTranscript = path.join(dir, "clean.json");
@@ -189,24 +230,12 @@ function readCompose(dir) {
     const duration = cleanDuration(cleanVideo, words);
     const scenes = core.compose.resolveScenes(core.templates.refreshTemplates(config.scenes ?? [], { format }), words, { durationSeconds: duration });
     const assetUrl = (src) => pathToFileURL(path.join(dir, src)).href;
-    for (const scene of scenes) {
-      if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
-      for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
-      if (scene.graphic?.kind === "custom") {
-        const base = assetUrl("assets/");
-        scene.graphic = { ...scene.graphic, html: scene.graphic.html.replaceAll("assets/", base), css: (scene.graphic.css ?? "").replaceAll("assets/", base) };
-      }
-    }
+    core.projectState.attachSceneMedia(dir, scenes, assetUrl);
     const theme = core.themes.resolveTheme(config.theme ?? null);
     if (theme.logo) theme.logoUrl = assetUrl(theme.logo.src);
     const inserts = core.compose.resolveInserts((config.inserts ?? []).map((insert) => ({ ...insert, options: (insert.options ?? []).map((option) => ({ ...option, scenes: core.templates.refreshTemplates(option.scenes ?? [], { format }) })) })), words);
     for (const insert of inserts) {
-      for (const option of insert.options) {
-        for (const scene of option.scenes) {
-          if (scene.graphic?.src) scene.graphic.url = assetUrl(scene.graphic.src);
-          for (const item of scene.graphic?.items ?? []) if (item.src) item.url = assetUrl(item.src);
-        }
-      }
+      for (const option of insert.options) core.projectState.attachSceneMedia(dir, option.scenes, assetUrl);
     }
     return {
       videoUrl: pathToFileURL(cleanVideo).href,
@@ -220,7 +249,8 @@ function readCompose(dir) {
       captionsOn: core.compose.captionsBurnedIn(config.captions),
       captionMode: core.compose.captionMode(config.captions),
       stage: core.formats.stageOf(meta),
-      layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds }),
+      logicalStage: core.formats.stageOf(meta),
+      layoutTimeline: core.stage.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds, stage: core.formats.stageOf(meta) }),
       theme,
       themeConfig: config.theme ?? {},
       savedThemes: core.themeStore.listSavedThemes(mediaRoot()).map((s) => ({ id: s.id, name: s.name })),
@@ -238,6 +268,10 @@ function readCompose(dir) {
 // the clean cut exists, and the Look page needs the presets to draw.
 function readLook(dir) {
   if (!core) return null;
+  return memoized("look", dir, ["compose.json", path.join("..", "themes")], () => lookFromFiles(dir));
+}
+
+function lookFromFiles(dir) {
   try {
     const config = readJson(path.join(dir, "compose.json")) ?? {};
     const theme = core.themes.resolveTheme(config.theme ?? null);
@@ -305,6 +339,48 @@ function readExport(dir) {
   } catch {
     return null;
   }
+}
+
+// Make it into a video, as the window shows it: the person's brief, the
+// film's treatment as the assistant wrote it, and the run as phases read
+// back from the activity log, the jobs and the files (core/making.mjs).
+function readActivity(dir, limit = 300) {
+  try {
+    const all = fs.readFileSync(path.join(dir, "activity.jsonl"), "utf8").trim().split("\n");
+    // The run's start mark comes along even from before the tail: the
+    // Making panel reads the run from it.
+    const tail = all.slice(-limit);
+    const mark = all.slice(0, -limit).findLast((line) => line.includes('"mark":"start"'));
+    return [...(mark ? [mark] : []), ...tail].map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function readMaking(dir, exported) {
+  if (!core) return null;
+  const direction = readJson(path.join(dir, "direction.json"));
+  if (!direction) return null;
+  let described = null;
+  try { described = core.direction.describeDirection(direction); } catch { return null; }
+  const treatment = readJson(path.join(dir, "treatment.json"));
+  const activity = readActivity(dir);
+  const draft = path.join(dir, "out", "draft.mp4");
+  const draftAt = fs.existsSync(draft) ? new Date(fs.statSync(draft).mtimeMs).toISOString() : null;
+  const running = exported?.running ?? null;
+  const stale = new Set((exported?.stale ?? []).map((s) => s.artifact));
+  const clean = !exported?.have?.clean ? "none" : stale.has("clean.mp4") || stale.has("clean.json") ? "stale" : "current";
+  const run = described.startedAt
+    ? core.making.makingPhases({ startedAt: described.startedAt, activity, job: running, clean, treatmentAt: treatment?.updatedAt ?? null, draftAt })
+    : null;
+  return {
+    direction: described,
+    treatment: treatment?.logline ? treatment : null,
+    run,
+    draft: draftAt ? { url: pathToFileURL(draft).href, at: draftAt } : null,
+    // The last few things the assistant did, newest first, for the panel's log.
+    recent: activity.slice(-8).reverse().map(({ at, tool, ok, note, error }) => ({ at, tool, ok, note: note ?? null, error: error ?? null })),
+  };
 }
 
 // Starts a render from the window with the same spec the MCP tools use.
@@ -526,6 +602,13 @@ function readState() {
     progress: readJson(path.join(dir, "progress.json")),
     export: readExport(dir),
   };
+  state.making = readMaking(dir, state.export);
+  // The draft, however it was made (the Export step renders them too), for
+  // the stage's Live / Draft switch.
+  {
+    const draft = path.join(dir, "out", "draft.mp4");
+    state.draft = fs.existsSync(draft) ? { url: pathToFileURL(draft).href, at: new Date(fs.statSync(draft).mtimeMs).toISOString() } : null;
+  }
   // Staged but not yet transcribed: the window shows what to ask for.
   if (!state.review && stagedVideoPath(dir)) state.pending = { project: path.basename(dir), title: state.title, videoName: path.basename(stagedVideoPath(dir)) };
   return state;
@@ -654,6 +737,9 @@ function stateStamp() {
   return [
     "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json",
     "project.json", // the title and the shape; both change from the assistant's side too
+    // Make it into a video: the brief, the treatment, the assistant's log,
+    // the motion documents (a write renames into the folder) and the draft.
+    "direction.json", "treatment.json", "activity.jsonl", ...motionEntries(dir), path.join("out", "draft.mp4"),
     path.join("..", "themes"),
     "out", path.join("out", "clean.mp4"), path.join("out", "screen.mp4"), path.join("out", "clean-map.json"), path.join("out", "final.mp4"),
   ]
@@ -800,7 +886,7 @@ function createWindow() {
     // put a second, grey strip above the brand row. The system controls
     // overlay the top-right corner in the app's own colours.
     ...(process.platform === "win32"
-      ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#faf9f5", symbolColor: "#6e6b63", height: 56 } }
+      ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#1f1e1d", symbolColor: "#f0ede6", height: 56 } }
       : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -847,8 +933,12 @@ app.whenReady().then(() => {
   app.on("web-contents-created", (_event, contents) => {
     contents.on("will-navigate", (event) => event.preventDefault());
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    motionProtocol.sealMotionFrames(contents);
   });
 
+  // The door the motion frames load through: the runtime, the fonts, and the
+  // open project's motion/ and assets/ — nothing else.
+  motionProtocol.handleMotionProtocol(protocol, { projectDir: () => projectDir() });
   ipcMain.handle("fabula:get-state", () => readState());
   ipcMain.handle("fabula:assistant-options", () => assistantOptions());
   ipcMain.handle("fabula:assistant-status", () => ({ running: assistant.running, choice: assistant.choice }));
@@ -1281,6 +1371,33 @@ app.whenReady().then(() => {
     const result = editInsert(event, insertId, "other", note);
     if (result.ok) core.inbox.appendInbox(projectDir(), { type: "insert-other", insertId, text: note });
     return result;
+  });
+
+  // Make it into a video: the person's brief is written where the assistant
+  // reads it (get_direction), stamped with when they pressed the button so
+  // the window's Making panel follows this run and not the last one, and
+  // the clean cut starts rendering at once. The window then starts the
+  // assistant with the make task, or tells the one already running.
+  ipcMain.handle("fabula:make-video", (event, brief) => {
+    const dir = projectDir();
+    if (!dir || !core) return { ok: false, error: "No project is open." };
+    let direction;
+    try { direction = core.direction.validateDirection({ ...(brief && typeof brief === "object" ? brief : {}), startedAt: new Date().toISOString() }); }
+    catch (error) { return { ok: false, error: error.message }; }
+    writeJsonAtomic(path.join(dir, "direction.json"), direction);
+    // The run's start, as a line in the activity log: the Making panel reads
+    // the calls after it, and what the treatment and the draft were when the
+    // run began. Nothing compares clocks — on Windows the window's and WSL's
+    // (the server's, the files') can be minutes apart after a sleep.
+    const treatmentBefore = readJson(path.join(dir, "treatment.json"))?.updatedAt ?? null;
+    const draftFile = path.join(dir, "out", "draft.mp4");
+    const draftBefore = fs.existsSync(draftFile) ? new Date(fs.statSync(draftFile).mtimeMs).toISOString() : null;
+    try {
+      fs.appendFileSync(path.join(dir, "activity.jsonl"), `${JSON.stringify({ at: direction.startedAt, tool: "make_video", mark: "start", startedAt: direction.startedAt, treatmentBefore, draftBefore })}\n`);
+    } catch { /* the panel falls back to the clock */ }
+    const render = startRender("refresh");
+    event.sender.send("fabula:state", readState());
+    return { ok: true, direction: core.direction.describeDirection(direction), render };
   });
 
   // The Export page: renders start here with the server's own job specs;

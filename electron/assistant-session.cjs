@@ -12,8 +12,8 @@ const EFFORTS = {
   claude: ["low", "medium", "high", "xhigh", "max"],
 };
 
-const TASKS = ["compose"];
-const PERSONAS = ["editor", "farmer"];
+const TASKS = ["compose", "make"];
+const PERSONAS = ["editor", "farmer", "critic"];
 
 function choiceArgs({ provider, model, effort, task, persona } = {}) {
   if (!Object.hasOwn(EFFORTS, provider)) throw new Error("Choose Claude Code or Codex.");

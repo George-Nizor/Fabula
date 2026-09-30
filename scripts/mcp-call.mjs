@@ -19,9 +19,13 @@ if (!tool) {
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const client = new Client({ name: "fabula-cli", version: "0.1.0" });
+// The caller's environment, whole: the SDK's default passes only a handful
+// of variables, and FABULA_PROJECTS_ROOT (a root that is not the person's)
+// must reach the server or a test run lands in their projects.
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [path.join(repoRoot, "mcp", "server.mjs")],
+  env: { ...process.env },
 }));
 
 try {

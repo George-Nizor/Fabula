@@ -13,7 +13,16 @@
     #head video { width: 100%; height: 100%; }
     /* Layer capture: a transparent frame with only one layer's pieces. */
     #frame.is-layer { background: transparent; }
+    /* A capture with no transparent pixel at all (a cover, a full-stage
+       motion scene) comes back as an RGB PNG, the rest as RGBA, and ffmpeg
+       rebuilds its graph at every switch between the two — which left the
+       layers seconds out of step in a long chunk. Just under opaque, every
+       capture is RGBA; the field shows through by at most one level in 255. */
+    #frame.is-layer #stage { opacity: 0.998; }
     #frame.is-layer .stage-glow { display: none; }
+    /* Where the head would be, for a scene looked at without footage. */
+    #head.is-placeholder { background: repeating-linear-gradient(135deg, #3a4452 0 14px, #2b333e 14px 28px); outline: 2px solid rgba(240, 237, 230, 0.35); outline-offset: -2px; }
+    #head.is-placeholder video { visibility: hidden; }
   </style>
 </head>
 <body>

@@ -91,7 +91,7 @@ test("the grade is neutral by default, bounded, and speaks ffmpeg and CSS", () =
   assert.throws(() => validateTheme({ grade: { tint: 1 } }), /no "tint"/);
   const warm = gradeFilters({ contrast: 1.1, warmth: 0.5, vignette: 0.4 });
   assert.match(warm.pre, /^eq=contrast=1\.1:saturation=1:brightness=0,colortemperature=temperature=7400:mix=1,$/);
-  assert.match(warm.post, /^vignette=angle=0\.2513:mode=forward$/);
+  assert.match(warm.post, /^vignette=angle=0\.2513:mode=forward:dither=0$/);
   assert.equal(warm.css, "contrast(1.1) sepia(0.175)");
   assert.equal(warm.vignette, 0.4);
   const cool = gradeFilters({ warmth: -1 });

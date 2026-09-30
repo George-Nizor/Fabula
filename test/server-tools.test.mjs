@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -20,14 +22,22 @@ const EXPECTED = [
   "search_images", "fetch_image", "import_image", "import_clip", "list_assets",
   "import_audio", "search_audio", "list_music", "set_music_root", "set_audio", "export_chapters", "export_description", "get_captions", "export_captions",
   "reanchor_scenes", "render_final", "wait_render", "status",
+  "get_direction", "set_direction", "set_treatment", "get_treatment",
+  "describe_motion", "write_motion", "preview_motion", "read_motion", "list_motion",
 ];
 
+// An empty projects root: nothing open, so no tool reads — or logs its
+// activity into — the person's own projects.
 async function withServer(run) {
   const client = new Client({ name: "fabula-tools-test", version: "1.0.0" });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-tools-"));
   try {
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(ROOT, "mcp/server.mjs")] }));
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(ROOT, "mcp/server.mjs")], env: { ...process.env, FABULA_PROJECTS_ROOT: root } }));
     await run(client);
-  } finally { await client.close(); }
+  } finally {
+    await client.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 const text = (result) => JSON.parse(result.content[0].text);
@@ -43,6 +53,19 @@ test("every tool the docs name is registered", async () => {
     assert.ok(params("set_theme").includes("transitionSeconds"), "set_theme takes transitionSeconds");
     assert.ok(params("set_audio").includes("voice_loudness") && params("set_captions").includes("emphasis"));
     assert.ok(params("render_final").includes("draft"));
+    assert.ok(params("write_motion").includes("html") && params("set_treatment").includes("beats") && params("set_direction").includes("latitude"));
+  });
+});
+
+test("the motion contract answers without a project, and its own example passes its own rules", async () => {
+  await withServer(async (client) => {
+    const motion = text(await client.callTool({ name: "describe_motion", arguments: {} }));
+    assert.ok(motion.api["fabula.scene({ setup(ctx), render(t, ctx) })"] && motion.rules.length >= 4 && motion.example.includes("fabula.scene"));
+    assert.match(motion.direction, /allowed/);
+    const kit = text(await client.callTool({ name: "describe_kit", arguments: {} }));
+    assert.ok(kit.layouts.split && kit.graphics.motion && kit.direction);
+    const direction = await client.callTool({ name: "get_direction", arguments: {} });
+    assert.ok(direction.isError, "get_direction needs an open project");
   });
 });
 

@@ -1,5 +1,49 @@
 # Fabula — product brief
 
+## Make it into a video (2026-09-30)
+
+The owner's ask: once the cut is reviewed, one action hands the film to the assistant, which makes
+it — the head moved around the frame (focus, a corner, a side column, a split screen, gone for a
+cutaway), animation where a moment needs it — without being confined to the kit, but with the
+option of holding it to the kit. Decided and built:
+
+- **The brief is the person's; the composition is the assistant's.** `direction.json` holds what
+  the Make it into a video sheet asked: purpose, latitude, look, persona, whether music, sound
+  effects and web material are allowed, notes, and whether to render a draft. `get_direction`
+  returns it as instructions and the make task follows it without asking. A draft render is the
+  asking; the real render still waits for the person.
+- **Latitude is one dial with three stops, enforced where it can be.** Free hand (design the film;
+  the reads are advice), Guided (the kit first; the default), By the book (only the kit and the
+  named templates: plan writes refuse motion scenes and hand-written custom graphics, and the real
+  render refuses while `critique_film` finds a fault). A rule the tools enforce is not forgotten
+  thirty tool calls later.
+- **The treatment comes before the scenes** (`set_treatment`): logline, the shapes considered
+  and chosen, the signature moment, the beats with where the head is. It is also what the person
+  reads while the assistant works.
+- **Motion scenes are the creative outlet**: a document the assistant writes (HTML, CSS, SVG,
+  Canvas, WebGL) drawn at every frame by a runtime that owns its clock — the method the current
+  models make motion graphics with (every pixel a function of t, sampled frame by frame; the same
+  idea as HyperFrames). It runs in `<iframe sandbox="allow-scripts">` served over a privileged
+  `fabula-motion://` scheme with an allowlist: an opaque origin cannot reach the window's bridge,
+  the disk or the network, and Chromium refuses it every `file://` load, which is why the scheme
+  exists. Scenes time themselves to the narration through their own words (`fabula.word`), so a
+  re-cut moves them with the speech. GSAP is not bundled: its licence bars no-code animation
+  builders; it loads only when installed.
+- **Progress is read back, not reported.** The server logs every tool call to `activity.jsonl`
+  except the polls (`status`, `wait_for_input`, `list_projects`), which would bury the work;
+  the window turns the log, the jobs and the files into the Making panel's phases — right for
+  either assistant, whether or not it narrates.
+- **A split screen joined the layouts**, and `corner` now says which side the head is on for
+  `side` and `split` too; a split crops its half like a picture, through the route tall films
+  already use.
+
+What building a film with it found in the render, and fixed: overlay plates were read on a
+1/25 s grid (states a film frame apart collided and ffmpeg shifted them); a fully opaque capture
+came back as RGB and the rest as RGBA, and ffmpeg rebuilt its graph at every switch, leaving a
+layer seconds out of step (captures are now always RGBA); the vignette's dither was not a function
+of the frame. And the render went parallel for short films: chunks follow the film's length
+(6–30 s), so a 1:48 draft took 88 s instead of 284 s and a one-scene change re-rendered in 36 s.
+
 ## The viewer's eye (2026-09-09)
 
 The owner asked for every element to be judged against the vision. Two reference films were
@@ -288,7 +332,7 @@ points, the Ask box) travels through `media/<project>/inbox.json`. What exists:
 
 - **Two renders, two kinds of gate.** `render_clean` finalises the cut once per cut list and
   framing, compared by content identity (`out/clean-map.json`), and the compose stage only moves
-  that file around. `render_final` is layered and cached in two-minute chunks keyed on everything
+  that file around. `render_final` is layered and cached in chunks of six to thirty seconds keyed on everything
   that feeds them, the painter's own files included. Both are detached jobs with progress in the
   window; both encode with NVENC from WSL.
 - **The window is four steps.** Cut (transcript rail, skip-preview, framing guides), Look (theme

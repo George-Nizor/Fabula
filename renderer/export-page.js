@@ -68,9 +68,32 @@ window.__renderAt = async (t, layout) => {
   }
   await Promise.all(seeks);
   window.FabulaStage.update(stage, headCard, compose, t, layout, compose.screenUrl ? screen : null, clip);
+  await window.FabulaStage.settled();
   await painted();
   return true;
 };
+
+// The stage at t with no footage: the field, every layer, and — when asked —
+// a plain block where the head would be, so a motion scene can be judged
+// against the room it leaves. How write_motion's contact sheet is drawn.
+window.__renderScene = async (t, layout, { headBlock = false } = {}) => {
+  if (!compose) throw new Error("compose data not set");
+  frame.classList.remove("is-layer");
+  frame.classList.add("stage-field");
+  screen.hidden = true;
+  clip.hidden = true;
+  const plan = window.FabulaStage.plan(compose, t, layout);
+  window.FabulaStage.placeMedia(plan, headCard, null, null);
+  headCard.hidden = !headBlock || !layout || (layout.alpha ?? 1) < 0.05 || layout.headHidden;
+  headCard.classList.toggle("is-placeholder", headBlock);
+  window.FabulaStage.paint(stage, plan);
+  await window.FabulaStage.settled();
+  await painted();
+  return true;
+};
+
+// What the motion scenes on the stage have reported going wrong.
+window.__motionErrors = () => window.FabulaStage.motionErrors();
 
 // The empty stage: the field alone, for the render's base plate.
 window.__fieldOnly = async () => {
@@ -101,6 +124,7 @@ window.__renderLayer = async (t, layout, layer) => {
   clip.hidden = true;
   const plan = window.FabulaStage.plan(compose, t, layout);
   window.FabulaStage.paint(stage, plan, layer);
+  await window.FabulaStage.settled();
   await painted();
   return true;
 };

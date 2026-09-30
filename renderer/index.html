@@ -11,21 +11,19 @@
 </head>
 <body>
   <header class="topbar" id="topbar">
-    <div class="brand">
+    <!-- The mark is the way home: every project is one click from here, and
+         the open one is named in the window title and the inspector only. -->
+    <button type="button" class="brand" id="go-home" title="All projects (Ctrl+W)">
       <img class="brand-mark" src="assets/fabula-mark.png" alt="" />
-      <h1>Fabula</h1>
-      <button type="button" class="projbtn" id="project-menu" hidden title="Projects (Ctrl+Shift+O)">
-        <span class="projbtn-name" id="project-name"></span>
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5l3 3 3-3"></path></svg>
-      </button>
-    </div>
+      <span class="brand-name">Fabula</span>
+    </button>
     <nav class="stages" id="stages" hidden>
       <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum">1</span>Cut</button>
       <button type="button" class="stagebtn" id="tab-look"><span class="stepnum">2</span>Look</button>
       <button type="button" class="stagebtn" id="tab-scenes" disabled><span class="stepnum">3</span>Scenes</button>
       <button type="button" class="stagebtn" id="tab-export"><span class="stepnum">4</span>Export</button>
     </nav>
-    <div class="progress" id="progress" hidden>
+    <div class="progress" id="progress" role="button" tabindex="0" title="The Export step has the jobs and their logs" hidden>
       <span class="pulse"></span>
       <span class="progress-label" id="progress-label"></span>
       <span class="progress-detail" id="progress-detail"></span>
@@ -99,14 +97,6 @@
   </aside>
 
   <!-- The masthead project menu. -->
-  <div class="menu" id="project-menu-pop" hidden>
-    <button type="button" class="menu-item" id="menu-rename">Rename project…</button>
-    <button type="button" class="menu-item" id="menu-reveal">Show project folder</button>
-    <button type="button" class="menu-item" id="menu-close">Close project</button>
-    <hr />
-    <button type="button" class="menu-item" id="menu-all">All projects…</button>
-  </div>
-
   <dialog class="sheet" id="new-project">
     <form method="dialog" class="sheet-form" id="new-project-form">
       <header><h2>New project</h2><p>The recording is not copied. Fabula writes what it makes to a folder of its own.</p></header>
@@ -188,6 +178,68 @@
     </form>
   </dialog>
 
+  <!-- Make it into a video: the person's brief. The assistant reads it as
+       get_direction and makes the whole film from it without asking. -->
+  <dialog class="sheet is-brief" id="direction">
+    <form method="dialog" class="sheet-form" id="direction-form">
+      <header>
+        <h2>Make it into a video</h2>
+        <p>The assistant composes the whole film from this brief and renders a draft for you to watch. Anything it makes can be changed afterwards.</p>
+      </header>
+      <label class="field">What is it for?
+        <input type="text" id="dir-purpose" maxlength="300" autocomplete="off" placeholder="Optional. Who it is for, and what it should do for them" />
+      </label>
+      <fieldset class="field choice is-cards" id="dir-latitude">
+        <legend>House style</legend>
+        <label class="card-choice"><input type="radio" name="latitude" value="free" /><span><b>Free hand</b><small>It designs the film: its own motion graphics, the layouts the story wants, a look it sets.</small></span></label>
+        <label class="card-choice"><input type="radio" name="latitude" value="guided" checked /><span><b>Guided</b><small>Templates and the look first; its own motion where no template fits.</small></span></label>
+        <label class="card-choice"><input type="radio" name="latitude" value="strict" /><span><b>By the book</b><small>Only the kit and your look. Every fault fixed before the real render.</small></span></label>
+      </fieldset>
+      <div class="field-row">
+        <label class="field">Look
+          <select id="dir-look"></select>
+        </label>
+        <label class="field">Working as
+          <select id="dir-persona">
+            <option value="editor">Editor</option>
+            <option value="farmer">Short-form farmer</option>
+          </select>
+        </label>
+      </div>
+      <fieldset class="field checks">
+        <legend>Allow</legend>
+        <label class="check"><input type="checkbox" id="dir-music" /> Music</label>
+        <label class="check"><input type="checkbox" id="dir-effects" /> Sound effects</label>
+        <label class="check"><input type="checkbox" id="dir-web" checked /> Pictures from the web</label>
+      </fieldset>
+      <label class="field">Notes
+        <textarea id="dir-notes" rows="3" maxlength="2000" placeholder="Optional. Tone, moments it must not miss, things to avoid"></textarea>
+      </label>
+      <details class="sheet-more" id="dir-assistant-more">
+        <summary id="dir-assistant"></summary>
+        <div class="field-row is-three">
+          <label class="field">Assistant
+            <select id="dir-provider">
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+            </select>
+          </label>
+          <label class="field">Model
+            <select id="dir-model"></select>
+          </label>
+          <label class="field">Effort
+            <select id="dir-effort"></select>
+          </label>
+        </div>
+      </details>
+      <footer class="sheet-foot">
+        <span class="projects-status" id="dir-status">Renders a draft when it is done.</span>
+        <button type="button" class="button is-quiet" id="dir-cancel">Cancel</button>
+        <button type="submit" class="button is-hero" id="dir-start">Make the video</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog class="projects" id="projects">
     <header class="projects-head">
       <h2>Projects</h2>
@@ -220,6 +272,12 @@
       <div class="rail-foot" id="controls-hint"></div>
     </aside>
     <section class="stagewell">
+      <!-- Once a draft exists: the live stage, or the draft as it rendered. -->
+      <div class="stage-switch" id="stage-switch" role="tablist" hidden>
+        <button type="button" class="stage-switch-btn is-on" id="switch-live" role="tab">Live</button>
+        <button type="button" class="stage-switch-btn" id="switch-draft" role="tab">Draft</button>
+      </div>
+      <video class="draft-player" id="draft-player" controls preload="metadata" hidden></video>
       <div class="videoframe">
         <div class="stage-head" id="head"><video id="video"></video></div>
         <div class="guides" id="guides" hidden></div>
@@ -230,15 +288,43 @@
     </section>
     <aside class="inspector" id="inspector">
       <div class="insp-head">
-        <span class="rail-label">Inspector</span>
         <span id="insp-title"></span>
       </div>
 
       <div id="insp-project">
+        <!-- Make it into a video, while it happens: the run's phases, the
+             treatment as the assistant writes it, and the draft when it lands. -->
+        <div class="insp-section insp-making" id="insp-making" hidden>
+          <div class="making-head">
+            <b id="making-title">Making the video</b>
+            <span class="making-chip" id="making-latitude"></span>
+            <span class="making-clock" id="making-clock"></span>
+          </div>
+          <ol class="making-phases" id="making-phases"></ol>
+          <div class="making-treatment" id="making-treatment" hidden>
+            <p class="making-logline" id="making-logline"></p>
+            <p class="making-shape" id="making-shape"></p>
+            <button type="button" class="making-signature" id="making-signature" hidden></button>
+          </div>
+          <div class="making-waiting" id="making-waiting" hidden>
+            <p id="making-waiting-text"></p>
+            <button type="button" class="button is-small" id="making-waiting-act"></button>
+          </div>
+          <div class="making-draft" id="making-draft" hidden>
+            <button type="button" class="button is-primary is-small" id="making-watch">Watch the draft</button>
+            <button type="button" class="button is-small" id="making-render" title="The real render, at full size, starts in the Export step">Render the film…</button>
+            <span class="insp-status" id="making-draft-note"></span>
+          </div>
+          <div class="making-foot">
+            <button type="button" class="linkbtn" id="making-log">Show the assistant's log</button>
+            <button type="button" class="linkbtn" id="making-dismiss" hidden>Done</button>
+          </div>
+        </div>
         <div class="insp-section insp-cta" id="insp-approve" hidden>
-          <b id="approve-head">Approve the cut</b>
-          <p id="approve-note">Renders the clean cut, then the assistant composes the film.</p>
-          <button type="button" class="button is-primary" id="approve-cut">Approve and compose</button>
+          <b id="approve-head">Make it into a video</b>
+          <p id="approve-note">The assistant composes the whole film from your brief and renders a draft.</p>
+          <button type="button" class="button is-hero" id="approve-cut">Make it into a video…</button>
+          <button type="button" class="linkbtn" id="approve-alt" hidden>Compose it with me instead</button>
           <span class="insp-status" id="approve-status"></span>
         </div>
         <div class="insp-section" id="insp-cut-summary" hidden>
@@ -262,6 +348,8 @@
           <span class="insp-status" id="insp-undo-text"></span>
           <button type="button" class="insp-mini" id="insp-undo">Undo</button>
         </div>
+        <details class="insp-details insp-keys-wrap">
+        <summary>Keys</summary>
         <div class="insp-keys">
           <span><kbd>space</kbd> play</span>
           <span><kbd>←</kbd><kbd>→</kbd> 2 s · <kbd>shift</kbd> 10 s</span>
@@ -271,7 +359,9 @@
           <span><kbd>ctrl</kbd><kbd>F</kbd> find in the transcript</span>
           <span><kbd>ctrl</kbd><kbd>1</kbd>…<kbd>4</kbd> the steps</span>
           <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut</span>
+          <span id="insp-keys-scenes" hidden><kbd>[</kbd><kbd>]</kbd> previous · next scene</span>
         </div>
+        </details>
       </div>
 
       <div id="insp-insert" hidden>
@@ -298,10 +388,10 @@
           <input type="text" id="insp-heading" maxlength="80" />
         </label>
         <label class="insp-field" id="insp-label-wrap">Caption
-          <input type="text" id="insp-label" placeholder="none" />
+          <input type="text" id="insp-label" placeholder="Optional" />
         </label>
         <label class="insp-field" id="insp-subtitle-wrap">Second line
-          <input type="text" id="insp-subtitle" placeholder="none" />
+          <input type="text" id="insp-subtitle" placeholder="Optional" />
         </label>
         <label class="insp-field" id="insp-style-wrap">Style
           <select id="insp-style"></select>
@@ -314,7 +404,7 @@
           </span>
         </label>
         <label class="insp-field" id="insp-by-wrap">Attributed to
-          <input type="text" id="insp-by" placeholder="none" />
+          <input type="text" id="insp-by" placeholder="Optional" />
         </label>
         <label class="insp-field" id="insp-number-wrap">Chapter mark
           <input type="text" id="insp-number" maxlength="6" placeholder="01" />
@@ -412,10 +502,10 @@
         <h2>Look</h2>
         <p class="page-lede">Applies to the whole film. Every card below is drawn by the same painter that draws the film, so what you see is what renders. Save the result as a brand to start the next film from it.</p>
       </div>
-      <div class="rail-label">Presets</div>
-      <div class="gallery" id="look-presets"></div>
       <div class="rail-label">Your brands</div>
       <div class="gallery is-brands" id="look-brands"></div>
+      <div class="rail-label">Presets</div>
+      <div class="gallery" id="look-presets"></div>
       <div class="insp-actions">
         <button type="button" class="button is-small" id="look-save">Save as brand…</button>
         <button type="button" class="insp-mini" id="look-reset">Reset to preset</button>
@@ -425,10 +515,19 @@
       <div class="gallery is-options" id="look-titles"></div>
       <div class="rail-label">Callouts<small>The short note beside the speaker</small></div>
       <div class="gallery is-options" id="look-callouts"></div>
-      <div class="rail-label">Captions<small>The look of burned-in captions</small></div>
+      <div class="rail-label">Captions<small>On or off first; the look below applies when they are burned in</small></div>
+      <div class="segmented" id="theme-captions" role="radiogroup" aria-label="Captions">
+        <button type="button" data-value="none">Off</button>
+        <button type="button" data-value="open">Burn in</button>
+        <button type="button" data-value="closed">CC file</button>
+        <button type="button" data-value="both">Both</button>
+      </div>
+      <p class="field-note" id="captions-note"></p>
       <div class="gallery is-options" id="look-captions"></div>
-      <div class="rail-label">Graphics<small>The named cards the assistant reaches for, each playing its own example in this film's shape and look</small></div>
-      <div class="gallery is-options is-templates" id="look-templates"></div>
+      <details class="look-reference">
+        <summary class="rail-label">Graphics the assistant can use<small>Reference: the named cards, each playing its own example in this film's shape and look</small></summary>
+        <div class="gallery is-options is-templates" id="look-templates"></div>
+      </details>
       <div class="rail-label">Transitions<small>How the picture changes when the layout does</small></div>
       <div class="gallery is-options" id="look-transitions"></div>
       <label class="insp-field is-wide">Transition speed
@@ -481,14 +580,6 @@
       <label class="insp-field">Vignette
         <span class="slider-row"><input type="range" id="grade-vignette" min="0" max="1" step="0.05" /><span class="insp-swatch-value" id="grade-vignette-value"></span></span>
       </label>
-      <div class="rail-label">Captions</div>
-      <div class="segmented" id="theme-captions" role="radiogroup">
-        <button type="button" data-value="none">Off</button>
-        <button type="button" data-value="open">Burn in</button>
-        <button type="button" data-value="closed">CC file</button>
-        <button type="button" data-value="both">Both</button>
-      </div>
-      <p class="field-note" id="captions-note"></p>
       <details class="insp-details">
         <summary>Mark and handle</summary>
         <label class="insp-field">Mark
@@ -521,9 +612,14 @@
       <span class="time"><b id="time-now">0:00.0</b><span class="time-sep" id="time-sep"> · </span><span id="time-total"></span></span>
       <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> Skip cuts</label>
       <button type="button" class="insp-mini" id="script-toggle" hidden>Script</button>
-      <label class="toggle" id="captions-wrap" hidden>Captions
-        <select id="stage-captions"><option value="none">off</option><option value="open">burned in</option><option value="closed">CC file</option><option value="both">both</option></select>
-      </label>
+      <span class="toggle" id="captions-wrap" hidden>Captions
+        <span class="segmented is-compact" id="stage-captions" role="radiogroup" aria-label="Captions">
+          <button type="button" data-value="none">Off</button>
+          <button type="button" data-value="open">Burn in</button>
+          <button type="button" data-value="closed">CC</button>
+          <button type="button" data-value="both">Both</button>
+        </span>
+      </span>
       <span class="zoomctl" id="zoomctl">
         <button type="button" class="zoombtn" id="zoom-out" title="Zoom out · ctrl + wheel over the timeline" aria-label="Zoom out">−</button>
         <span class="zoom-level" id="zoom-level" title="How much of the film the timeline shows">all</span>
@@ -536,7 +632,7 @@
       <div class="tl-track tl-track-map"><span class="tl-label"></span><div class="tl-minimap" id="tl-minimap" title="The whole film. Drag the window to pan, click to go there."><div class="tl-map-inner" id="map-inner"></div><div class="tl-map-view" id="map-view"></div><div class="tl-map-head" id="map-head"></div></div></div>
       <div class="tl-track tl-track-ruler"><span class="tl-label"></span><div class="tl-ruler"><div class="tl-inner" id="lane-ruler"></div></div></div>
       <div class="tl-track" id="track-cuts"><span class="tl-label">cuts</span><div class="tl-lane"><div class="tl-inner" id="lane-cuts"></div></div></div>
-      <div class="tl-track" id="track-layout" hidden><span class="tl-label">stage</span><div class="tl-lane"><div class="tl-inner" id="lane-layout"></div></div></div>
+      <div class="tl-track" id="track-layout" hidden><span class="tl-label">layout</span><div class="tl-lane"><div class="tl-inner" id="lane-layout"></div></div></div>
       <div class="tl-track" id="track-screen" hidden><span class="tl-label">screen</span><div class="tl-lane is-quiet"><div class="tl-inner" id="lane-screen"></div></div></div>
       <div class="tl-track" id="track-scenes" hidden><span class="tl-label">scenes</span><div class="tl-lane"><div class="tl-inner" id="lane-scenes"></div></div></div>
       <div class="tl-track" id="track-inserts" hidden><span class="tl-label">inserts</span><div class="tl-lane is-quiet"><div class="tl-inner" id="lane-inserts"></div></div></div>

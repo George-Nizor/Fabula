@@ -12,12 +12,18 @@
 // preview_frame tool to LOOK at its own composition; a person can call it by
 // hand to check a moment before committing to minutes of render.
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, protocol } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 
 const REPO_ROOT = path.join(__dirname, "..");
+// Motion scenes draw in sandboxed frames that load only over this scheme.
+const motionProtocol = require(path.join(REPO_ROOT, "electron", "motion-protocol.cjs"));
+motionProtocol.registerMotionScheme(protocol);
+// Every page here may host a motion frame: sealed off the network (motion-protocol.cjs).
+app.on("web-contents-created", (_event, contents) => motionProtocol.sealMotionFrames(contents));
 if (!app.commandLine.hasSwitch("no-zygote")) {
   console.error("run with --no-sandbox --no-zygote");
   app.exit(2);
@@ -38,7 +44,116 @@ const flag = (name) => {
 const positional = argv.filter((a) => !a.startsWith("--") && !a.endsWith(".cjs"));
 const projectDir = path.resolve(REPO_ROOT, positional[0] ?? "media/sample");
 
+// One motion document on its own: --motion=motion/<name>.html draws it over
+// the film's field at --frames instants across --seconds, under --layout
+// (cutaway by default; pip, full or side put a hatched block where the head
+// would be, so the scene can be judged against the room it leaves), tiled
+// into one sheet. No clean cut needed — this is how the assistant sees a
+// scene it has just written, before it places one.
+async function motionSheet() {
+  const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
+  const themes = await import(pathToFileURL(path.join(REPO_ROOT, "core", "themes.mjs")).href);
+  const formats = await import(pathToFileURL(path.join(REPO_ROOT, "core", "formats.mjs")).href);
+  const projectState = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "project-state.mjs")).href);
+  const { FFMPEG, probeDimensions } = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "pipeline.mjs")).href);
+  const { execFileSync } = require("node:child_process");
+  const src = flag("motion");
+  if (!/^motion\/[a-z0-9][a-z0-9-]*\.html$/.test(src) || !fs.existsSync(path.join(projectDir, src))) throw new Error(`no motion document ${src} in the project`);
+  const meta = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; } })();
+  const config = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectDir, "compose.json"), "utf8")); } catch { return {}; } })();
+  const stage = formats.stageOf(meta);
+  const theme = themes.resolveTheme(config.theme ?? null);
+  const clean = path.join(projectDir, "out", "clean.mp4");
+  const aspect = (() => { try { const d = probeDimensions(clean); return d.width / d.height; } catch { return 16 / 9; } })();
+  const seconds = Math.min(Math.max(Number(flag("seconds") ?? 6), 0.5), 120);
+  const count = Math.min(Math.max(Number(flag("frames") ?? 6), 1), 24);
+  const layoutName = flag("layout") ?? "cutaway";
+  if (!stageEngine.LAYOUTS.has(layoutName)) throw new Error(`layout is one of ${[...stageEngine.LAYOUTS].join(", ")}`);
+  const params = flag("params") ? JSON.parse(flag("params")) : {};
+  const full = flag("full") !== "false";
+  // Drawn the way the film plays it: the placement's seed, fade and over.
+  const seed = Number(flag("seed"));
+  const graphic = {
+    kind: "motion", src, params, full,
+    ...(flag("libs") ? { libs: flag("libs").split(",").filter(Boolean) } : {}),
+    ...(Number.isInteger(seed) ? { seed } : {}),
+    ...(flag("fade") === "false" ? { fade: false } : {}),
+    ...(flag("over") === "true" ? { over: true } : {}),
+  };
+  const scenes = [{ type: "graphic", start: 0, end: seconds, graphic }];
+  projectState.attachSceneMedia(projectDir, scenes, (rel) => pathToFileURL(path.join(projectDir, rel)).href);
+  const timeline = stageEngine.resolveLayoutTimeline([{ type: "stage", layout: layoutName, corner: flag("corner"), start: 0, end: seconds }], seconds, { transition: "cut" });
+  // Placed in the film (--start, its first second there): the words spoken
+  // over it, moved onto the sheet's own clock, so fabula.word() lands where
+  // it will in the film.
+  let wordSpans = [];
+  const start = Number(flag("start"));
+  if (Number.isFinite(start) && fs.existsSync(path.join(projectDir, "clean.json"))) {
+    const { flattenWords } = await import(pathToFileURL(path.join(REPO_ROOT, "core", "cut-engine.mjs")).href);
+    const engine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "compose-engine.mjs")).href);
+    const words = flattenWords(JSON.parse(fs.readFileSync(path.join(projectDir, "clean.json"), "utf8")));
+    wordSpans = engine.resolveCaptions(words)
+      .map((span) => ({ ...span, start: span.start - start, end: span.end - start }))
+      .filter((span) => span.start >= -0.05 && span.start < seconds);
+  }
+  const compose = { duration: seconds, scenes, captions: null, wordSpans, stage, logicalStage: stage, theme, punchSpans: [] };
+  motionProtocol.handleMotionProtocol(protocol, { projectDir: () => projectDir });
+  const width = Math.max(Math.min(Number(flag("width") ?? (count > 1 ? 640 : 1280)), 1920), 320);
+  const height = Math.round(width * stage.height / stage.width);
+  const win = new BrowserWindow({ show: false, width, height, frame: false, webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false } });
+  await win.loadFile(path.join(REPO_ROOT, "renderer", "export.html"));
+  const contents = win.webContents;
+  if (!contents.isPainting()) contents.startPainting();
+  contents.debugger.attach("1.3");
+  await contents.executeJavaScript(`__setCompose(${JSON.stringify(compose)}, { media: false })`);
+  const framesDir = path.join(projectDir, "out", "frames");
+  fs.mkdirSync(framesDir, { recursive: true });
+  // Each call draws in a folder of its own. The assistant runs previews in
+  // parallel, and tiles under fixed names handed one call's frames to
+  // another — the orbit's sheet came back holding thrust.
+  const work = fs.mkdtempSync(path.join(framesDir, ".motion-"));
+  const instants = count === 1 ? [Number(flag("at") ?? seconds / 2)] : Array.from({ length: count }, (_, i) => Number(((seconds - 0.1) * (i + 0.5) / count).toFixed(2)));
+  const tiles = [];
+  let out = null;
+  try {
+    for (const [i, t] of instants.entries()) {
+      const layout = stageEngine.layoutAt(timeline, t, aspect, stage);
+      await contents.executeJavaScript(`__renderScene(${t}, ${JSON.stringify(layout)}, { headBlock: true })`);
+      const shot = await contents.debugger.sendCommand("Page.captureScreenshot", { format: "png" });
+      const file = path.join(work, `tile-${String(i).padStart(2, "0")}.png`);
+      fs.writeFileSync(file, Buffer.from(shot.data, "base64"));
+      tiles.push({ index: i, file, at: t });
+    }
+    // The sheet is named for what was asked: two placements of one document
+    // drawn at once do not overwrite each other, and the same request asked
+    // twice lands on the same file. Written beside the tiles, then moved.
+    const name = path.basename(src, ".html");
+    const request = crypto.createHash("sha1").update(JSON.stringify({ stamp: scenes[0].graphic.stamp ?? "", graphic, layoutName, corner: flag("corner") ?? null, seconds, instants, start: flag("start") ?? null, width, stage })).digest("hex").slice(0, 10);
+    out = path.resolve(flag("out") ?? path.join(framesDir, `motion-${name}-${request}.png`));
+    const sheet = path.join(work, "sheet.png");
+    if (tiles.length === 1) fs.renameSync(tiles[0].file, sheet);
+    else {
+      const columns = Math.min(Number(flag("columns") ?? (stage.width > stage.height ? 3 : 6)), tiles.length);
+      const rows = Math.ceil(tiles.length / columns);
+      const list = path.join(work, "sheet.txt");
+      fs.writeFileSync(list, ["ffconcat version 1.0", ...tiles.map((tile) => `file '${tile.file}'\nduration 1`)].join("\n") + "\n");
+      execFileSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list,
+        "-vf", `tile=${columns}x${rows}:padding=4:color=0x0b0e12`, "-frames:v", "1", sheet], { stdio: ["ignore", "ignore", "inherit"] });
+    }
+    fs.renameSync(sheet, out);
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  // Sheets pile up over a session of looking; the newest forty stay.
+  const sheets = fs.readdirSync(framesDir).filter((entry) => /^motion-.+\.png$/.test(entry)).map((entry) => ({ entry, at: fs.statSync(path.join(framesDir, entry)).mtimeMs })).sort((a, b) => b.at - a.at);
+  for (const { entry } of sheets.slice(40)) fs.rmSync(path.join(framesDir, entry), { force: true });
+  const errors = await contents.executeJavaScript("__motionErrors()");
+  console.log(JSON.stringify({ file: out, src, layout: layoutName, seconds, tiles: tiles.map(({ file, ...rest }) => rest), errors: errors?.[src] ?? [] }));
+  app.quit();
+}
+
 async function main() {
+  if (flag("motion") !== undefined) return motionSheet();
   const { flattenWords } = await import(pathToFileURL(path.join(REPO_ROOT, "core", "cut-engine.mjs")).href);
   const engine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "compose-engine.mjs")).href);
   const stageEngine = await import(pathToFileURL(path.join(REPO_ROOT, "core", "stage-engine.mjs")).href);
@@ -93,14 +208,9 @@ async function main() {
     try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
   })();
   const scenes = engine.resolveScenes(templates.refreshTemplates(config.scenes ?? [], { format: formats.resolveFormat(meta).id }), words, { durationSeconds: duration });
-  for (const scene of scenes) {
-    if (scene.graphic?.src) scene.graphic.url = pathToFileURL(path.join(projectDir, scene.graphic.src)).href;
-    for (const item of scene.graphic?.items ?? []) if (item.src) item.url = pathToFileURL(path.join(projectDir, item.src)).href;
-    if (scene.graphic?.kind === "custom") {
-      const base = pathToFileURL(path.join(projectDir, "assets/")).href;
-      scene.graphic = { ...scene.graphic, html: scene.graphic.html.replaceAll("assets/", base), css: (scene.graphic.css ?? "").replaceAll("assets/", base) };
-    }
-  }
+  const projectState = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "project-state.mjs")).href);
+  projectState.attachSceneMedia(projectDir, scenes, (src) => pathToFileURL(path.join(projectDir, src)).href);
+  motionProtocol.handleMotionProtocol(protocol, { projectDir: () => projectDir });
   const stage = formats.stageOf(meta);
   const theme = themes.resolveTheme(config.theme ?? null);
   if (theme.logo) theme.logoUrl = pathToFileURL(path.join(projectDir, theme.logo.src)).href;
@@ -115,10 +225,11 @@ async function main() {
     captions: engine.captionsBurnedIn(config.captions) ? engine.resolvePhraseCaptions(words, { emphasis: config.captionEmphasis }) : null,
     wordSpans: engine.resolveCaptions(words),
     stage,
+    logicalStage: stage,
     theme,
     punchSpans: config.punch && map?.pieces ? shotEngine.punchSpans(map.pieces, config.punch.zoom) : [],
   };
-  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds });
+  const timeline = stageEngine.resolveLayoutTimeline(scenes, duration, { transition: theme.transition, transitionSeconds: theme.transitionSeconds, stage });
   const layoutOf = (t) => stageEngine.layoutAt(timeline, t, dims.width / dims.height, stage);
   const layout = layoutOf(T);
 

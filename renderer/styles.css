@@ -1,6 +1,8 @@
-/* Fabula's chrome: warm paper, ink, book-cloth terracotta. The stage stays
-   the suite's charcoal so footage and overlays read exactly as they render —
-   the app never leaks into the film. */
+/* Fabula's chrome: warm paper to read on, an ink masthead and pane around
+   it, and the mark's magenta-coral for what is live. The stage stays the
+   suite's charcoal so footage and overlays read exactly as they render —
+   the app never leaks into the film (the film's own looks, Studio's
+   terracotta included, live in core/themes.mjs and are not the chrome's). */
 
 /* The story face, vendored so every machine renders the same page. */
 @font-face {
@@ -26,10 +28,20 @@
   --ink: #1f1e1d;
   --ink-soft: #33312d;
   --dim: #6e6b63;
-  --faint: #8b887f;
-  --accent: #d97757;
-  --accent-deep: #a04a2e;
-  --accent-tint: rgba(217, 119, 87, 0.14);
+  --faint: #737067;
+  /* The mark's blade. At 3.3:1 on paper it is for rules, rings, dots, the
+     playhead and focus — never for text. */
+  --accent: #e95087;
+  /* Fills that carry white text (5.3:1), and their hover. */
+  --accent-strong: #c92a64;
+  --accent-strong-hover: #b8245a;
+  /* Accent text on paper (6.5:1). */
+  --accent-ink: #a8265a;
+  --accent-deep: var(--accent-ink);
+  /* The gradient partner, never on its own and never for text. */
+  --accent-2: #ff8f5a;
+  --accent-tint: rgba(233, 80, 135, 0.12);
+  --masthead: #1f1e1d;
   --cut: #b3543c;
   --cut-tint: #f7ede7;
   --ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
@@ -81,10 +93,25 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 18px;
   height: 56px;
   padding: 0 18px;
-  border-bottom: 1px solid var(--line);
+  background: var(--masthead);
+  color: #f0ede6;
+  border-bottom: 1px solid #33312d;
   flex-shrink: 0;
   -webkit-app-region: drag;
   user-select: none;
+  /* The masthead is ink, where the mark was made to sit. Its controls take
+     the same tokens, re-pointed for a dark ground. */
+  --line: rgba(240, 237, 230, 0.14);
+  --line-strong: rgba(240, 237, 230, 0.26);
+  --card: rgba(255, 255, 255, 0.12);
+  --well: rgba(255, 255, 255, 0.06);
+  --ink: #f0ede6;
+  --ink-soft: #ddd8ce;
+  --dim: #b6b1a6;
+  --faint: #9d988d;
+  --accent-ink: #ff9cc0;
+  --accent-tint: rgba(233, 80, 135, 0.22);
+  --shadow-card: none;
 }
 
 /* The system's window controls overlay the top-right corner on Windows. */
@@ -109,11 +136,17 @@ body.win32 .topbar { padding-right: 156px; }
 
 .topbar button, .topbar input, .topbar nav { -webkit-app-region: no-drag; }
 
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 0 0; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.brand:disabled { cursor: default; }
+.brand:not(:disabled):hover .brand-name { color: #ffffff; }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.brand-mark { width: 30px; height: 30px; }
+/* The art fills its canvas's width but not its height; drawn at 44px and
+   pulled in by its margins, the blades read at about 26px, their canvas and
+   clear space untouched. */
+.brand-mark { width: 44px; height: 44px; margin: -6px -8px -6px -10px; }
 
-.brand h1 {
+.brand-name {
   margin: 0;
   font-family: var(--serif);
   font-style: italic;
@@ -188,6 +221,9 @@ body.win32 .topbar { padding-right: 156px; }
 }
 
 .progress.is-failed { background: var(--cut-tint); color: var(--cut); }
+.progress { cursor: pointer; -webkit-app-region: no-drag; }
+.progress:hover { filter: brightness(1.15); }
+.progress:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .pulse {
   width: 8px;
@@ -245,7 +281,7 @@ body.win32 .topbar { padding-right: 156px; }
   padding: 0 13px 0 10px;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
+  background: linear-gradient(180deg, #d63a74 0%, var(--accent-strong-hover) 100%);
   color: #fff;
   font: inherit;
   font-size: var(--t-sm);
@@ -257,7 +293,7 @@ body.win32 .topbar { padding-right: 156px; }
 .assistantbtn:hover { filter: brightness(1.06); }
 .assistantbtn:active { filter: brightness(0.96); }
 .assistantbtn-mark { flex: none; }
-.assistantbtn.is-live { background: var(--card); color: var(--accent-deep); border-color: var(--accent); box-shadow: none; }
+.assistantbtn.is-live { background: var(--card); color: var(--accent-ink); border-color: var(--accent); box-shadow: none; }
 .assistantbtn-dot {
   width: 7px;
   height: 7px;
@@ -322,9 +358,9 @@ body.insp-collapsed .inspector { display: none; }
 
 .button.is-quiet { box-shadow: none; border-color: var(--line); color: var(--dim); }
 
-.button.is-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.button.is-primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 
-.button.is-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.button.is-primary:hover { background: var(--accent-strong-hover); border-color: var(--accent-strong-hover); color: #fff; }
 
 .empty-actions { display: flex; gap: 10px; justify-content: center; }
 
@@ -350,7 +386,7 @@ body.insp-collapsed .inspector { display: none; }
 
 /* ---- The assistant pane ---- */
 
-:root { --assistant-width: min(440px, 38vw); }
+:root { --assistant-width: clamp(340px, 30vw, 440px); }
 
 body.assistant-open > :not(.topbar):not(.assistant-pane):not(dialog):not(.menu):not(.dropzone):not(.empty):not(.home) { margin-right: var(--assistant-width); }
 
@@ -442,7 +478,7 @@ dialog.sheet::backdrop { background: rgba(31, 30, 29, 0.35); }
 
 .sheet-form header p { margin: 0; color: var(--dim); font-size: var(--t-base); line-height: 1.45; }
 
-.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--t-sm); letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--t-sm); letter-spacing: 0.01em; color: var(--dim); font-weight: 600; }
 
 .field input[type="text"], .field select {
   font: inherit;
@@ -670,13 +706,13 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
 
 .rail-label {
   padding: 12px 18px 4px;
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   line-height: 1.4;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  letter-spacing: 0.01em;
+  color: var(--dim);
 }
+.inspector .rail-label { padding-inline: 0; }
 
 /* The rail's head: the label, and a find box that lights every match in
    the words and walks them with Enter. A forty-minute film is six thousand
@@ -705,9 +741,9 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   padding: 6px 18px 14px;
   font-family: var(--serif);
   font-size: var(--t-md);
-  line-height: 2.05;
+  line-height: 1.8;
   color: var(--ink-soft);
-  word-spacing: 0.05em;
+  word-spacing: 0;
   scroll-behavior: smooth;
 }
 
@@ -719,7 +755,7 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   line-height: 1.45;
 }
 
-.word { cursor: pointer; border-radius: 4px; padding: 0 2px; }
+.word { cursor: pointer; border-radius: 4px; padding: 0 1px; margin: 0 -1px; }
 .word:hover { color: var(--accent-deep); }
 
 .word.is-selected { background: var(--accent-tint); color: var(--accent-deep); }
@@ -736,7 +772,7 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
 
 .insp-selected { margin: 0; font-family: var(--serif); font-size: var(--t-md); line-height: 1.4; color: var(--ink-soft); max-height: 7.5em; overflow: auto; }
 
-.insp-mini.is-strong { background: var(--accent); border-color: var(--accent); color: #fff; }
+.insp-mini.is-strong { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 
 .insp-mini.is-strong:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 
@@ -886,9 +922,9 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   margin-right: 0.15em;
   border-radius: 999px;
   border: 1.5px solid var(--accent);
-  color: var(--accent);
+  color: var(--accent-ink);
   font-family: var(--ui);
-  font-size: 0.72em;
+  font-size: var(--t-xs);
   font-weight: 700;
   line-height: 1;
   vertical-align: 0.15em;
@@ -936,7 +972,7 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
 .insert-option.is-chosen { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .insert-option-label { font-weight: 600; font-size: var(--t-base); }
 .insert-option-kinds { font-size: var(--t-sm); color: var(--dim); letter-spacing: 0.02em; }
-.insp-mini.is-chosen { border-color: var(--accent); color: var(--accent); }
+.insp-mini.is-chosen { border-color: var(--accent); color: var(--accent-ink); }
 
 .insp-field textarea {
   width: 100%;
@@ -966,15 +1002,14 @@ dialog.projects::backdrop { background: rgba(31, 30, 29, 0.35); }
   overflow-y: auto;
 }
 
-/* The label, then what is inspected on its own line: a scene's name and
-   span is too long to share a line with the label without wrapping ragged. */
+/* What is inspected, on its own line at the top: the rail's label used to
+   sit above it and carried the top spacing, so the head carries it now. */
 .insp-head {
   display: flex;
   flex-direction: column;
   gap: 0;
+  padding-top: 16px;
 }
-
-.insp-head .rail-label { padding: 12px 0 2px; }
 
 #insp-title { font-size: var(--t-sm); color: var(--accent-deep); font-weight: 600; line-height: 1.35; }
 
@@ -1037,7 +1072,7 @@ kbd {
   letter-spacing: 0.03em;
 }
 
-.insp-field input[type="text"],
+.insp-field :is(input[type="text"], input[type="number"], textarea),
 .insp-field select {
   font-size: var(--t-base);
   color: var(--ink);
@@ -1064,12 +1099,13 @@ input[type="color"] {
 }
 
 .insp-mini {
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   color: var(--dim);
   background: var(--card);
   border: 1px solid var(--line-strong);
   border-radius: 999px;
-  padding: 0.14rem 0.7rem;
+  min-height: 26px;
+  padding: 0.25rem 0.8rem;
   cursor: pointer;
 }
 
@@ -1156,7 +1192,7 @@ body.dock-dragging .videoframe { transition: none; }
   box-shadow: 0 1px 4px rgba(31, 30, 29, 0.2);
 }
 
-.playbtn:hover { background: #c4664a; }
+.playbtn:hover { background: var(--accent-strong-hover); }
 
 .time { font-size: var(--t-sm); color: var(--dim); font-variant-numeric: tabular-nums; }
 .time b { color: var(--accent-deep); }
@@ -1182,11 +1218,11 @@ body.dock-dragging .videoframe { transition: none; }
   flex: 0 0 3.2rem;
   font-size: var(--t-xs);
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
+  letter-spacing: 0.01em;
+  color: var(--dim);
   text-align: right;
 }
+.tl-label::first-letter { text-transform: uppercase; }
 
 .tl-track-ruler { height: 1rem; }
 .tl-track-map { height: calc(10px * var(--lane-scale, 1)); margin-bottom: 2px; }
@@ -1255,6 +1291,19 @@ body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 }
 
 .tl-block.is-tiny { color: transparent; }
+/* A block too narrow for its words keeps a mark for its kind. */
+.tl-block.is-tiny[data-glyph] { position: relative; }
+.tl-block.is-tiny[data-glyph]::before {
+  content: attr(data-glyph);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  overflow: hidden;
+}
 
 .tl-block.is-dim {
   background: #e0ddd1;
@@ -1376,7 +1425,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
   background: var(--accent);
   border-radius: 1px;
   pointer-events: none;
-  box-shadow: 0 0 6px rgba(217, 119, 87, 0.5);
+  box-shadow: 0 0 6px rgba(233, 80, 135, 0.5);
 }
 
 /* ---- The four steps ---- */
@@ -1394,7 +1443,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
   font-weight: 700;
   color: var(--faint);
 }
-.stagebtn.is-active .stepnum { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stagebtn.is-active .stepnum { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 
 /* ---- Pages: Look and Export ---- */
 
@@ -1443,7 +1492,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 .look-card.is-active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint), var(--shadow-card); }
 .look-card-name { font-weight: 600; font-size: var(--t-base); padding: 2px 4px 0; }
 .look-card-about { font-size: var(--t-sm); color: var(--dim); line-height: 1.35; padding: 0 4px; }
-.look-card-action { font-size: var(--t-xs); color: var(--accent); font-weight: 600; padding: 2px 4px 0; }
+.look-card-action { font-size: var(--t-xs); color: var(--accent-ink); font-weight: 600; padding: 2px 4px 0; }
 .look-none { color: var(--dim); font-size: var(--t-base); max-width: 52ch; margin: 4px 0; }
 
 /* ---- Live preview cards ----
@@ -1455,11 +1504,31 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 
 .look-card-stage {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--stage-aspect, 16 / 9);
   border-radius: 8px;
   overflow: hidden;
   background: #0b0e12;
 }
+
+/* An option is judged where it sits: a caption on the bottom edge, a title
+   low on the left, a callout at the top right. At stamp size the whole
+   frame makes them a few pixels tall, so these galleries zoom onto the
+   corner their element lives in. */
+#look-captions .look-card-stage, #look-titles .look-card-stage, #look-callouts .look-card-stage { overflow: hidden; }
+#look-captions .preview-frame { transform: scale(1.9); transform-origin: 50% 100%; }
+#look-titles .preview-frame { transform: scale(1.6); transform-origin: 0 100%; }
+#look-callouts .preview-frame { transform: scale(1.7); transform-origin: 100% 0; }
+
+/* A tall film's stamps are tall: more to a row, and the three galleries
+   above show the half of the frame their element lives in rather than
+   zooming — a caption already spans a tall frame's width, so a zoom would
+   crop it, and half a frame keeps the cards short. The frame keeps the
+   film's own shape, so the cq units still measure the real stage. */
+#look.is-tall-film .gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+#look.is-tall-film .gallery.is-options { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+#look.is-tall-film :is(#look-captions, #look-titles, #look-callouts) .look-card-stage { aspect-ratio: 9 / 8; }
+#look.is-tall-film :is(#look-captions, #look-titles, #look-callouts) .preview-frame { inset: auto 0 0 0; aspect-ratio: var(--stage-aspect); transform: none; }
+#look.is-tall-film #look-callouts .preview-frame { inset: 0 0 auto 0; }
 
 .preview-frame {
   position: absolute;
@@ -1528,7 +1597,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 .insp-accent-row input[type="number"] { flex: 1; min-width: 0; }
 
 .insp-actions.is-nudge { align-items: center; gap: 4px; flex-wrap: wrap; }
-.nudge-label { font-size: var(--t-xs); color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; margin-right: 2px; }
+.nudge-label { font-size: var(--t-xs); color: var(--dim); letter-spacing: 0.01em; margin-right: 2px; }
 .insp-mini.is-nudge { width: 26px; padding: 0; font-size: var(--t-base); line-height: 1; }
 .insp-mini.is-danger { color: #b3261e; border-color: color-mix(in srgb, #b3261e 35%, var(--line)); }
 .insp-mini.is-danger:hover { border-color: #b3261e; background: color-mix(in srgb, #b3261e 8%, transparent); }
@@ -1549,7 +1618,12 @@ body.is-panning .tl-map-view { cursor: grabbing; }
   cursor: pointer;
 }
 .segmented button:last-child { border-right: none; }
-.segmented button.is-on { background: var(--accent); color: #fff; font-weight: 600; }
+.segmented button.is-on { background: var(--accent-strong); color: #fff; font-weight: 600; }
+.segmented.is-compact { display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.segmented.is-compact button { flex: none; padding: 2px 8px; font-size: var(--t-xs); }
+/* Caption styles only apply when captions are burned in. */
+.gallery.is-muted { opacity: 0.45; }
+#theme-captions { max-width: 460px; margin: 4px 0 2px; }
 
 .insp-details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 6px; }
 .insp-details summary { cursor: pointer; font-size: var(--t-sm); color: var(--dim); padding: 4px 0; }
@@ -1557,7 +1631,7 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 .button.is-small { font-size: var(--t-sm); padding: 0.4rem 0.9rem; }
 
 .toggle select { margin-left: 0.3rem; font-size: var(--t-sm); }
-#script-toggle.is-on { border-color: var(--accent); color: var(--accent); }
+#script-toggle.is-on { border-color: var(--accent); color: var(--accent-ink); }
 
 /* ---- Export ---- */
 
@@ -1599,11 +1673,11 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 .export-flash { font-size: var(--t-base); color: var(--dim); margin: 10px 0 0; max-width: 760px; }
 .export-flash.is-error { color: var(--cut); }
 
-.button.is-primary { background: var(--accent); color: #ffffff; border-color: var(--accent); }
-.button.is-primary:hover { background: #c4664a; color: #ffffff; }
+.button.is-primary { background: var(--accent-strong); color: #ffffff; border-color: var(--accent-strong); }
+.button.is-primary:hover { background: var(--accent-strong-hover); color: #ffffff; }
 .button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 .button:disabled:hover { border-color: var(--line-strong); color: var(--ink); }
-.button.is-primary:disabled:hover { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+.button.is-primary:disabled:hover { background: var(--accent-strong); color: #ffffff; border-color: var(--accent-strong); }
 
 .export-files { border-collapse: collapse; width: 100%; font-size: var(--t-base); }
 .export-files td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); vertical-align: middle; }
@@ -1656,10 +1730,146 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 
 /* The shape, where the list already carries the stage. Weight rather than a
    border, because the row is one line of small type and a box in it shouts. */
-.project-meta .stage.is-short { color: var(--accent); font-weight: 600; }
+.project-meta .stage.is-short { color: var(--accent-ink); font-weight: 600; }
 
 /* A template's fields in the inspector: a head line, then one field each. */
 .insp-template { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; border-top: 1px solid var(--line); }
 .insp-template-head { font-size: 12px; color: var(--muted, #6e6b63); line-height: 1.35; }
 .insp-template-fields { display: flex; flex-direction: column; gap: 6px; }
 .insp-template-fields textarea { min-height: 3.4em; }
+
+
+/* ---- Make it into a video ---- */
+
+/* The one hero on the Cut step: the mark's two colours, ink on them. */
+.button.is-hero {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  border: 0;
+  color: #1f1e1d;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(233, 80, 135, 0.26);
+}
+.button.is-hero:hover { color: #1f1e1d; filter: brightness(1.05); box-shadow: 0 8px 22px rgba(233, 80, 135, 0.34); }
+.button.is-hero:disabled { filter: saturate(0.4); cursor: default; box-shadow: none; }
+.insp-cta .linkbtn { align-self: center; font-size: var(--t-sm); }
+
+/* The brief. Wide enough for three choices side by side; the body scrolls
+   and the footer stays, so no window is too short to start. */
+dialog.sheet.is-brief { width: min(600px, calc(100vw - 32px)); }
+dialog.sheet { max-height: calc(100vh - 48px); }
+dialog.sheet[open] { display: flex; }
+dialog.sheet > .sheet-form { overflow-y: auto; flex: 1; }
+.sheet-form > .sheet-foot { position: sticky; bottom: -20px; margin-bottom: -20px; padding: 12px 0 20px; background: var(--paper); }
+.field.choice.is-cards { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.field.choice.is-cards legend { width: 100%; margin-bottom: 2px; }
+.card-choice {
+  flex: 1 1 150px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink);
+}
+.card-choice input { margin: 3px 0 0; accent-color: var(--accent-strong); }
+.card-choice span { display: flex; flex-direction: column; gap: 3px; }
+.card-choice b { font-size: var(--t-md); font-weight: 600; }
+.card-choice small { font-size: var(--t-sm); color: var(--dim); line-height: 1.4; }
+.card-choice:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-tint); }
+.field-row > .field { flex: 1; min-width: 0; }
+.field-row.is-three { align-items: flex-end; }
+fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.field legend { padding: 0; }
+.field.checks { flex-direction: row; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.field.checks legend { width: 100%; }
+.check { display: inline-flex; gap: 7px; align-items: center; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: var(--t-base); color: var(--ink); cursor: pointer; }
+.check input, .radio input { accent-color: var(--accent-strong); }
+.field textarea {
+  font: inherit;
+  font-weight: 400;
+  font-size: var(--t-base);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  resize: vertical;
+}
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sheet-more { border-top: 1px solid var(--line); padding-top: 10px; }
+.sheet-more summary { cursor: pointer; color: var(--dim); font-size: var(--t-sm); }
+.sheet-more summary::marker { color: var(--faint); }
+.sheet-more[open] summary { margin-bottom: 8px; }
+
+/* The Making panel: the run's phases, the treatment, the draft. */
+.insp-making { display: flex; flex-direction: column; gap: 12px; padding: 14px; margin: 10px 0 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.making-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.making-head b { font-family: var(--serif); font-size: var(--t-lg); font-weight: 600; }
+.making-chip { font-size: var(--t-xs); font-weight: 600; color: var(--accent-ink); background: var(--accent-tint); border-radius: 999px; padding: 2px 8px; }
+.making-clock { margin-left: auto; font-size: var(--t-sm); color: var(--dim); font-variant-numeric: tabular-nums; }
+.making-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.making-phase { display: grid; grid-template-columns: 18px 1fr; column-gap: 6px; align-items: baseline; font-size: var(--t-sm); color: var(--faint); padding: 2px 0; }
+.making-mark { text-align: center; font-size: var(--t-sm); }
+.making-phase.is-done { color: var(--ink-soft); }
+.making-phase.is-done .making-mark { color: #2fa85f; }
+.making-phase.is-active { color: var(--ink); font-weight: 600; }
+.making-phase.is-active .making-mark { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .making-phase.is-active .making-mark { animation: pulse 1.6s ease-in-out infinite; }
+}
+.making-phase.is-skipped { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.making-detail { grid-column: 2; font-weight: 400; color: var(--accent-ink); font-size: var(--t-xs); line-height: 1.4; overflow-wrap: anywhere; }
+.making-treatment { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.making-logline { margin: 0; font-family: var(--serif); font-size: var(--t-lg); line-height: 1.35; color: var(--ink); }
+.making-shape { margin: 0; font-size: var(--t-sm); color: var(--dim); line-height: 1.45; }
+.making-signature { align-self: flex-start; text-align: left; font: inherit; font-size: var(--t-sm); color: var(--accent-ink); background: var(--accent-tint); border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; line-height: 1.4; }
+.making-signature:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.making-waiting { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--cut-tint); }
+.making-waiting p { margin: 0; font-size: var(--t-sm); color: var(--ink-soft); line-height: 1.45; }
+.making-waiting .button { align-self: flex-start; }
+.making-draft { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.making-foot { display: flex; justify-content: space-between; gap: 10px; }
+.making-foot .linkbtn { font-size: var(--t-sm); }
+
+/* Live or Draft: once a draft exists, the stage can play it. */
+.stagewell { position: relative; }
+.stage-switch {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(31, 30, 29, 0.72);
+  backdrop-filter: blur(6px);
+}
+.stage-switch-btn { font: inherit; font-size: var(--t-sm); color: #d9d5cc; background: none; border: 0; border-radius: 999px; padding: 3px 14px; cursor: pointer; }
+.stage-switch-btn.is-on { background: #f0ede6; color: #1f1e1d; font-weight: 600; }
+.draft-player { position: absolute; inset: 44px 16px 16px; width: calc(100% - 32px); height: calc(100% - 60px); object-fit: contain; background: #0b0e12; border-radius: 8px; z-index: 5; }
+body.draft-showing .stagewell .videoframe { visibility: hidden; }
+
+/* The Assistant sheet's persona lines: one line each, the rest on hover. */
+#assistant-personas .radio small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* The Look step's reference material: closed until wanted. */
+.look-reference { margin-top: 8px; }
+.look-reference > summary { cursor: pointer; list-style: none; }
+.look-reference > summary::-webkit-details-marker { display: none; }
+.look-reference > summary::before { content: "▸ "; color: var(--faint); }
+.look-reference[open] > summary::before { content: "▾ "; }
+.look-reference .look-card { cursor: default; }
+
+.rail-foot:empty { display: none; }
+.insp-keys-wrap > summary { cursor: pointer; font-size: var(--t-sm); color: var(--dim); }
+.insp-keys-wrap[open] > summary { margin-bottom: 6px; }

@@ -56,7 +56,7 @@ says "make it feel like…" or when a film's purpose points at one of them.
 - The screen is a stage: split screens, a panel beside the head, a graphic that owns the
   frame for one fact.
 - Sober type, high contrast, tabular numbers.
-- Fabula: `block` title style, `bar` callouts, `chart` and `split`, `compare`; `broadcast`
+- Fabula: `block` title style, `bar` callouts, `chart` and `share`, `compare`; `broadcast`
   preset; `cut` transitions; `screen` graphics for footage.
 
 ## Short-form (the feed)

@@ -53,9 +53,14 @@ test("text is escaped, capped, and may not carry a link", () => {
 test("items are counted, valued and typed per template", () => {
   assert.throws(() => renderTemplate("timeline", { items: [{ value: "a", label: "b" }] }), /takes 3–6 items/);
   assert.throws(() => renderTemplate("timeline", { items: [{ label: "no date" }, { label: "x", value: "y" }, { label: "z", value: "w" }] }), /value/);
-  assert.throws(() => renderTemplate("split", { items: [{ label: "a", value: "text" }, { label: "b", value: 2 }] }), /must be a number/);
-  const split = renderTemplate("split", { items: [{ label: "a", value: 3 }, { label: "b", value: 1 }] });
-  assert.ok(split.html.includes("75%") && split.html.includes("25%"), "shares are normalised");
+  assert.throws(() => renderTemplate("share", { items: [{ label: "a", value: "text" }, { label: "b", value: 2 }] }), /must be a number/);
+  const share = renderTemplate("share", { items: [{ label: "a", value: 3 }, { label: "b", value: 1 }] });
+  assert.ok(share.html.includes("75%") && share.html.includes("25%"), "shares are normalised");
+  // The share bar was "split" before split became a layout: an old plan still
+  // renders, and is written back under the new name.
+  const old = renderTemplate("split", { items: [{ label: "a", value: 3 }, { label: "b", value: 1 }] });
+  assert.equal(old.template, "share");
+  assert.equal(old.html, share.html);
   assert.throws(() => renderTemplate("progress", { value: 120, label: "x" }), /at most 100/);
   assert.throws(() => renderTemplate("alert", { text: "x", level: "panic" }), /must be one of note, warning, stop/);
   const alert = renderTemplate("alert", { text: "x" });
