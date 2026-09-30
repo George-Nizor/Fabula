@@ -327,7 +327,8 @@ export function runningJob(dir) {
   if (typeof progress.detail === "string" && progress.detail.startsWith("failed:")) return null;
   if (progress.pid && (progress.platform ?? process.platform) === process.platform) {
     if (pidAlive(progress.pid)) return progress;
-    reportProgress(dir, progress.stage, progress.label, `failed: the ${progress.stage} process (pid ${progress.pid}) died before finishing; see out/${progress.stage}.log`);
+    const said = lastLogLine(path.join(dir, "out", `${progress.stage}.log`));
+    reportProgress(dir, progress.stage, progress.label, `failed: the ${progress.stage} process (pid ${progress.pid}) died before finishing${said ? ` (${said})` : ""}; see out/${progress.stage}.log`);
     return null;
   }
   // Seen from the other platform (the Windows window over a WSL job) only
@@ -369,11 +370,42 @@ export function startJob(dir, stage, label, command, args, options = {}) {
     try { fs.appendFileSync(logFile, `could not start ${command}: ${error.message}\n`); } catch { /* the record says it */ }
     reportProgress(dir, stage, label, `failed: could not start ${path.basename(command)}: ${error.message}`);
   });
+  // A job that dies before it can report (its program missing on the far side of wsl.exe, a
+  // crash on its first line) would leave "starting" behind, and the window would keep its clock
+  // running. Its exit is the report: a failure, in the last words of its log, unless it reported
+  // one itself, finished, or a newer job has the record.
+  let started = null;
+  child.on("exit", (code, signal) => {
+    if (code === 0) return;
+    const now = readProgress(dir);
+    if (!now || now.stage !== stage || now.startedAt !== started) return;
+    if (typeof now.detail === "string" && now.detail.startsWith("failed:")) return;
+    reportProgress(dir, stage, label, `failed: ${lastLogLine(logFile) || (signal ? `stopped by ${signal}` : `exit code ${code}`)}`);
+  });
   child.unref();
   clearProgress(dir);
   if (!child.pid) throw new Error(`could not start ${path.basename(command)}; see ${logFile}`);
   reportProgress(dir, stage, label, "starting", { pid: child.pid });
+  started = readProgress(dir)?.startedAt ?? null;
   return { pid: child.pid, log: logFile };
+}
+
+// The last line a job wrote to its log, read from the end: renders log for minutes.
+export function lastLogLine(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, "r");
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, 4096);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8").split(/\r?\n|\r/).map((line) => line.trim()).filter(Boolean);
+    return (lines.at(-1) ?? "").slice(0, 240);
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

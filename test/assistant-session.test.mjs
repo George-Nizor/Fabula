@@ -17,7 +17,7 @@ test("the window's choice becomes plain argv, never a shell string", () => {
   assert.throws(() => choiceArgs({ provider: "claude", effort: "ultra" }), /reasoning effort/);
   const win = sessionCommand({ platform: "win32", repo: "/w/Fabula", distro: "Ubuntu", cols: 132, rows: 43, args: ["--provider", "claude"] });
   assert.equal(win.command, "wsl.exe");
-  assert.deepEqual(win.args, ["--distribution", "Ubuntu", "--cd", "/w/Fabula", "--", "python3", "scripts/pty-bridge.py", "132", "43", "bash", "-l", "scripts/assistant-run.sh", "--provider", "claude"]);
+  assert.deepEqual(win.args, ["--distribution", "Ubuntu", "--cd", "/w/Fabula", "-e", "python3", "scripts/pty-bridge.py", "132", "43", "bash", "-l", "scripts/assistant-run.sh", "--provider", "claude"]);
   const linux = sessionCommand({ platform: "linux", repo: "/w/Fabula", cols: 80, rows: 24, args: [] });
   assert.equal(linux.command, "python3");
   assert.equal(linux.cwd, "/w/Fabula");

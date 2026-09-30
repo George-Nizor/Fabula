@@ -363,6 +363,17 @@ export function shellLine(spec, { root, node = "node" }) {
   return `cd ${quote(root)} && export PATH=${quote(path.posix.join(root, "bin"))}:"$PATH" && ${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
 }
 
+// The wsl.exe command a Windows window starts a job with. -e runs the login shell with the line
+// as its one argument. `--` would have the distribution's shell read the line first, and that
+// shell expanded "$PATH" to its own non-login PATH before the login shell ran: a checkout whose
+// node comes from nvm or ~/.local/bin found none. The job writes its own log from inside WSL;
+// handed a Windows handle to a log on the \\wsl.localhost share, wsl.exe relayed nothing into it.
+export function wslJob(spec, { root, distro, dir }) {
+  const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
+  const log = path.posix.join(dir, "out", `${spec.stage}.log`);
+  return { command: "wsl.exe", args: ["-d", distro, "-e", "bash", "-lc", `${shellLine(spec, { root })} >> ${quote(log)} 2>&1`] };
+}
+
 // ---- Projects, plural ----
 //
 // A project is a folder under media/ that stages a recording. Its stage is

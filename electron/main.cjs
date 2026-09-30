@@ -393,6 +393,9 @@ function readMaking(dir, exported) {
 // On Linux the app itself is node enough to run the pipeline; on Windows
 // the pipeline lives on the WSL side and is reached through wsl.exe with a
 // login shell, so the same node and ffmpeg the server uses do the work.
+// Every wsl.exe call in this file runs its command with -e, which hands the
+// arguments over as they are; `--` has the distribution's shell read them
+// again first (see wslJob in scripts/project-state.mjs).
 function startRender(kind, options = {}) {
   const dir = projectDir();
   if (!dir) return { ok: false, error: "No project is open." };
@@ -417,13 +420,8 @@ function startRender(kind, options = {}) {
       const posixDir = toPosixPath(dir);
       if (!root || !posixDir || !WSL_DISTRO) throw new Error("Renders run in WSL, and this window cannot reach it from where it is installed.");
       const spec = ps.jobSpec(kind, posixDir, { ...allowed, root });
-      const line = ps.shellLine(spec, { root });
-      // The job writes its own log from inside WSL. Handed a Windows handle to the log on the
-      // \\wsl.localhost share, wsl.exe relayed nothing into it: a render that ran left an empty
-      // log, which is what the Export step and wait_render show when one fails.
-      const log = path.posix.join(posixDir, "out", `${spec.stage}.log`);
-      const quoted = `'${log.replace(/'/g, "'\\''")}'`;
-      core.pipeline.startJob(dir, spec.stage, spec.label, "wsl.exe", ["-d", WSL_DISTRO, "--", "bash", "-lc", `${line} >> ${quoted} 2>&1`], { cwd: undefined });
+      const job = ps.wslJob(spec, { root, distro: WSL_DISTRO, dir: posixDir });
+      core.pipeline.startJob(dir, spec.stage, spec.label, job.command, job.args, { cwd: undefined });
     } else {
       const spec = ps.jobSpec(kind, dir, allowed);
       ps.launchJob(dir, spec, { node: process.execPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, electron: process.execPath });
@@ -745,7 +743,12 @@ function stateStamp() {
     }).join(",");
   } catch { /* no media folder yet */ }
   if (!dir) return `none|${roster}`;
-  return [
+  // A job this side started (a wsl.exe on Windows) is watched by its pid too: one that dies
+  // before it can report changes no file, and the window would show it starting for ever. The
+  // state read that follows the change records the failure (runningJob, in readExport).
+  const progress = core?.pipeline.readProgress(dir);
+  const alive = progress?.pid && progress.platform === process.platform ? `job:${core.pipeline.pidAlive(progress.pid)}|` : "";
+  return alive + [
     "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json",
     "project.json", // the title and the shape; both change from the assistant's side too
     // Make it into a video: the brief, the treatment, the assistant's log,
@@ -1223,13 +1226,13 @@ app.whenReady().then(() => {
         const root = toPosixPath(REPO);
         if (!root || !WSL_DISTRO) throw new Error("the clip cannot be re-encoded from where this window is installed: ffmpeg lives in WSL");
         const posix = (arg) => (path.isAbsolute(arg) && /^[A-Za-z]:\\|^\\\\/.test(arg) ? toPosixPath(arg) ?? arg : arg);
-        return execFileSync("wsl.exe", ["-d", WSL_DISTRO, "--", `${root}/tools/ffmpeg/ffmpeg`, ...args.map(posix)], { stdio: ["ignore", "pipe", "pipe"] });
+        return execFileSync("wsl.exe", ["-d", WSL_DISTRO, "-e", `${root}/tools/ffmpeg/ffmpeg`, ...args.map(posix)], { stdio: ["ignore", "pipe", "pipe"] });
       };
       const probeSeconds = (file) => {
         try {
           const out = process.platform !== "win32"
             ? execFileSync(core.pipeline.FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString()
-            : execFileSync("wsl.exe", ["-d", WSL_DISTRO, "--", `${toPosixPath(REPO)}/tools/ffmpeg/ffprobe`, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", toPosixPath(file) ?? file]).toString();
+            : execFileSync("wsl.exe", ["-d", WSL_DISTRO, "-e", `${toPosixPath(REPO)}/tools/ffmpeg/ffprobe`, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", toPosixPath(file) ?? file]).toString();
           const seconds = Number.parseFloat(out);
           return Number.isFinite(seconds) ? seconds : null;
         } catch { return null; }

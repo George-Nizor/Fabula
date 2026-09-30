@@ -40,6 +40,6 @@ test("a remembered engine is trusted only when it is well formed", () => {
 test("the setup runs in a login shell of the chosen distribution, its arguments quoted", () => {
   const { command, args } = engine.setupCommand({ distro: "Ubuntu", script: "/mnt/c/x/setup-engine.sh", tarball: "/mnt/c/it's/f.tar.gz", version: "0.2.0" });
   assert.equal(command, "wsl.exe");
-  assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "--", "bash", "-lc"]);
+  assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "-e", "bash", "-lc"]);
   assert.equal(args[5], "bash '/mnt/c/x/setup-engine.sh' --version '0.2.0' --tarball '/mnt/c/it'\\''s/f.tar.gz'");
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listProjects, describeProject, PROJECT_NAME_RE, writeProjectTitle, slugify, cleanTitle } from "../scripts/project-state.mjs";
+import { listProjects, describeProject, PROJECT_NAME_RE, writeProjectTitle, slugify, cleanTitle, wslJob } from "../scripts/project-state.mjs";
 
 function mediaRoot(layout) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-projects-"));
@@ -68,13 +68,68 @@ test("a folder name is a slug of the title", () => {
   assert.match(slugify("!!!"), /^project-[a-z0-9]+$/);
 });
 
+test("a window starts a job in WSL with its arguments as they are, logging from inside", () => {
+  const spec = { stage: "first_pass", program: "node", args: ["scripts/job.mjs", "first", "/w/media/it's"] };
+  const { command, args } = wslJob(spec, { root: "/w/Fabula", distro: "Ubuntu", dir: "/w/media/it's" });
+  assert.equal(command, "wsl.exe");
+  // -e, not --: through `--` the distribution's shell expanded "$PATH" before the login shell ran.
+  assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "-e", "bash", "-lc"]);
+  assert.equal(args.length, 6);
+  assert.match(args[5], /^cd '\/w\/Fabula' && export PATH='\/w\/Fabula\/bin':"\$PATH" && 'node' 'scripts\/job.mjs' 'first' '\/w\/media\/it'\\''s'/);
+  assert.ok(args[5].endsWith(` >> '/w/media/it'\\''s/out/first_pass.log' 2>&1`));
+});
+
 test("project names are leaf folder names, never paths", () => {
   for (const bad of ["../etc", "a/b", ".hidden", "", "with space"]) assert.ok(!PROJECT_NAME_RE.test(bad), bad);
   for (const good of ["applemansam-demo", "obs-2026-04-26", "Talk_2"]) assert.ok(PROJECT_NAME_RE.test(good), good);
 });
 
-import { waitForJob, runningJob, reportProgress } from "../scripts/pipeline.mjs";
+import { waitForJob, runningJob, reportProgress, startJob, readProgress } from "../scripts/pipeline.mjs";
 import { appendInbox, takeInbox, pendingInbox } from "../scripts/inbox.mjs";
+import { spawnSync } from "node:child_process";
+
+const until = async (check, ms = 5000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((resolve) => setTimeout(resolve, 25))) {
+    const value = check();
+    if (value) return value;
+  }
+  return check();
+};
+
+test("a job that dies before it can report is recorded as failed, in the last words of its log", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-job-"));
+  try {
+    // What the Windows bridge met: the login shell found no node, and nothing ever said so.
+    startJob(dir, "first_pass", "The first pass", "sh", ["-c", "echo 'bash: line 1: node: command not found' >&2; exit 127"]);
+    const failed = await until(() => readProgress(dir)?.detail?.startsWith("failed:") && readProgress(dir));
+    assert.equal(failed.detail, "failed: bash: line 1: node: command not found");
+
+    // A job that reports its own failure keeps its words.
+    const own = `const fs = require("fs"); const p = JSON.parse(fs.readFileSync("progress.json", "utf8")); p.detail = "failed: ffmpeg said no"; fs.writeFileSync("progress.json", JSON.stringify(p)); process.exit(1);`;
+    const { pid } = startJob(dir, "render_clean", "The clean cut", process.execPath, ["-e", own], { cwd: dir });
+    await until(() => readProgress(dir)?.detail === "failed: ffmpeg said no");
+    await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(readProgress(dir).detail, "failed: ffmpeg said no");
+
+    // A job that finished cleared its record, and its exit leaves it cleared.
+    startJob(dir, "render_clean", "The clean cut", "sh", ["-c", "sleep 0.2; rm -f progress.json; exit 0"], { cwd: dir });
+    assert.equal(await until(() => readProgress(dir) === null), true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a job found dead by its pid is reported with what its log said last", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-job-"));
+  try {
+    const gone = spawnSync(process.execPath, ["-e", ""]).pid;
+    fs.mkdirSync(path.join(dir, "out"));
+    fs.writeFileSync(path.join(dir, "out", "render_final.log"), "frame 120\nffmpeg: Conversion failed!\n\n");
+    const now = new Date().toISOString();
+    fs.writeFileSync(path.join(dir, "progress.json"), JSON.stringify({ stage: "render_final", label: "The film", detail: "starting", startedAt: now, updatedAt: now, pid: gone, platform: process.platform }));
+    assert.equal(runningJob(dir), null);
+    assert.match(readProgress(dir).detail, /^failed: the render_final process \(pid \d+\) died before finishing \(ffmpeg: Conversion failed!\); see out\/render_final\.log$/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("a job record nobody here can vouch for is reported as stale, not spun on", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-job-"));

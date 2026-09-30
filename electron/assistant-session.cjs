@@ -39,7 +39,9 @@ function sessionCommand({ platform = process.platform, repo, distro, cols, rows,
   const bridge = ["python3", "scripts/pty-bridge.py", ...size, "bash", "-l", "scripts/assistant-run.sh", ...args, ...extra];
   if (platform === "win32") {
     if (!distro) throw new Error("This window cannot reach the WSL distribution that holds the checkout.");
-    return { command: "wsl.exe", args: ["--distribution", distro, "--cd", repo, "--", ...bridge], cwd: undefined };
+    // -e: argv straight to the command. `--` would hand the line to the distribution's shell to
+    // read again first.
+    return { command: "wsl.exe", args: ["--distribution", distro, "--cd", repo, "-e", ...bridge], cwd: undefined };
   }
   if (platform !== "linux") throw new Error("The assistant runs on Windows with WSL, or on Linux.");
   return { command: bridge[0], args: bridge.slice(1), cwd: repo };

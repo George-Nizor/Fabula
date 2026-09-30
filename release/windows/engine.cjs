@@ -65,12 +65,13 @@ function versionDir(state, version) {
 }
 
 // The command that runs the setup inside the distribution. A login shell, so whatever Node or
-// tools the person's profile puts on PATH are there to be found.
+// tools the person's profile puts on PATH are there to be found. -e hands the line to that shell
+// as it is; `--` would have the distribution's shell read it first.
 function setupCommand({ distro, script, tarball, version }) {
   const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
   return {
     command: "wsl.exe",
-    args: ["-d", distro, "--", "bash", "-lc", `bash ${quote(script)} --version ${quote(version)} --tarball ${quote(tarball)}`],
+    args: ["-d", distro, "-e", "bash", "-lc", `bash ${quote(script)} --version ${quote(version)} --tarball ${quote(tarball)}`],
   };
 }
 
