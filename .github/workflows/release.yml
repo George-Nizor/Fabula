@@ -1,0 +1,77 @@
+name: release
+
+# Publishes Fabula for Windows when a v<version> tag is pushed: the bundle Instrumenta installs and
+# keeps up to date (managed-bundle), and the instrumenta-release.json that describes it.
+#
+# The bundle is Electron's Windows runtime with the bootstrap as its app (release/windows) and the
+# engine it sets up in the person's WSL: this version's code and scripts/setup-engine.sh
+# (scripts/package-release.mjs builds it). The editor then runs from that engine, as a
+# developer's checkout does. Run by hand (workflow_dispatch) it builds and tests everything and
+# publishes nothing.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release tooling
+        uses: actions/checkout@v4
+        with:
+          repository: George-Nizor/Instrumenta
+          path: .instrumenta
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match package.json's version $version." >&2
+            exit 1
+          fi
+
+      # The tests that make footage use Fabula's own ffmpeg, which setup-tools.sh would put here.
+      - name: ffmpeg for the tests
+        run: |
+          mkdir -p tools/ffmpeg /tmp/ffmpeg
+          curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz" | tar -xJ -C /tmp/ffmpeg
+          mv /tmp/ffmpeg/*/bin/ffmpeg /tmp/ffmpeg/*/bin/ffprobe tools/ffmpeg/
+
+      - name: Tests
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: Bundle
+        run: node scripts/package-release.mjs --out .release
+
+      - name: Release manifest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node .instrumenta/scripts/instrumenta-release.cjs --product fabula --version "$VERSION" \
+            --strategy managed-bundle --bundle ".release/Fabula-$VERSION-windows-x64.zip" --entry Fabula.exe \
+            --minimum 0.10.0 --out .release/instrumenta-release.json
+
+      - name: Publish
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" ".release/Fabula-$VERSION-windows-x64.zip" .release/instrumenta-release.json \
+            --title "Fabula $VERSION" --generate-notes --verify-tag

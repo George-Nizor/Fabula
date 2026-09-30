@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'" />
+  <title>Fabula</title>
+  <link rel="stylesheet" href="setup.css" />
+</head>
+<body>
+  <header class="masthead">
+    <img src="fabula-mark.png" alt="" class="mark" />
+    <span class="name">Fabula</span>
+  </header>
+  <main>
+    <h1 id="title">Fabula runs in WSL</h1>
+    <p id="lede" class="lede">Its transcription, its renders and its assistant are Linux programs, so Fabula keeps them in
+      your Windows Subsystem for Linux. The first setup downloads about 7 GB (WhisperX on CUDA, ffmpeg,
+      and what the renders need) and takes 10–30 minutes. Updates reuse all of it.</p>
+
+    <ul class="checks">
+      <li id="check-wsl"><span class="mark-dot"></span><span class="what">Windows Subsystem for Linux</span><span class="state" id="state-wsl">Checking…</span></li>
+      <li id="check-distro"><span class="mark-dot"></span><span class="what">Distribution</span><span class="state" id="state-distro">—</span></li>
+      <li id="check-engine"><span class="mark-dot"></span><span class="what">Fabula's engine</span><span class="state" id="state-engine">—</span></li>
+    </ul>
+
+    <section id="progress" class="progress" hidden>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <p class="step" id="step">Starting…</p>
+      <details id="log-wrap">
+        <summary>What it is doing</summary>
+        <pre id="log"></pre>
+      </details>
+    </section>
+
+    <p class="message" id="message" hidden></p>
+
+    <footer class="actions">
+      <button type="button" class="ghost" id="learn" hidden>How to install WSL</button>
+      <button type="button" class="ghost" id="recheck" hidden>Check again</button>
+      <button type="button" class="primary" id="start" disabled>Set up Fabula</button>
+    </footer>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

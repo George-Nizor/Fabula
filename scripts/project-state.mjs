@@ -353,11 +353,14 @@ export function launchJob(dir, spec, runner = {}) {
 
 // The same spec as one line for a login shell on the pipeline host, for a
 // window that reaches it through wsl.exe. Every argument is single-quoted.
+// An installed engine (scripts/setup-engine.sh) keeps the Node it runs with in <root>/bin, so the
+// job does not depend on what the login shell's PATH holds; a checkout has no bin/ and the PATH
+// is as it was.
 export function shellLine(spec, { root, node = "node" }) {
   const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
   const command = spec.program === "electron" ? path.posix.join(root, "node_modules", "electron", "dist", "electron") : node;
   const env = Object.entries(spec.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(" ");
-  return `cd ${quote(root)} && ${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
+  return `cd ${quote(root)} && export PATH=${quote(path.posix.join(root, "bin"))}:"$PATH" && ${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
 }
 
 // ---- Projects, plural ----

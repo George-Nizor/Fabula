@@ -220,11 +220,27 @@ side pressed the button. On Windows the window hands the job to WSL through `wsl
 
 ## In the Instrumenta launcher
 
-Fabula is a `native-bundle` product: `scripts/bootstrap-windows.ps1` deploys the Windows Electron
-runtime into `dist/windows/` beside a `fabula-bundle.json` that names this checkout as the app,
-and the launcher's Prepare button runs exactly that. Open mirrors the runtime to local disk once
-and launches it with the checkout as its argument, so edits here are live. The pipeline still runs
-in WSL under Claude Code or Codex; the Instrumenta launcher only opens the window.
+**Installed from a release.** The launcher installs Fabula for Windows like any other app (Add
+apps, or Install on its tile) and keeps it up to date. The release is Electron's Windows runtime
+with a bootstrap as its app (`release/windows/`); the editor itself runs in WSL, because its
+pipeline and the assistant's terminal sessions are Linux programs. So the first time a version
+starts, the bootstrap sets up Fabula's engine in the default WSL distribution
+(`scripts/setup-engine.sh`, no sudo): the version's code under `~/.local/share/fabula/versions/`,
+Node when the distribution has no Node 22, ffmpeg, the Chromium libraries the renders need, and
+WhisperX on CUDA. That downloads about 7 GB once, and an update reuses all of it. The bootstrap then
+opens the editor from the engine through the `\\wsl.localhost` share, exactly as a checkout runs, so
+jobs and the assistant go to WSL the way they always have. The projects live in
+`~/.local/share/fabula/projects` unless you choose another folder; your settings carry over from
+version to version. What it needs from you: WSL with a Linux distribution, and Claude Code or
+Codex installed there for the assistant. `scripts/package-release.mjs` builds the bundle and
+`.github/workflows/release.yml` publishes it on a `v<version>` tag.
+
+**Run from this checkout.** In a developer's workspace Fabula is still the checkout:
+`scripts/bootstrap-windows.ps1` deploys the Windows Electron runtime into `dist/windows/` beside a
+`fabula-bundle.json` that names this checkout as the app, and the launcher's Prepare button runs
+exactly that. Open mirrors the runtime to local disk once and launches it with the checkout as its
+argument, so edits here are live. An installed release, when there is one, is what the launcher
+opens instead.
 
 ## Development
 

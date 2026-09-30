@@ -75,7 +75,7 @@ import { reanchorScenes } from "../core/reanchor.mjs";
 import { PRESETS, TITLE_STYLES, CALLOUT_STYLES, CAPTION_STYLES, CORNERS, VENDORED_FONTS, validateTheme, resolveTheme, describeLook, describePresets } from "../core/themes.mjs";
 import { fetchImage, searchCommons, listAssets } from "../scripts/images.mjs";
 import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mjs";
-import { configuredProjectsRoot, configuredMusicRoot, writeMusicRoot } from "../scripts/settings.cjs";
+import { configuredProjectsRoot, configuredMusicRoot, engineProjectsRoot, writeMusicRoot } from "../scripts/settings.cjs";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
 import { validateDirection, directionBrief, describeDirection, directionRefusal, rulesFor, LATITUDE_IDS, LATITUDES } from "../core/direction.mjs";
 import { validateMotionDoc, describeMotion, MOTION_LIBS, MOTION_NAME_RE } from "../core/motion.mjs";
@@ -84,7 +84,7 @@ import { validateTreatment, describeTreatment } from "../core/treatment.mjs";
 // media/ beside the checkout, or the folder fabula.settings.json names; read
 // per call so a change made in the window applies to the next tool call.
 // FABULA_PROJECTS_ROOT is the test hook: a media root that is not the person's.
-const mediaRoot = () => process.env.FABULA_PROJECTS_ROOT || configuredProjectsRoot() || path.join(REPO_ROOT, "media");
+const mediaRoot = () => process.env.FABULA_PROJECTS_ROOT || configuredProjectsRoot() || engineProjectsRoot() || path.join(REPO_ROOT, "media");
 const pointerFile = () => path.join(mediaRoot(), "current-project.json");
 
 // A write must be atomic with the check of which project is open. The

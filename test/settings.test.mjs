@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-const { configuredProjectsRoot, writeProjectsRoot, validateProjectsRoot } = createRequire(import.meta.url)("../scripts/settings.cjs");
+const { configuredProjectsRoot, engineProjectsRoot, writeProjectsRoot, validateProjectsRoot } = createRequire(import.meta.url)("../scripts/settings.cjs");
 
 test("the projects root is the default until a folder is written, and a bad value is ignored", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-settings-"));
@@ -45,4 +45,18 @@ test("a music root is kept beside the projects root and read back the same way",
     settings.writeMusicRoot(null, file);
     assert.equal(settings.configuredMusicRoot(file), null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("an installed engine keeps its projects outside any one version", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-engine-home-"));
+  const file = path.join(dir, ".engine-home");
+  try {
+    assert.equal(engineProjectsRoot(file), null, "a checkout has no .engine-home and keeps media/");
+    fs.writeFileSync(file, "/home/me/.local/share/fabula\n");
+    assert.equal(engineProjectsRoot(file), "/home/me/.local/share/fabula/projects");
+    fs.writeFileSync(file, "relative/home");
+    assert.equal(engineProjectsRoot(file), null, "a relative home is not trusted");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

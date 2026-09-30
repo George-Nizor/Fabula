@@ -10,6 +10,22 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SETTINGS_FILE = path.join(__dirname, "..", "fabula.settings.json");
+const ENGINE_HOME_FILE = path.join(__dirname, "..", ".engine-home");
+
+// An installed engine (scripts/setup-engine.sh) runs Fabula from a folder per version, replaced
+// on update and deleted the update after. Its projects cannot live beside that folder, so the
+// setup writes the engine's home beside the code (.engine-home) and the default projects folder is
+// <home>/projects. A checkout has no .engine-home and keeps media/ beside it. As the pipeline sees
+// it (POSIX), or null.
+function engineProjectsRoot(file = ENGINE_HOME_FILE) {
+  try {
+    const home = fs.readFileSync(file, "utf8").trim();
+    if (!home.startsWith("/") || /[\x00-\x1f\\]/.test(home)) return null;
+    return path.posix.join(home, "projects");
+  } catch {
+    return null;
+  }
+}
 
 function readSettings(file = SETTINGS_FILE) {
   try {
@@ -74,4 +90,4 @@ function writeMusicRoot(value, file = SETTINGS_FILE) {
   return settings.musicRoot ?? null;
 }
 
-module.exports = { SETTINGS_FILE, readSettings, validateProjectsRoot, configuredProjectsRoot, writeProjectsRoot, configuredMusicRoot, writeMusicRoot };
+module.exports = { SETTINGS_FILE, readSettings, validateProjectsRoot, configuredProjectsRoot, engineProjectsRoot, writeProjectsRoot, configuredMusicRoot, writeMusicRoot };

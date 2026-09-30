@@ -17,11 +17,17 @@ motionProtocol.registerMotionScheme(protocol);
 // names another folder (as the pipeline sees it; mapped here for this host).
 // FABULA_PROJECTS_ROOT is the same test hook the server has: a root that is
 // not the person's, so a snapshot run never moves their open project.
-const DEFAULT_MEDIA_ROOT = path.join(__dirname, "..", "media");
+// An installed engine's default is its own projects folder, not media/ beside a version that the
+// next update replaces (scripts/settings.cjs). A function: the path mapping it may need is defined
+// further down.
+function defaultMediaRoot() {
+  const engine = settings.engineProjectsRoot();
+  return engine ? toLocalPath(engine) : path.join(__dirname, "..", "media");
+}
 function mediaRoot() {
   if (process.env.FABULA_PROJECTS_ROOT) return process.env.FABULA_PROJECTS_ROOT;
   const configured = settings.configuredProjectsRoot();
-  return configured ? toLocalPath(configured) : DEFAULT_MEDIA_ROOT;
+  return configured ? toLocalPath(configured) : defaultMediaRoot();
 }
 const pointerFile = () => path.join(mediaRoot(), "current-project.json");
 const VIDEO_RE = /^\.(mp4|mov|mkv|webm|m4v)$/;
@@ -412,7 +418,12 @@ function startRender(kind, options = {}) {
       if (!root || !posixDir || !WSL_DISTRO) throw new Error("Renders run in WSL, and this window cannot reach it from where it is installed.");
       const spec = ps.jobSpec(kind, posixDir, { ...allowed, root });
       const line = ps.shellLine(spec, { root });
-      core.pipeline.startJob(dir, spec.stage, spec.label, "wsl.exe", ["-d", WSL_DISTRO, "--", "bash", "-lc", line], { cwd: undefined });
+      // The job writes its own log from inside WSL. Handed a Windows handle to the log on the
+      // \\wsl.localhost share, wsl.exe relayed nothing into it: a render that ran left an empty
+      // log, which is what the Export step and wait_render show when one fails.
+      const log = path.posix.join(posixDir, "out", `${spec.stage}.log`);
+      const quoted = `'${log.replace(/'/g, "'\\''")}'`;
+      core.pipeline.startJob(dir, spec.stage, spec.label, "wsl.exe", ["-d", WSL_DISTRO, "--", "bash", "-lc", `${line} >> ${quoted} 2>&1`], { cwd: undefined });
     } else {
       const spec = ps.jobSpec(kind, dir, allowed);
       ps.launchJob(dir, spec, { node: process.execPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, electron: process.execPath });
@@ -519,7 +530,7 @@ async function removeProject(window, name) {
 
 function describeProjectsRoot() {
   const configured = settings.configuredProjectsRoot();
-  return { local: mediaRoot(), posix: configured ?? toPosixPath(DEFAULT_MEDIA_ROOT) ?? DEFAULT_MEDIA_ROOT, isDefault: !configured };
+  return { local: mediaRoot(), posix: configured ?? toPosixPath(defaultMediaRoot()) ?? defaultMediaRoot(), isDefault: !configured };
 }
 
 // A job that wrote progress and has not finished or failed is treated as
@@ -534,7 +545,7 @@ function jobLooksBusy(dir) {
 async function changeProjectsRoot(window, target, report = () => {}) {
   const from = mediaRoot();
   let posix = null;
-  let to = DEFAULT_MEDIA_ROOT;
+  let to = defaultMediaRoot();
   if (target !== null) {
     posix = toPosixPath(target);
     if (!posix) return { ok: false, error: "That folder is not reachable from the pipeline in WSL. Choose a folder on a local drive." };
