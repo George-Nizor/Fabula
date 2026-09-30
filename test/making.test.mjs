@@ -44,6 +44,19 @@ test("a phase passed over on the way is skipped, and the draft ends the run", ()
   assert.equal(states(done).draft, "done");
 });
 
+test("material brought in does not finish a phase, and nothing is skipped before the draft", () => {
+  // A real Free hand run's order: pictures and music found before a scene
+  // was written or a motion scene drawn. The panel said Scenes done and
+  // Motion graphics skipped at this point.
+  const log = [...reading, { at: at(20), tool: "search_images", ok: true }, { at: at(21), tool: "search_audio", ok: true },
+    { at: at(60), tool: "set_treatment", ok: true }, { at: at(62), tool: "set_theme", ok: true },
+    { at: at(64), tool: "fetch_image", ok: true }, { at: at(90), tool: "import_audio", ok: true, note: "edge-of-space" }];
+  const early = makingPhases({ startedAt: S, activity: log, clean: "current", treatmentAt: at(60) });
+  assert.deepEqual(states(early), { clean: "done", read: "done", treatment: "done", look: "done", scenes: "waiting", motion: "waiting", sound: "active", review: "waiting", draft: "waiting" });
+  const composing = makingPhases({ startedAt: S, activity: [...log, { at: at(500), tool: "write_motion", ok: true }, { at: at(600), tool: "set_scenes", ok: true }], clean: "current", treatmentAt: at(60) });
+  assert.deepEqual([states(composing).motion, states(composing).scenes, states(composing).sound], ["done", "active", "waiting"]);
+});
+
 test("a refused write says why, where it happened", () => {
   const run = makingPhases({ startedAt: S, activity: [...reading, { at: at(70), tool: "set_scenes", ok: false, error: "scene 3: a motion scene, and the direction is By the book" }], clean: "current" });
   assert.equal(run.current, "scenes");

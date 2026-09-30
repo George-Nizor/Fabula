@@ -47,6 +47,11 @@ export const GLANCES = new Set([
   "describe_motion", "read_motion", "list_motion", "search_audio", "list_music",
 ]);
 
+// Tools that bring material in. They are work in their phase, but a picture
+// fetched is not a scene written, and a track imported is not the sound set:
+// an assistant gathers early, before it composes.
+export const GATHERS = new Set(["fetch_image", "import_image", "import_clip", "import_audio"]);
+
 // A tool call in words, for the line under an active phase.
 const TOOL_WORDS = {
   render_clean: "rendering the clean cut", retranscribe_clean: "transcribing the clean cut", reanchor_scenes: "moving the scenes onto the new transcript", set_framing: "setting the framing", detect_framing: "scanning the framing",
@@ -98,7 +103,7 @@ export function makingPhases({ startedAt, activity = [], job = null, clean = "no
     const p = phases[phase];
     p.startedAt ??= entry.at;
     p.endedAt = entry.at;
-    if (!GLANCES.has(entry.tool)) p.worked = true;
+    if (!GLANCES.has(entry.tool) && !GATHERS.has(entry.tool)) p.worked = true;
     p.detail = entry.ok === false
       ? `${TOOL_WORDS[entry.tool] ?? entry.tool} — it did not go through: ${entry.error ?? "an error"}`
       : `${TOOL_WORDS[entry.tool] ?? entry.tool.replace(/_/g, " ")}${entry.note ? `: ${entry.note}` : ""}`;
@@ -113,7 +118,10 @@ export function makingPhases({ startedAt, activity = [], job = null, clean = "no
   //      rendering or done, when nothing before it is still going on.
   //   3. A phase nobody touched, before one somebody did, was not needed: a
   //      By the book film has no motion, a film without music may never
-  //      touch the sound.
+  //      touch the sound. That is said once the draft is rendering: until
+  //      then the assistant works in its own order (music found before a
+  //      scene is written, motion drawn after the sound), and a phase it has
+  //      not reached is waiting, not skipped.
   //   4. The rest are waiting.
   const order = PHASES.map((p) => p.id);
   const touched = (id) => Boolean(phases[id].worked);
@@ -145,9 +153,11 @@ export function makingPhases({ startedAt, activity = [], job = null, clean = "no
     else if (touched(id)) phases[id].state = "done";
   }
   if (treatmentNew && phases.treatment.state === "waiting") phases.treatment.state = "done";
-  const reached = Math.max(-1, ...order.map((id, i) => (phases[id].state !== "waiting" ? i : -1)));
-  for (const [i, id] of order.entries()) {
-    if (phases[id].state === "waiting" && i < reached && id !== "clean") phases[id].state = "skipped";
+  if (drafting || draftDone) {
+    const reached = Math.max(-1, ...order.map((id, i) => (phases[id].state !== "waiting" ? i : -1)));
+    for (const [i, id] of order.entries()) {
+      if (phases[id].state === "waiting" && i < reached && id !== "clean") phases[id].state = "skipped";
+    }
   }
   const list = order.map((id) => { const { worked, ...phase } = phases[id]; return phase; });
   const current = list.find((p) => p.state === "active")?.id ?? null;
