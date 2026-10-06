@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell, protocol } = require("electron");
+const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell, protocol, nativeTheme } = require("electron");
 const { AssistantSession, choiceArgs, EFFORTS: ASSISTANT_EFFORTS } = require("./assistant-session.cjs");
 const motionProtocol = require("./motion-protocol.cjs");
 const settings = require("../scripts/settings.cjs");
@@ -799,6 +799,40 @@ function savedBounds() {
   return visible ? saved : null;
 }
 
+// The window's theme (brand v2): System, Light or Dark, chosen in the masthead. The page keeps the
+// choice and paints itself before first paint (renderer/theme-boot.js); this side keeps a copy so
+// the window's own background, the Windows title-bar overlay and native dialogs agree from the
+// first frame of the next start. The colours are the bar's, from renderer/styles.css.
+const THEMES = ["system", "light", "dark"];
+const CHROME = {
+  dark: { background: "#141210", symbol: "#f2ede6" },
+  light: { background: "#faf7f2", symbol: "#1c1916" },
+};
+const themeFile = () => path.join(app.getPath("userData"), "theme.json");
+function savedTheme() {
+  const saved = readJson(themeFile());
+  return THEMES.includes(saved?.theme) ? saved.theme : "system";
+}
+const chromeColours = () => CHROME[nativeTheme.shouldUseDarkColors ? "dark" : "light"];
+function paintChrome(window) {
+  if (!window || window.isDestroyed()) return;
+  const colours = chromeColours();
+  window.setBackgroundColor(colours.background);
+  if (process.platform === "win32") {
+    try { window.setTitleBarOverlay({ color: colours.background, symbolColor: colours.symbol, height: 56 }); } catch { /* no overlay */ }
+  }
+}
+function setChromeTheme(window, theme) {
+  if (!THEMES.includes(theme)) return { ok: false, error: "That is not a theme." };
+  nativeTheme.themeSource = theme;
+  try {
+    fs.mkdirSync(path.dirname(themeFile()), { recursive: true });
+    fs.writeFileSync(themeFile(), JSON.stringify({ theme }));
+  } catch { /* the page keeps its own copy */ }
+  paintChrome(window);
+  return { ok: true, theme };
+}
+
 // A look at the window without a display. FABULA_SNAPSHOT=<dir> opens the
 // app headless (pass --ozone-platform=headless --no-sandbox --no-zygote on
 // the command line), captures the home screen, the Assistant sheet, and — a
@@ -858,7 +892,7 @@ async function snapshotWindow(window) {
     }
     // A script of steps, when one is given: FABULA_SNAPSHOT_SCRIPT names a
     // JSON list of { size: [w, h], run: js, wait: ms, shot: name, print:
-    // label }; each key is optional and they apply in that order. It is how
+    // label, key: "Tab", shift }; each key is optional and they apply in that order. It is how
     // any view of the window is photographed without a new env var per view.
     if (process.env.FABULA_SNAPSHOT_SCRIPT) {
       const steps = JSON.parse(fs.readFileSync(process.env.FABULA_SNAPSHOT_SCRIPT, "utf8"));
@@ -867,6 +901,12 @@ async function snapshotWindow(window) {
         if (step.run !== undefined) {
           const answer = await run(step.run);
           if (step.print) console.log(JSON.stringify({ step: step.print, answer }));
+        }
+        // A key, pressed as a keyboard would (focus rings only show for keyboard focus).
+        if (step.key) {
+          for (const type of ["keyDown", "keyUp"]) {
+            await contents.debugger.sendCommand("Input.dispatchKeyEvent", { type, key: step.key, code: step.key, windowsVirtualKeyCode: step.key === "Tab" ? 9 : 0, modifiers: step.shift ? 8 : 0 });
+          }
         }
         if (step.wait) await wait(step.wait);
         if (step.shot) await shoot(step.shot);
@@ -886,6 +926,7 @@ async function snapshotWindow(window) {
 }
 
 function createWindow() {
+  nativeTheme.themeSource = savedTheme();
   const bounds = savedBounds();
   const window = new BrowserWindow({
     width: 1440,
@@ -893,7 +934,7 @@ function createWindow() {
     ...(bounds ?? {}),
     minWidth: 960,
     minHeight: 620,
-    backgroundColor: "#faf9f5",
+    backgroundColor: chromeColours().background,
     // The brand v2 slate (brand/, copied from Instrumenta): the ICO carries each size drawn at
     // that size for the Windows taskbar; elsewhere the PNG.
     icon: path.join(__dirname, "..", "brand", process.platform === "win32" ? "fabula.ico" : "fabula-256.png"),
@@ -902,7 +943,7 @@ function createWindow() {
     // put a second, grey strip above the brand row. The system controls
     // overlay the top-right corner in the app's own colours.
     ...(process.platform === "win32"
-      ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#1f1e1d", symbolColor: "#f0ede6", height: 56 } }
+      ? { titleBarStyle: "hidden", titleBarOverlay: { color: chromeColours().background, symbolColor: chromeColours().symbol, height: 56 } }
       : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -914,6 +955,10 @@ function createWindow() {
       ...(SNAPSHOT_DIR ? { offscreen: true, backgroundThrottling: false } : {}),
     },
   });
+  // The system's light or dark can change while the window is open; System follows it.
+  const follow = () => paintChrome(window);
+  nativeTheme.on("updated", follow);
+  window.on("closed", () => nativeTheme.removeListener("updated", follow));
   if (SNAPSHOT_DIR) snapshotWindow(window);
   if (bounds?.maximized) window.maximize();
   window.once("ready-to-show", () => window.show());
@@ -956,6 +1001,7 @@ app.whenReady().then(() => {
   // open project's motion/ and assets/ — nothing else.
   motionProtocol.handleMotionProtocol(protocol, { projectDir: () => projectDir() });
   ipcMain.handle("fabula:get-state", () => readState());
+  ipcMain.handle("fabula:set-chrome-theme", (event, theme) => setChromeTheme(BrowserWindow.fromWebContents(event.sender), theme));
   ipcMain.handle("fabula:assistant-options", () => assistantOptions());
   ipcMain.handle("fabula:assistant-status", () => ({ running: assistant.running, choice: assistant.choice }));
   // The assistant runs in a real terminal on the pipeline host and is shown
