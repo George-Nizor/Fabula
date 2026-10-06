@@ -102,6 +102,89 @@ const els = {
   inspFlair: $("insp-flair"), inspFlairWrap: $("insp-flair-wrap"),
 };
 
+// ---- Brand v2: icons, the slate, the theme ----
+//
+// Interface icons come from brand-icons/fabula-icons.js (window.FabulaIcons), the slate from the
+// Instrumenta library (window.InstrumentaIcons). Both render presentation attributes only. Static
+// icons are declared in the page with data-icon (and data-size); buttons keep their words and get
+// the icon in front of them.
+
+const icon = (name, size = 20, options = {}) => window.FabulaIcons.render(name, { size, ...options });
+const slate = (size) => window.InstrumentaIcons.render("fabula", { size, label: "" });
+
+function iconNode(name, size, options) {
+  const holder = document.createElement("template");
+  holder.innerHTML = icon(name, size, options);
+  return holder.content.firstElementChild;
+}
+
+function defaultIconSize(el) {
+  if (el.dataset.size) return Number(el.dataset.size);
+  if (el.classList.contains("is-hero")) return 26;
+  if (el.classList.contains("insp-mini") || el.classList.contains("is-small")) return 20;
+  return 22;
+}
+
+function hydrateIcons(root = document) {
+  for (const el of root.querySelectorAll("[data-icon]")) {
+    if (el.tagName === "SPAN") { el.innerHTML = icon(el.dataset.icon, defaultIconSize(el)); continue; }
+    el.querySelector(":scope > .fi")?.remove();
+    el.prepend(iconNode(el.dataset.icon, defaultIconSize(el)));
+  }
+}
+
+// A button's words, keeping its icon.
+function setLabel(button, text, name = button.dataset.icon) {
+  if (name) button.dataset.icon = name;
+  button.textContent = text;
+  if (button.dataset.icon) button.prepend(iconNode(button.dataset.icon, defaultIconSize(button)));
+}
+
+// The one-shot motion moments. Reduced motion is honoured in the CSS (both icon libraries stop
+// every animation under prefers-reduced-motion), so these only add and remove a class.
+function playOnce(el, ms = 1100) {
+  if (!el) return;
+  el.classList.remove("is-playing");
+  void el.offsetWidth;
+  el.classList.add("is-playing");
+  clearTimeout(el.playTimer);
+  el.playTimer = setTimeout(() => el.classList.remove("is-playing"), ms);
+}
+// The slate claps: once, for one beat of its own animation, at a moment that matters.
+function clap(el = document.getElementById("brand-mark")) {
+  if (!el) return;
+  el.classList.remove("ii-play");
+  void el.offsetWidth;
+  el.classList.add("ii-play");
+  clearTimeout(el.clapTimer);
+  el.clapTimer = setTimeout(() => el.classList.remove("ii-play"), 1600);
+}
+
+document.getElementById("brand-mark").innerHTML = slate(34);
+document.getElementById("empty-mark").innerHTML = slate(112);
+document.getElementById("home-empty-mark").innerHTML = slate(96);
+document.getElementById("making-slate").innerHTML = slate(30);
+hydrateIcons();
+
+// The theme toggle: System, then Light, then Dark. theme-boot.js holds the choice.
+const THEME_GLYPHS = { system: "monitor", light: "sun", dark: "moon" };
+const THEME_NAMES = { system: "System", light: "Light", dark: "Dark" };
+function renderThemeToggle() {
+  const chrome = window.FabulaChrome;
+  const button = document.getElementById("theme-toggle");
+  const choice = chrome?.theme ?? "system";
+  const next = chrome.choices[(chrome.choices.indexOf(choice) + 1) % chrome.choices.length];
+  button.innerHTML = icon(THEME_GLYPHS[choice], 18);
+  button.title = `Theme: ${THEME_NAMES[choice]}. Switch to ${THEME_NAMES[next].toLowerCase()}`;
+  button.setAttribute("aria-label", `Theme: ${THEME_NAMES[choice]}`);
+}
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const chrome = window.FabulaChrome;
+  chrome.setTheme(chrome.choices[(chrome.choices.indexOf(chrome.theme) + 1) % chrome.choices.length]);
+});
+window.addEventListener("fabula-theme", renderThemeToggle);
+renderThemeToggle();
+
 let state = null; // { project, review, compose, look, progress, pending }
 let mode = "cut"; // cut | look | scenes | export
 let wordSpans = [];
@@ -316,6 +399,15 @@ function makingRun() {
   return { startedAt: making.direction.startedAt, phase: run.phases.find((phase) => phase.state === "active")?.label ?? "" };
 }
 
+// The pill's icon: the hourglass while a job runs, the failed mark (which shakes once) when it stops.
+function setProgressIcon(name) {
+  const holder = document.getElementById("progress-icon");
+  if (holder.dataset.icon === name) return;
+  holder.dataset.icon = name;
+  holder.innerHTML = icon(name, 20);
+  if (name === "failed") playOnce(holder, 600);
+}
+
 function renderProgress() {
   const p = state?.progress;
   const run = p ? null : makingRun();
@@ -323,6 +415,7 @@ function renderProgress() {
   els.progress.classList.toggle("is-making", Boolean(run));
   if (run) {
     els.progress.classList.remove("is-failed");
+    setProgressIcon("hourglass");
     els.progress.title = "The assistant is making the video; the inspector shows how far it has got";
     els.progressLabel.textContent = "Making the video";
     els.progressDetail.textContent = run.phase;
@@ -334,6 +427,7 @@ function renderProgress() {
   els.progress.title = "The Export step has the jobs and their logs";
   const failed = typeof p.detail === "string" && p.detail.startsWith("failed:");
   els.progress.classList.toggle("is-failed", failed);
+  setProgressIcon(failed ? "failed" : "hourglass");
   els.progressLabel.textContent = failed ? `${p.label} failed` : p.label;
   els.progressDetail.textContent = failed ? p.detail.slice(8) : (p.detail ?? "");
   els.progressDetail.hidden = !els.progressDetail.textContent;
@@ -845,9 +939,10 @@ function renderProjectPanel() {
   if (call) {
     els.approveHead.textContent = call.head;
     els.approveNote.textContent = call.note;
-    els.approveCut.textContent = call.button;
+    setLabel(els.approveCut, call.button, call.task === "make" ? "wand" : "spark");
     els.approveCut.dataset.task = call.task;
-    els.approveCut.className = `button ${call.task === "make" && !call.quiet ? "is-hero" : call.quiet ? "is-small" : "is-primary"}`;
+    const approveClass = `button ${call.task === "make" && !call.quiet ? "is-hero" : call.quiet ? "is-small" : "is-primary"}`;
+    if (els.approveCut.className !== approveClass) { els.approveCut.className = approveClass; setLabel(els.approveCut, call.button); }
     els.approveAlt.hidden = !call.alt;
   }
   renderMaking();
@@ -1284,10 +1379,10 @@ function make(tag, className = "", html) {
   return node;
 }
 
-function actionButton(label, onClick, { primary = false, small = false, disabled = false, title = "" } = {}) {
+function actionButton(label, onClick, { primary = false, small = false, disabled = false, title = "", icon: name = "" } = {}) {
   const b = make("button", `button${primary ? " is-primary" : ""}${small ? " is-small" : ""}`);
   b.type = "button";
-  b.textContent = label;
+  setLabel(b, label, name || undefined);
   b.disabled = disabled;
   if (title) b.title = title;
   b.addEventListener("click", onClick);
@@ -1318,16 +1413,16 @@ function renderExportPage() {
 
   if (e.running) {
     const card = make("div", "export-card is-busy");
-    card.append(make("div", "export-card-head", `<span class="export-spinner"></span><b>${esc(e.running.label)}</b><span class="export-clock" id="export-clock"></span>`));
+    card.append(make("div", "export-card-head", `<span class="export-spinner">${icon("hourglass", 24)}</span><b>${esc(e.running.label)}</b><span class="export-clock" id="export-clock"></span>`));
     card.append(make("p", "export-detail", esc(e.running.detail ?? "")));
     card.append(make("p", "field-note", `Logging to out/${esc(e.running.stage)}.log. It keeps running if this window closes.`));
     els.exportMain.append(card);
   } else if (e.lastFailure) {
     const card = make("div", "export-card is-failed");
-    card.append(make("div", "export-card-head", `<b>${esc(STAGE_NAMES[e.lastFailure.stage] ?? e.lastFailure.stage)} failed</b>`));
+    card.append(make("div", "export-card-head", `<span class="export-spinner">${icon("failed", 24)}</span><b>${esc(STAGE_NAMES[e.lastFailure.stage] ?? e.lastFailure.stage)} failed</b>`));
     card.append(make("p", "export-detail", esc(e.lastFailure.error)));
     const row = make("div", "export-actions");
-    row.append(actionButton("Show log", () => window.fabula.reveal(e.lastFailure.log), { small: true }));
+    row.append(actionButton("Show log", () => window.fabula.reveal(e.lastFailure.log), { small: true, icon: "page" }));
     card.append(row);
     els.exportMain.append(card);
   }
@@ -1335,7 +1430,7 @@ function renderExportPage() {
 
   // The film.
   const film = make("section", "export-card");
-  film.append(make("h3", "", "Film"));
+  film.append(make("h3", "", `${icon("reel", 30)}Film`));
   const final = e.outputs.find((o) => o.kind === "film");
   let status;
   if (final && stale["final.mp4"]) status = `Rendered ${fmtWhen(final.modifiedAt)}, ${fmtBytes(final.bytes)}. Out of date: ${stale["final.mp4"].because}.`;
@@ -1349,21 +1444,21 @@ function renderExportPage() {
   // What the person most likely wants is the primary: watching a film that
   // is current, rendering one that is not.
   const current = final && !stale["final.mp4"];
-  if (current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { primary: true }));
-  filmRow.append(actionButton(final ? "Render the film again" : "Render the film", () => startRender("final"), { primary: !current, small: Boolean(current), disabled: busy || !e.canRenderFinal }));
+  if (current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { primary: true, icon: "play" }));
+  filmRow.append(actionButton(final ? "Render the film again" : "Render the film", () => startRender("final"), { primary: !current, small: Boolean(current), disabled: busy || !e.canRenderFinal, icon: "reel" }));
   if (final) {
-    if (!current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { small: true }));
-    filmRow.append(actionButton("Render from scratch", () => startRender("final", { fresh: true }), { small: true, disabled: busy, title: "Ignore the cached chunks and render every one again" }));
-    filmRow.append(actionButton("Show in folder", () => window.fabula.reveal(final.path), { small: true }));
+    if (!current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { small: true, icon: "play" }));
+    filmRow.append(actionButton("Render from scratch", () => startRender("final", { fresh: true }), { small: true, disabled: busy, title: "Ignore the cached chunks and render every one again", icon: "refresh" }));
+    filmRow.append(actionButton("Show in folder", () => window.fabula.reveal(final.path), { small: true, icon: "folder" }));
   }
   film.append(filmRow);
   // A draft: the whole film at half size, for looking at the cut and the
   // cards before the real render; it never replaces the film.
   const draft = e.outputs.find((o) => o.kind === "draft");
   const draftRow = make("div", "export-actions");
-  draftRow.append(actionButton(draft ? "Render a draft again" : "Render a draft", () => startRender("final", { draft: true }), { small: true, disabled: busy || !e.canRenderFinal, title: "The whole film at half size, in a fraction of the time, as draft.mp4" }));
+  draftRow.append(actionButton(draft ? "Render a draft again" : "Render a draft", () => startRender("final", { draft: true }), { small: true, disabled: busy || !e.canRenderFinal, title: "The whole film at half size, in a fraction of the time, as draft.mp4", icon: "reel" }));
   if (draft) {
-    draftRow.append(actionButton("Play the draft", () => window.fabula.openOutput(draft.path), { small: true }));
+    draftRow.append(actionButton("Play the draft", () => window.fabula.openOutput(draft.path), { small: true, icon: "play" }));
     draftRow.append(make("span", "field-note", `Draft from ${esc(fmtWhen(draft.modifiedAt))}, ${esc(fmtBytes(draft.bytes))}.`));
   }
   film.append(draftRow);
@@ -1372,7 +1467,7 @@ function renderExportPage() {
 
   // The clean cut.
   const clean = make("section", "export-card");
-  clean.append(make("h3", "", "Clean cut"));
+  clean.append(make("h3", "", `${icon("scissors", 30)}Clean cut`));
   const problems = ["clean.mp4", "clean.json", "compose.json"].filter((k) => stale[k]).map((k) => stale[k]);
   let cleanStatus;
   if (!e.have.review) cleanStatus = "Nothing to cut yet.";
@@ -1387,7 +1482,7 @@ function renderExportPage() {
   const cleanRow = make("div", "export-actions");
   const cleanStale = Boolean(stale["clean.mp4"] || stale["clean.json"]);
   cleanRow.append(actionButton(e.clean ? "Refresh the clean cut" : "Render the clean cut", () => startRender("refresh"), {
-    primary: !e.clean || cleanStale, disabled: busy || !e.canRefreshClean,
+    primary: !e.clean || cleanStale, disabled: busy || !e.canRefreshClean, icon: "refresh",
     title: "Renders the cut and transcribes it; each part is skipped when it is already current",
   }));
   if (stale["compose.json"]) {
@@ -1402,7 +1497,7 @@ function renderExportPage() {
 
   // Files.
   const files = make("section", "export-card");
-  files.append(make("h3", "", "Files"));
+  files.append(make("h3", "", `${icon("folder", 30)}Files`));
   if (e.outputs.length === 0) {
     files.append(make("p", "field-note", `Nothing written yet. Renders land in ${esc(state.projectsRoot?.local ?? "media")}${esc(state.projectsRoot?.local?.includes("\\") ? "\\" : "/")}${esc(state.project)}/out/.`));
   } else {
@@ -1412,8 +1507,9 @@ function renderExportPage() {
       tr.append(make("td", "export-file-name", `<span class="export-kind is-${o.kind}">${KIND_LABELS[o.kind]}</span>${esc(o.name)}`));
       tr.append(make("td", "export-file-meta", `${fmtBytes(o.bytes)} · ${fmtWhen(o.modifiedAt)}`));
       const td = make("td", "export-file-actions");
-      if (o.kind !== "captions") td.append(actionButton(["thumbnail", "chapters", "credits", "description"].includes(o.kind) ? "Open" : "Play", () => window.fabula.openOutput(o.path), { small: true }));
-      td.append(actionButton("Show in folder", () => window.fabula.reveal(o.path), { small: true }));
+      const opens = ["thumbnail", "chapters", "credits", "description"].includes(o.kind);
+      if (o.kind !== "captions") td.append(actionButton(opens ? "Open" : "Play", () => window.fabula.openOutput(o.path), { small: true, icon: opens ? "open" : "play" }));
+      td.append(actionButton("Show in folder", () => window.fabula.reveal(o.path), { small: true, icon: "folder" }));
       tr.append(td);
       table.append(tr);
     }
@@ -1462,7 +1558,7 @@ async function makeShort(clip, format) {
 
 function shortsCard(e, busy) {
   const card = make("section", "export-card");
-  card.append(make("h3", "", "Shorts"));
+  card.append(make("h3", "", `${icon("phone", 30)}Shorts`));
   const short = (state?.formats ?? []).filter((format) => format.shortForm);
   const target = short[0]?.id ?? "vertical";
   if (state?.format?.shortForm) {
@@ -1476,7 +1572,7 @@ function shortsCard(e, busy) {
   card.append(make("p", "export-status", "Moments in this film that could stand on their own, cut into projects of their own — same recording, same cut, framed and composed for a tall frame."));
   const row = make("div", "export-actions");
   row.append(actionButton(clipFinding ? "Reading the transcript…" : (clipResult ? "Look again" : "Find shorts"), () => findShorts(target), {
-    primary: !clipResult, disabled: busy || Boolean(clipFinding),
+    primary: !clipResult, disabled: busy || Boolean(clipFinding), icon: "phone",
   }));
   card.append(row);
   if (clipError) card.append(make("p", "export-flash is-error", esc(clipError)));
@@ -1497,7 +1593,7 @@ function shortsCard(e, busy) {
     }
     const actions = make("div", "export-actions");
     actions.append(actionButton(clipBusy === clip.index ? "Making…" : `Make a ${target} short`, () => makeShort(clip, target), {
-      small: true, disabled: busy || clipBusy !== null,
+      small: true, disabled: busy || clipBusy !== null, icon: "phone",
     }));
     actions.append(actionButton("Watch it", () => {
       // The clean cut is what plays in Scenes, and the clip's times are on
@@ -1505,7 +1601,7 @@ function shortsCard(e, busy) {
       setMode("scenes");
       seek(clip.start);
       els.video.play().catch(() => {});
-    }, { small: true, title: "Play this span in the Scenes step" }));
+    }, { small: true, title: "Play this span in the Scenes step", icon: "play" }));
     item.append(actions);
     list.append(item);
   }
@@ -1923,7 +2019,7 @@ function render() {
           ? `The first pass failed: ${p.detail.slice(8)}`
           : `${state.pending.videoName}. The first pass transcribes the recording, finds the head in the frame and proposes cuts.`;
       els.emptyFirstPass.hidden = Boolean(running);
-      els.emptyFirstPass.textContent = failed ? "Run the first pass again" : "Run the first pass";
+      setLabel(els.emptyFirstPass, failed ? "Run the first pass again" : "Run the first pass", failed ? "refresh" : "spark");
     } else {
       renderHome();
     }
@@ -1940,6 +2036,13 @@ function render() {
   els.tabLook.disabled = !look();
   for (const [name, button] of [["cut", els.tabCut], ["look", els.tabLook], ["scenes", els.tabScenes], ["export", els.tabExport]]) {
     button.classList.toggle("is-active", mode === name);
+    // The open step's icon in its own colour, the others resting in stone.
+    const holder = button.querySelector(".stepnum");
+    const hue = mode === name ? "" : "stone";
+    if (holder.dataset.hue !== hue || !holder.firstChild) {
+      holder.dataset.hue = hue;
+      holder.innerHTML = icon(holder.dataset.stepIcon, 22, hue ? { hue } : {});
+    }
     if (mode === name) button.setAttribute("aria-current", "step"); else button.removeAttribute("aria-current");
   }
   els.tabScenes.title = compose() ? "" : "Opens once the clean cut is rendered";
@@ -2467,8 +2570,8 @@ els.insertClose.addEventListener("click", closeInspector);
 
 // ---- Transport ----
 
-const PLAY_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>';
-const PAUSE_ICON = '<svg width="13" height="13" viewBox="0 0 12 12"><rect x="2.4" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect><rect x="7" y="1.8" width="2.6" height="8.4" rx="0.8" fill="currentColor"></rect></svg>';
+const PLAY_ICON = icon("playSolid", 18);
+const PAUSE_ICON = icon("pauseSolid", 18);
 
 // J/K/L. L plays, and again doubles the rate up to 4×; J runs the picture
 // backwards the same way from the frame loop, since a video element will
@@ -2743,7 +2846,7 @@ document.addEventListener("dragenter", (event) => {
   dragDepth += 1;
   // What a drop does depends on where it lands: on the Scenes step it places
   // a picture or a clip; anywhere else it starts a project.
-  els.dropzone.querySelector(".dropzone-card").textContent = mode === "scenes" && compose()
+  document.getElementById("dropzone-text").textContent = mode === "scenes" && compose()
     ? "Drop a picture or a clip to place it over the words at the playhead"
     : "Drop to start a project";
   els.dropzone.hidden = false;
@@ -2807,14 +2910,14 @@ function projectRow(project, { actions }) {
   row.append(open);
   if (actions) {
     const box = make("div", "project-actions");
-    const rename = make("button", "", '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11.5 2.5l2 2L6 12H4v-2z"></path><path d="M3 14h10"></path></svg>');
-    rename.type = "button"; rename.title = "Rename";
+    const rename = make("button", "", icon("pencil", 22));
+    rename.type = "button"; rename.title = "Rename"; rename.setAttribute("aria-label", `Rename ${project.title}`);
     rename.addEventListener("click", () => openRename(project));
-    const reveal = make("button", "", '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 4.5h5l1.5 1.5h6.5v7h-13z"></path></svg>');
-    reveal.type = "button"; reveal.title = "Show the project folder";
+    const reveal = make("button", "", icon("folder", 22));
+    reveal.type = "button"; reveal.title = "Show the project folder"; reveal.setAttribute("aria-label", `Show the folder of ${project.title}`);
     reveal.addEventListener("click", () => window.fabula.revealProject(project.name));
-    const remove = make("button", "", '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4h10M6 4V2.5h4V4M4.5 4l.7 9.5h5.6l.7-9.5"></path></svg>');
-    remove.type = "button"; remove.title = "Move this project to the recycle bin (the recording stays)";
+    const remove = make("button", "", icon("trash", 22));
+    remove.type = "button"; remove.title = "Move this project to the recycle bin (the recording stays)"; remove.setAttribute("aria-label", `Move ${project.title} to the recycle bin`);
     remove.addEventListener("click", async () => {
       const result = await window.fabula.removeProject(project.name);
       if (!result.ok && !result.cancelled) setStatus(result.error);
@@ -3002,11 +3105,12 @@ function ensureTerminal() {
   if (term) return term;
   term = new window.Terminal({
     cursorBlink: true,
-    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "JetBrains Mono", ui-monospace, monospace',
+    fontFamily: '"Instrumenta Spline Sans Mono", "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace',
     fontSize: 13,
     lineHeight: 1.15,
     scrollback: 5000,
-    theme: { background: "#1f1e1d", foreground: "#f0ede6", cursor: "#e95087", selectionBackground: "rgba(233, 80, 135, 0.35)", black: "#1f1e1d", brightBlack: "#6e6b63" },
+    // Dark in both window themes (styles.css, .assistant-pane): the family surface and text, coral cursor.
+    theme: { background: "#141210", foreground: "#f2ede6", cursor: "#ed7088", cursorAccent: "#230f12", selectionBackground: "rgba(237, 112, 136, 0.35)", black: "#141210", brightBlack: "#8a8178" },
   });
   fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -3031,7 +3135,11 @@ function fitTerminal() {
 
 // The masthead button carries the session's state: filled and inviting when
 // nothing is running, outlined with a live dot once a session is up.
+let assistantWasRunning = false;
 function renderAssistantButton() {
+  // The spark twinkles once when a session comes up.
+  if (assistantRunning && !assistantWasRunning) playOnce(els.openAssistant, 1000);
+  assistantWasRunning = assistantRunning;
   els.openAssistant.classList.toggle("is-live", assistantRunning);
   els.assistantDot.hidden = !assistantRunning;
   els.openAssistant.title = assistantRunning
@@ -3279,6 +3387,7 @@ els.dirEffort.addEventListener("change", describeDirectionAssistant);
 els.dirCancel.addEventListener("click", () => els.direction.close());
 els.directionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clap(); // the brief is the go: the slate claps as the film is started
   const latitude = els.directionForm.querySelector('input[name="latitude"]:checked')?.value ?? "guided";
   const brief = {
     latitude,
@@ -3315,6 +3424,7 @@ els.directionForm.addEventListener("submit", async (event) => {
 
 // The panel's own dismissal is for this run only: a new brief shows it again.
 let makingDismissed = null;
+let makingWasRunning = null; // the run seen in progress, so its finish is a moment
 
 function renderMaking() {
   const making = state?.making;
@@ -3323,13 +3433,19 @@ function renderMaking() {
   els.inspMaking.hidden = !show;
   if (!show) return;
   els.makingTitle.textContent = run.done ? "The draft is ready" : "Making the video";
+  // The slate claps when the draft lands while the window watches.
+  if (run.done && makingWasRunning === making.direction?.startedAt) { clap(); clap(document.getElementById("making-slate")); }
+  makingWasRunning = run.done ? null : making.direction?.startedAt ?? null;
   els.makingLatitude.textContent = LATITUDE_LABELS[making.direction.latitude] ?? making.direction.latitude;
   els.makingClock.textContent = fmt(run.elapsedSeconds, false);
-  const marks = { done: "✓", active: "●", waiting: "○", skipped: "–" };
+  // Each phase is a still icon: done ticks in green, the one at work an hourglass, those to come a
+  // stone clock, a skipped one a stone dash, a failed one the failed mark.
+  const marks = { done: "done", active: "hourglass", waiting: "clock", skipped: "skipped" };
   els.makingPhases.replaceChildren(...run.phases.map((phase) => {
     const item = document.createElement("li");
     item.className = `making-phase is-${phase.state}`;
-    item.innerHTML = `<span class="making-mark" aria-hidden="true">${marks[phase.state] ?? "○"}</span><span class="making-label">${esc(phase.label)}</span>`;
+    const mark = run.failedIn === phase.id ? "failed" : marks[phase.state] ?? "clock";
+    item.innerHTML = `<span class="making-mark" aria-hidden="true">${icon(mark, 20)}</span><span class="making-label">${esc(phase.label)}</span>`;
     if (phase.detail && (phase.state === "active" || (run.failedIn === phase.id))) {
       const detail = document.createElement("span");
       detail.className = "making-detail";
@@ -3360,12 +3476,12 @@ function renderMaking() {
     : !run.done && !working && run.phases[0].state === "done" && run.elapsedSeconds > 60 ? "quiet" : null;
   els.makingWaiting.hidden = !stalled;
   if (stalled === "gone") {
-    els.makingWaitingText.textContent = "No assistant is running, so the film is not being made.";
-    els.makingWaitingAct.textContent = "Start the assistant";
+    els.makingWaitingText.innerHTML = `${icon("alert", 20)}<span>No assistant is running, so the film is not being made.</span>`;
+    setLabel(els.makingWaitingAct, "Start the assistant", "spark");
     els.makingWaitingAct.dataset.act = "start";
   } else if (stalled === "quiet") {
-    els.makingWaitingText.textContent = "The assistant has not started on the film yet. It may be asking you something in its pane.";
-    els.makingWaitingAct.textContent = "Show the assistant";
+    els.makingWaitingText.innerHTML = `${icon("alert", 20)}<span>The assistant has not started on the film yet. It may be asking you something in its pane.</span>`;
+    setLabel(els.makingWaitingAct, "Show the assistant", "spark");
     els.makingWaitingAct.dataset.act = "show";
   }
   const draft = making.draft && run.done;
@@ -3463,12 +3579,22 @@ els.progress.addEventListener("keydown", (event) => { if (event.key === "Enter" 
 
 window.fabula.getState().then((next) => {
   state = next;
+  clap(); // the window opening
   // Open on the furthest stage the project has reached.
   if (compose()) mode = "scenes";
   render();
 });
+// The moments the slate claps for: a render starting, and one finishing well.
+function clapForJobs(before, after) {
+  const was = before?.export?.running ?? null;
+  const now = after?.export?.running ?? null;
+  if (now && (!was || was.stage !== now.stage)) { clap(); playOnce(document.querySelector("#tab-export .stepnum"), 1200); }
+  else if (was && !now && !after?.export?.lastFailure) clap();
+}
+
 window.fabula.onState((next) => {
   const projectChanged = state?.project !== next?.project;
+  if (!projectChanged) clapForJobs(state, next);
   state = next;
   if (projectChanged) {
     // A tall film leaves the width beside the stage empty: the script
