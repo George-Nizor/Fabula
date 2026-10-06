@@ -10,7 +10,7 @@
 // the editor finds WSL from where it lives and bridges its jobs and its assistant into it,
 // without knowing it was installed.
 
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, nativeTheme } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
@@ -141,7 +141,7 @@ function openSetup() {
     minWidth: 620,
     minHeight: 520,
     title: "Fabula",
-    backgroundColor: "#faf9f5",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#1d1a17" : "#ffffff",
     icon: path.join(__dirname, process.platform === "win32" ? "fabula.ico" : "fabula-mark.png"),
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
