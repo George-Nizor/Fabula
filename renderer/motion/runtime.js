@@ -240,11 +240,90 @@
     return out;
   }
 
+  // ---- The check pass ----
+  // After a frame is drawn, the scene's own text is measured where it
+  // actually landed: the faults that pass every code check and only show in
+  // pixels — type off the frame or outside the safe area, two lines of text
+  // on top of each other, type too small to read. Text drawn on a canvas or
+  // in WebGL is pixels, not text, and is not measured.
+  let checking = false;
+  const TEXT_SKIP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
+  function visibleOpacity(element) {
+    let alpha = 1;
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === "none" || style.visibility === "hidden") return 0;
+      alpha *= Number(style.opacity);
+      if (alpha < 0.05) return alpha;
+    }
+    return alpha;
+  }
+  function blockOf(element) {
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+      if (node instanceof SVGElement) { if (node.tagName.toLowerCase() === "text") return node; continue; }
+      const display = getComputedStyle(node).display;
+      if (!display.startsWith("inline") && display !== "contents") return node;
+    }
+    return element;
+  }
+  function checkFrame() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const tall = H > W;
+    const safe = { left: W * 0.05, right: W * 0.95, top: H * 0.05, bottom: H * (tall ? 0.78 : 0.95) };
+    const blocks = new Map();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      const leaf = text.parentElement;
+      if (!leaf || TEXT_SKIP.has(leaf.tagName) || !text.textContent.trim()) continue;
+      if (visibleOpacity(leaf) < 0.15) continue;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const rect = range.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) continue;
+      const block = blockOf(leaf);
+      const size = parseFloat(getComputedStyle(leaf).fontSize) || 0;
+      const box = blocks.get(block) ?? { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity, size: Infinity, text: "" };
+      box.left = Math.min(box.left, rect.left); box.top = Math.min(box.top, rect.top);
+      box.right = Math.max(box.right, rect.right); box.bottom = Math.max(box.bottom, rect.bottom);
+      // An SVG's font size is in its own units; what reads is its height on screen.
+      box.size = Math.min(box.size, leaf instanceof SVGElement ? rect.height : size);
+      box.text += text.textContent;
+      blocks.set(block, box);
+    }
+    const found = [];
+    const name = (box) => `"${box.text.replace(/\s+/g, " ").trim().slice(0, 40)}"`;
+    const list = [...blocks.entries()];
+    for (const [, box] of list) {
+      const offFrame = box.left < -1 || box.top < -1 || box.right > W + 1 || box.bottom > H + 1;
+      if (offFrame) found.push({ kind: "off-frame", what: `${name(box)} runs off the frame` });
+      else {
+        const sides = [box.left < safe.left && "left", box.right > safe.right && "right", box.top < safe.top && "top", box.bottom > safe.bottom && (tall ? "bottom (below 78% the captions and the platform's controls cover it)" : "bottom")].filter(Boolean);
+        if (sides.length) found.push({ kind: "unsafe", what: `${name(box)} is outside the safe area (${sides.join(", ")})` });
+      }
+      if (box.size < H * 0.022) found.push({ kind: "small", what: `${name(box)} is set at ${Math.round(box.size)} px, under 2.2% of the frame's height — too small to read on a phone` });
+    }
+    for (let i = 0; i < list.length; i += 1) {
+      for (let j = i + 1; j < list.length; j += 1) {
+        const [ea, a] = list[i];
+        const [eb, b] = list[j];
+        if (ea.contains(eb) || eb.contains(ea)) continue;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w <= 0 || h <= 0) continue;
+        const smaller = Math.min((a.right - a.left) * (a.bottom - a.top), (b.right - b.left) * (b.bottom - b.top));
+        if (w * h > smaller * 0.15) found.push({ kind: "overlap", what: `${name(a)} and ${name(b)} overlap` });
+      }
+    }
+    return found.slice(0, 40);
+  }
+
   let token = null;
   let loaded = null;
 
   async function load(message) {
     token = message.token;
+    checking = message.check === true;
     context = {
       params: message.params ?? {},
       theme: message.theme ?? {},
@@ -392,7 +471,9 @@
     }
     await seekMedia(t);
     await nextPaint();
-    post({ fabula: "drawn", token: message.token, n: message.n, errors: drain() });
+    let check;
+    if (checking) { try { check = checkFrame(); } catch (error) { report(`check: ${error.message}`); } }
+    post({ fabula: "drawn", token: message.token, n: message.n, t, errors: drain(), ...(check ? { check } : {}) });
   }
 
   // One message at a time, in order: a seek that arrives while the scene is

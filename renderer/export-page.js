@@ -94,6 +94,7 @@ window.__renderScene = async (t, layout, { headBlock = false } = {}) => {
 
 // What the motion scenes on the stage have reported going wrong.
 window.__motionErrors = () => window.FabulaStage.motionErrors();
+window.__motionChecks = () => window.FabulaStage.motionChecks();
 
 // The empty stage: the field alone, for the render's base plate.
 window.__fieldOnly = async () => {

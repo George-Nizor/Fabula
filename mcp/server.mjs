@@ -2354,7 +2354,8 @@ server.registerTool("write_motion", {
   if (preview === false) return ok({ ...answer, hint: "preview_motion draws it when you want to look." });
   try {
     const sheet = await motionPreview(dir, src, preview ?? {});
-    return ok({ ...answer, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors, hint: sheet.errors?.length ? "The scene reported errors: fix them and write again." : "Look at the sheet: does each frame read, is the type inside the frame, does the motion arrive where the words do?" });
+    const faults = (sheet.checks ?? []).filter((check) => !check.brief);
+    return ok({ ...answer, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors, checks: sheet.checks ?? [], hint: sheet.errors?.length ? "The scene reported errors: fix them and write again." : faults.length ? `The check pass measured ${faults.length} fault${faults.length === 1 ? "" : "s"} in the text as drawn (checks, with the seconds each holds for): fix them and write again — they are pixels, not style. Then look at the sheet.` : "The check pass found nothing wrong with the text as drawn. Now look at the sheet: does each frame read, does the motion arrive where the words do, is it beautiful?" });
   } catch (error) {
     return ok({ ...answer, sheet: null, errors: [error.message], hint: "Written, but it could not be drawn; the error says why." });
   }
@@ -2392,7 +2393,7 @@ server.registerTool("preview_motion", {
   const src = `motion/${name}.html`;
   if (!fs.existsSync(path.join(dir, src))) throw new Error(`no motion document ${src}; list_motion shows what exists`);
   const sheet = await motionPreview(dir, src, preview);
-  return ok({ src, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors });
+  return ok({ src, sheet: sheet.file, tiles: sheet.tiles, errors: sheet.errors, checks: sheet.checks ?? [] });
 });
 
 server.registerTool("read_motion", {
