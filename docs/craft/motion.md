@@ -203,3 +203,25 @@ not look at is how a scene breaks.
   rose into its own title; the lift was halved and the rocket lowered.
 - **Three ideas** (split with the head on the right): numbered rows, each arriving on its first
   word ("accelerate", "discard", "build"), the earlier ones dimming as the next arrives.
+
+## Worked: An orbit is a fall
+
+The first motion film made with the motion-film tools (2026-10-07): 24 seconds, no narration,
+the Paper look, one reel. Its storyboard, shared library and reel are in
+`docs/craft/plans/an-orbit-is-a-fall/`.
+
+- **The spine** is one ball. It drops, is thrown, is thrown harder, and finally never lands; the
+  horizon it lands on turns out to be the planet when the camera pulls back. Nothing in the film
+  is not that ball, its paths or the ground.
+- **The physics is real and computed once**, in the library: gravity towards the planet's centre,
+  each throw integrated in `setup`, each frame reading a point along it. The orbit is the circular
+  speed, not a drawn circle, which is why it closes exactly.
+- **The camera is the argument.** Up to 8.3 s it holds still on a horizon that looks flat; the
+  fourth throw leaves the frame and the camera follows it out in log zoom until the ground is a
+  planet. The words say "the ground curves away" while the picture shows it.
+- **Earlier throws step back** rather than vanish: each landed ball shrinks to a muted dot and its
+  path turns dotted, so the frame keeps the evidence while the accent moves to the new throw.
+- **What the loop caught.** The check pass flagged every caption as overlapping every other. That
+  was a real fault in the check (lines waiting behind a clip-path wipe counted as visible), and it
+  now honours `inset()` clips. The critique round caught widows ("further." alone on a line),
+  fixed with `text-wrap: balance`. Rendered at 1080p in 61 s.

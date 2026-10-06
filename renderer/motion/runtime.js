@@ -316,6 +316,28 @@
     }
     return alpha;
   }
+  // What an inset() clip-path leaves visible of an element and its
+  // ancestors, in the frame's pixels: a line wiped in by a clip is not on
+  // screen until the wipe reaches it. Other clip shapes are not measured.
+  function clipRect(element) {
+    let box = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const clip = getComputedStyle(node).clipPath;
+      const m = /^inset\(([^)]*)\)/.exec(clip ?? "");
+      if (!m) continue;
+      const r = node.getBoundingClientRect();
+      const parts = m[1].split(/\s+round\s+/)[0].trim().split(/\s+/);
+      const [a, b = a, c = a, d = b] = parts;
+      const len = (value, size) => (String(value).endsWith("%") ? (parseFloat(value) / 100) * size : parseFloat(value) || 0);
+      box = {
+        left: Math.max(box.left, r.left + len(d, r.width)),
+        top: Math.max(box.top, r.top + len(a, r.height)),
+        right: Math.min(box.right, r.right - len(b, r.width)),
+        bottom: Math.min(box.bottom, r.bottom - len(c, r.height)),
+      };
+    }
+    return box;
+  }
   function blockOf(element) {
     for (let node = element; node && node !== document.body; node = node.parentElement) {
       if (node instanceof SVGElement) { if (node.tagName.toLowerCase() === "text") return node; continue; }
@@ -337,7 +359,10 @@
       if (visibleOpacity(leaf) < 0.15) continue;
       const range = document.createRange();
       range.selectNodeContents(text);
-      const rect = range.getBoundingClientRect();
+      const whole = range.getBoundingClientRect();
+      const clip = clipRect(leaf);
+      const rect = { left: Math.max(whole.left, clip.left), top: Math.max(whole.top, clip.top), right: Math.min(whole.right, clip.right), bottom: Math.min(whole.bottom, clip.bottom) };
+      rect.width = rect.right - rect.left; rect.height = rect.bottom - rect.top;
       if (rect.width < 1 || rect.height < 1) continue;
       const block = blockOf(leaf);
       const size = parseFloat(getComputedStyle(leaf).fontSize) || 0;
@@ -345,7 +370,7 @@
       box.left = Math.min(box.left, rect.left); box.top = Math.min(box.top, rect.top);
       box.right = Math.max(box.right, rect.right); box.bottom = Math.max(box.bottom, rect.bottom);
       // An SVG's font size is in its own units; what reads is its height on screen.
-      box.size = Math.min(box.size, leaf instanceof SVGElement ? rect.height : size);
+      box.size = Math.min(box.size, leaf instanceof SVGElement ? whole.height : size);
       box.text += text.textContent;
       blocks.set(block, box);
     }

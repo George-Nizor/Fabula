@@ -1,0 +1,60 @@
+{
+  "logline": "An orbit is a fall that keeps missing the ground.",
+  "purpose": "A 24-second explainer for anyone who thinks satellites float.",
+  "shapes": [
+    {
+      "name": "Myth then fact"
+    },
+    {
+      "name": "One object, pushed further each time"
+    }
+  ],
+  "shape": "One ball, pushed further each time, until the ground curves away beneath it.",
+  "beats": [
+    {
+      "fromSeconds": 0,
+      "toSeconds": 3,
+      "beat": "Everything falls",
+      "onScreen": "Everything falls.",
+      "motion": "The ball drops onto a flat horizon and settles with one short spring; the line is the floor of everything after."
+    },
+    {
+      "fromSeconds": 3,
+      "toSeconds": 7.5,
+      "beat": "Throw it and it lands further",
+      "onScreen": "Throw it, and it lands further.",
+      "motion": "Two throws arc to the right, each landing further; each path stays as a faint line."
+    },
+    {
+      "fromSeconds": 7.5,
+      "toSeconds": 12.5,
+      "beat": "The ground curves away",
+      "onScreen": "But the ground curves away.",
+      "motion": "A harder throw; the camera pulls back with it in log zoom and the horizon becomes a planet."
+    },
+    {
+      "fromSeconds": 12.5,
+      "toSeconds": 18.5,
+      "beat": "Fast enough, it never lands",
+      "onScreen": "Fast enough, and it never lands.",
+      "motion": "The fastest throw falls all the way round; the path closes into a ring."
+    },
+    {
+      "fromSeconds": 18.5,
+      "toSeconds": 24,
+      "beat": "The claim",
+      "onScreen": "An orbit is a fall that keeps missing.",
+      "motion": "Hold. The ball keeps going round; nothing else moves."
+    }
+  ],
+  "spine": "One ball: it drops, is thrown, is thrown harder, and finally never lands. The horizon it lands on becomes the planet.",
+  "hold": "The closed orbit with the claim beside it, still, 18.5–22 s.",
+  "bans": [
+    "no particles or glow",
+    "no 3D",
+    "nothing enters from below for no reason",
+    "one accent: the ball and its path"
+  ],
+  "sound": "No narration; a quiet bed if one is added later.",
+  "look": "Paper: an editorial explainer, Fraunces on cream, terracotta for the ball."
+}
