@@ -79,7 +79,7 @@ still icons; the ticking clock beside them is what shows a job is alive).
 
 | Role | Face | Where |
 | --- | --- | --- |
-| Display | Fraunces 650, `"SOFT" 100, "WONK" 1` | the wordmark, page titles (Look, Export, Projects), sheet titles, the Making panel's title, Export card titles, the inspector's title, empty-state headlines, the drop zone |
+| Display | Fraunces 650, `"SOFT" 100, "WONK" 1` | the wordmark, page titles (Look, Export, Projects), sheet titles, the Making panel's title, Export card titles, empty-state headlines, the drop zone |
 | Interface | Commissioner, `"FLAR" 40` | everything operated, sentence case, the transcript included (it was Source Serif) |
 | Code | Spline Sans Mono | timecodes, durations, the ruler, pause chips, sizes, swatch hex and slider values, key caps, the setup log, the terminal |
 

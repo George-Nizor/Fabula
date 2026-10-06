@@ -1104,7 +1104,8 @@ dialog.projects::backdrop { background: var(--scrim); }
   padding-top: 16px;
 }
 
-#insp-title { font-family: var(--display); font-variation-settings: var(--display-vs); font-size: var(--t-lg); color: var(--ink); font-weight: 650; line-height: 1.3; }
+/* Commissioner, not Fraunces: it names the inspected scene too, with its kind and its times. */
+#insp-title { font-size: var(--t-md); color: var(--ink); font-weight: 700; line-height: 1.35; }
 
 .insp-placeholder {
   margin: 1rem 0 0;

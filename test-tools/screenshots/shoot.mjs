@@ -76,7 +76,6 @@ function steps(themeName, prefix, have) {
   const shot = (name) => (!ONLY || ONLY.has(name) ? { shot: `${prefix}${name}` } : {});
   s.push({ wait: 800, ...shot("home") }, contrast("home"));
   s.push({ run: click("home-new"), wait: 600, ...shot("dialog-new-project") }, closeDialogs);
-  s.push({ run: js(`openProjects();`), wait: 600, ...shot("dialog-projects") }, closeDialogs);
   if (have.has(FILM)) {
     s.push(open(FILM), { run: click("tab-cut"), wait: 1500, ...shot("cut") }, contrast("cut"));
     s.push({ run: js(`document.querySelector(".word")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); document.querySelectorAll(".word")[6]?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));`), wait: 500 });
@@ -86,6 +85,7 @@ function steps(themeName, prefix, have) {
     s.push({ run: js(`document.querySelector('[data-scene="2"]')?.click();`), wait: 1200, ...shot("scenes-inspector") }, contrast("scenes"));
     s.push({ run: click("tab-export"), wait: 1800, ...shot("export") }, contrast("export"));
     s.push({ run: click("open-assistant"), wait: 900, ...shot("dialog-assistant") }, closeDialogs);
+    s.push({ run: js(`openProjects();`), wait: 600, ...shot("dialog-projects") }, closeDialogs);
     s.push({ run: js(`openRename({ name: ${JSON.stringify(FILM)}, title: "Rockets, explained" });`), wait: 500, ...shot("dialog-rename") }, closeDialogs);
     s.push({ run: click("tab-look"), wait: 1500 }, { run: click("look-save"), wait: 600, ...shot("dialog-brand") }, closeDialogs);
     s.push({ run: click("tab-cut"), wait: 1200 }, { run: js(`openDirection();`), wait: 900, ...shot("dialog-brief") }, contrast("brief"), closeDialogs);
