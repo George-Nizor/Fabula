@@ -1,5 +1,31 @@
 # Fabula — product brief
 
+## Motion graphics (2026-10-07, 0.3.0)
+
+The owner's ask: Fabula should make the kind of motion graphics people share from Claude, either as
+the whole film or as part of a recorded one, without the recording boxing it in. Decided and
+built (the full account and its sources: `docs/motion-graphics.md`):
+
+- **The recording was the constraint, not the transcript.** Every scene had to anchor to a word
+  of a recording. A motion film now has a clock instead: a narration or a length. A stand-in
+  recording (`raw.mp4`, silence or the narration) takes the ordinary path to a clean cut, so
+  nothing downstream changed, and the stage is a cutaway from the first frame to the last.
+  Scenes in a motion film may anchor in seconds.
+- **The card model was the other constraint.** A long piece is now a reel: one document, several
+  shots, one world and one camera. Code the reels share goes in `motion/lib/`, loaded into the same
+  sandbox. three.js is vendored (MIT); GSAP stays optional.
+- **Quality comes from the loop, not from the prompt.** The storyboard goes in the treatment
+  before any code. Every scene write runs a check pass that measures the drawn text between the
+  sheet's tiles. The craft names the defaults that make generated motion look generated, and the
+  assistant scores its own shots in rounds.
+- **Free hand means it.** Taste rules become advice. The check pass and the invariants do not.
+- **Tested on a brief, twice.** The same 24-second launch film for an invented product was made
+  unattended by Sonnet 5.5 (18 minutes) and Opus 5.5 (29 minutes). The owner's verdict: Sonnet
+  told the better story, and Opus drew the better product. The runs found two code faults. A
+  bed in a film with no voice was levelled against silence; it now plays at a film's loudness.
+  The other, a chunk's first frame occasionally captured before a motion scene had drawn, is
+  still open.
+
 ## Make it into a video (2026-09-30)
 
 The owner's ask: once the cut is reviewed, one action hands the film to the assistant, which makes

@@ -89,12 +89,32 @@ const CLEAN_CHAINS = {
 // and the voice's, measured — `level` is LU below the voice, so -18 means
 // the same thing for any file. When either is unknown, `level` is a plain
 // gain on the file, which is what it was before anything was measured.
+//
+// A film with no voice (a motion film without a narration measures as
+// silence, under SILENT_VOICE_LUFS) has nothing to sit under: the bed IS the
+// film's sound, and plays at a film's loudness, NO_VOICE_BED_LUFS, plus
+// whatever level says above the default.
+export const SILENT_VOICE_LUFS = -60;
+export const NO_VOICE_BED_LUFS = -16;
 export function bedGainDb(music, voiceLoudness) {
   const level = music.level ?? MUSIC_DEFAULTS.level;
+  if (typeof music.loudness === "number" && typeof voiceLoudness === "number" && voiceLoudness <= SILENT_VOICE_LUFS) {
+    return Math.min(0, NO_VOICE_BED_LUFS + (level - MUSIC_DEFAULTS.level) - music.loudness);
+  }
   if (typeof music.loudness === "number" && typeof voiceLoudness === "number") {
     return Math.min(0, voiceLoudness + level - music.loudness);
   }
   return level;
+}
+
+// What the bed is levelled against: the voice as it will be heard (its
+// target when one is set, else what was measured) — or, when what was
+// measured is silence, the silence itself, so bedGainDb knows there is no
+// voice to sit under whatever target was set for it.
+export function bedReference(voice, voiceLoudness) {
+  const measured = voiceLoudness ?? voice?.measured;
+  if (typeof measured === "number" && measured <= SILENT_VOICE_LUFS) return measured;
+  return voice?.loudness ?? measured ?? undefined;
 }
 
 // The "I:  -16.2 LUFS" line of ffmpeg's ebur128 summary, as a number.
@@ -260,7 +280,9 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
     // loudnorm undershoots a very quiet recording by a couple of units and
     // reshapes it; it is the fallback when nothing was measured.
     const measured = voiceLoudness ?? voice.measured;
-    if (typeof measured === "number") {
+    // Silence is not raised to a target: there is no voice to level.
+    if (typeof measured === "number" && measured <= SILENT_VOICE_LUFS) lines.push("[v0]anull[v1]");
+    else if (typeof measured === "number") {
       // `voiceTrimDb` is the stitch's second pass: what the ceiling took off
       // the first time, added back.
       const gain = voice.loudness - measured + voiceTrimDb;
@@ -325,7 +347,7 @@ export function audioGraph({ audio, words, from = 0, span, musicPath, voiceLoudn
     // Relative to the voice as it will be heard: its target when one is set
     // (the stitch gains it there), else what was measured — the same
     // reference describeAudio reports.
-    `volume=${num(dbToLinear(bedGainDb(music, voice.loudness ?? voiceLoudness ?? voice.measured ?? undefined)))}`,
+    `volume=${num(dbToLinear(bedGainDb(music, bedReference(voice, voiceLoudness))))}`,
     `volume=volume='${presence ? `(${gain})*${presence}` : gain}':eval=frame`,
     ...(fade > 0 && !confined ? [`afade=t=in:st=0:d=${num(fade)}`, `afade=t=out:st=${num(Math.max(span - fade, 0))}:d=${num(fade)}`] : []),
   ];
@@ -353,8 +375,10 @@ export function describeAudio(audio, words, duration) {
       swellSeconds: Number(windows.reduce((sum, w) => sum + w.end - w.start, 0).toFixed(1)),
       spans: music.spans?.length ? bedSpans(music, words ?? [], duration ?? 0) : null,
       relative: typeof music.loudness === "number" && typeof (voice.loudness ?? voice.measured) === "number",
-      gainDb: Number(bedGainDb(music, voice.loudness ?? voice.measured ?? undefined).toFixed(1)),
-      about: `${typeof music.loudness === "number" && typeof (voice.loudness ?? voice.measured) === "number"
+      gainDb: Number(bedGainDb(music, bedReference(voice)).toFixed(1)),
+      about: `${typeof music.loudness === "number" && typeof voice.measured === "number" && voice.measured <= SILENT_VOICE_LUFS
+        ? `there is no voice (the film measures ${voice.measured} LUFS without the bed), so the bed is the film's sound at ${NO_VOICE_BED_LUFS + ((music.level ?? MUSIC_DEFAULTS.level) - MUSIC_DEFAULTS.level)} LUFS — level above ${MUSIC_DEFAULTS.level} raises it, below lowers it (gained ${bedGainDb(music, voice.measured).toFixed(1)} dB)`
+        : typeof music.loudness === "number" && typeof (voice.loudness ?? voice.measured) === "number"
         ? `${music.level} LU under the voice in the pauses, ${music.level + music.duck} LU under it while they speak (the file measures ${music.loudness} LUFS, the voice ${voice.loudness ?? voice.measured} LUFS, so the bed is gained ${bedGainDb(music, voice.loudness ?? voice.measured).toFixed(1)} dB)`
         : `${music.level} dB in the pauses, ${music.level + music.duck} dB under the voice — as a gain on the file, because its loudness has not been measured`}, ${music.ramp}s ramps, ${music.fade}s fades${music.loop ? ", looped" : ""}; ${windows.length} pause(s) the bed comes up in${music.spans?.length ? `; under ${music.spans.length} span(s) only` : ""}`,
     };

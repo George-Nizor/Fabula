@@ -247,3 +247,16 @@ test("a placed effect is mixed in without a duck; a clip's own sound keeps one",
   });
   assert.ok(withClip.filter.split("\n").find((l) => l.includes("[nat0]")).includes("eval=frame"));
 });
+
+test("a film with no voice plays its bed at a film's loudness, and never raises the silence", async () => {
+  const { bedGainDb, bedReference, audioGraph, MUSIC_DEFAULTS, NO_VOICE_BED_LUFS } = await import("../core/audio-engine.mjs");
+  const music = { src: "assets/bed.mp3", loudness: -20, level: MUSIC_DEFAULTS.level };
+  // A recorded voice: the bed sits `level` under it.
+  assert.equal(bedGainDb(music, -16), Math.min(0, -16 + MUSIC_DEFAULTS.level + 20));
+  // A silent motion film, with or without a voice target set: the bed is the film's sound.
+  assert.equal(bedGainDb(music, -70), Math.min(0, NO_VOICE_BED_LUFS + 20));
+  assert.equal(bedReference({ loudness: -16, measured: -70 }), -70);
+  assert.equal(bedReference({ loudness: -16, measured: -23 }), -16);
+  const graph = audioGraph({ audio: { voice: { loudness: -16, measured: -70 }, music }, words: [], span: 10, musicPath: "bed.mp3", voiceLoudness: -70 });
+  assert.match(graph.filter ?? JSON.stringify(graph), /anull/);
+});

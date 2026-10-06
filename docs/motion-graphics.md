@@ -120,7 +120,7 @@ whichever model the session is started with; `--model claude-opus-5-5` runs the 
 
 ## What is built
 
-On the branch `feat/motion-graphics`, in a worktree, not yet merged:
+Released in Fabula 0.3.0:
 
 | Piece | Where |
 | --- | --- |
@@ -157,6 +157,20 @@ session is editing:
   and `fabula.shot` cover the timing today; cues are the window's way to move a beat by hand.
 - **The critic as a separate session** with the scoring rubric, on the maker's model.
 - JPEG capture for opaque reels (about 1.4× faster), and motion blur on the master as an opt-in.
+
+**Found by the showcase test** (the same brief made unattended by Sonnet 5.5 and Opus 5.5,
+2026-10-07):
+
+- A render can capture a chunk's first frame (0, 6, 12, 18 s) as the empty field, before the
+  motion scene's draw reaches the capture. It is intermittent, and a fresh render clears it. The
+  wait in `FabulaStage.settled()` needs to hold for the frame's own paint.
+- The assistant cannot hear the music or find its beats. Both models assumed the beat grid from
+  the tempo. Fabula needs a beat and onset tool that returns the hits in seconds.
+- Both models tried to edit a scene in place before rewriting it whole. A `patch_motion`
+  (find and replace in a document, then the check pass) would save turns on a long reel.
+- `critique_film` reads the bed of a film with no voice as the voice and reports it off target.
+- Fixed in 0.3.0: the bed in a film with no voice was levelled against silence and came out
+  inaudible. It now plays at -16 LUFS.
 
 ## Rendering speed
 

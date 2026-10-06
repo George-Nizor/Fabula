@@ -12,7 +12,8 @@ cut as strikethrough text before anything renders, then plans and composites vis
 speaker — layouts that move the head around the frame, named graphics, and motion scenes the
 assistant writes as code for the moments that have to move — with your choice of Claude Code or
 Codex as the editor, using your existing subscription. One button, **Make it into a video**,
-takes a reviewed cut to a draft film from a short brief.
+takes a reviewed cut to a draft film from a short brief. Fabula also makes **motion films**:
+pieces that are nothing but motion graphics, with no recording at all.
 
 <p align="center">
   <img src="docs/images/fabula-look-dark.png" alt="The Look step in the dark theme: preset cards, each drawn by the film's own painter" width="49%" />
@@ -122,6 +123,46 @@ look travels; the scene plan does not, because a composition written for a wide 
 wrong composition for a tall one. Refresh its clean cut and compose it like any other project.
 The assistant has the same two tools, `suggest_clips` and `create_short`, and will argue with
 the shortlist rather than making all of it.
+
+## Motion graphics
+
+The assistant writes motion graphics as code: an HTML, SVG, Canvas or three.js document drawn
+frame by frame from the film's clock in a sandboxed frame, with no network, no timers and no
+randomness it does not seed. It comes in three sizes:
+
+- **A moment** inside a recorded film, where a card would not do.
+- **A sequence** inside a recorded film: twenty seconds to two minutes where a serious film (a
+  documentary, an argument) stops showing the speaker and becomes motion graphics over its own
+  sound.
+- **A motion film**, with no recording. `new_motion` starts one from a length or a narration (a
+  Luna voiceover, a read you recorded, any audio file, transcribed for its word timings). Fabula
+  makes a stand-in for the recording, so music, effects, captions and the render work as they do
+  for any film, and no camera ever shows.
+
+```bash
+npm run assistant -- --provider claude --model claude-opus-5-5 --task motion
+```
+
+The `motion` task works the way the best motion graphics are made with models today:
+
+1. A storyboard comes first (`set_treatment`): the claim, the one continuity device the piece
+   keeps, beats of a few seconds with their words on screen, a held frame, and what the piece will
+   not do.
+2. Reels follow: long documents with several shots in one shared world (`fabula.shot`, a keyed
+   camera with `fabula.camera`). Code every reel shares goes in a project library
+   (`write_motion_lib`).
+3. Every `write_motion` runs a **check pass**. It measures the scene's text every fifth of a
+   second as drawn and reports anything off the frame, outside the safe area, overlapping or too
+   small to read, with the seconds each fault holds for. The assistant then scores its own shots
+   and rewrites the weak ones.
+
+three.js 0.186 ships with Fabula for scenes that need depth. The craft is in
+[`docs/craft/motion.md`](docs/craft/motion.md), with a worked film in
+[`docs/craft/plans/an-orbit-is-a-fall`](docs/craft/plans/an-orbit-is-a-fall). The design and its
+sources are in [`docs/motion-graphics.md`](docs/motion-graphics.md).
+
+**Unfinished:** the window has no **New motion graphic** button yet. Start a motion film from the
+assistant for now. Luna voiceover is not wired in yet either; pass the narration as a file.
 
 Read [`docs/product-brief.md`](docs/product-brief.md) first: it holds the pipeline, the
 architecture, the decisions already made, and what has been proven or disproven.
