@@ -79,7 +79,14 @@ async function main() {
     for (const file of fs.readdirSync(path.join(ROOT, "release", "windows"))) {
       fs.copyFileSync(path.join(ROOT, "release", "windows", file), path.join(app, file));
     }
-    fs.copyFileSync(path.join(ROOT, "brand", "fabula-mark-256.png"), path.join(app, "fabula-mark.png"));
+    // The brand v2 slate: the PNG for the setup window's masthead, the ICO for its taskbar icon.
+    fs.copyFileSync(path.join(ROOT, "brand", "fabula-256.png"), path.join(app, "fabula-mark.png"));
+    fs.copyFileSync(path.join(ROOT, "brand", "fabula.ico"), path.join(app, "fabula.ico"));
+    // The brand faces for the setup window (setup.css), with their licences.
+    fs.mkdirSync(path.join(app, "fonts"), { recursive: true });
+    for (const file of fs.readdirSync(path.join(ROOT, "renderer", "brand", "fonts")).filter((name) => /\.(woff2|txt)$/.test(name))) {
+      fs.copyFileSync(path.join(ROOT, "renderer", "brand", "fonts", file), path.join(app, "fonts", file));
+    }
     fs.writeFileSync(path.join(app, "package.json"), `${JSON.stringify({
       // The editor's name, so the bootstrap and the editor it loads keep one settings folder.
       name: pkg.name, productName: "Fabula", version: VERSION, main: "bootstrap.cjs", private: true,

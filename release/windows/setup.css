@@ -1,46 +1,70 @@
+/* The Windows setup window, in brand v2 like the editor it sets up (docs/brand/README.md): the
+   family neutrals in dark and light, following the system; coral from the fabula tokens; opaque
+   objects with an ink outline and a hard extrusion; Fraunces for the name and the title,
+   Commissioner for the rest, Spline Sans Mono for the log. The release bundle carries the brand
+   fonts in fonts/ (scripts/package-release.mjs); run from the checkout they fall back to Segoe. */
+
+@font-face { font-family: "Instrumenta Commissioner"; font-style: oblique 0deg 12deg; font-weight: 100 900; src: url("fonts/commissioner-oblique-latin.woff2") format("woff2"); }
+@font-face { font-family: "Instrumenta Fraunces"; font-style: normal; font-weight: 100 900; src: url("fonts/fraunces-normal-latin.woff2") format("woff2"); }
+@font-face { font-family: "Instrumenta Spline Sans Mono"; font-style: normal; font-weight: 300 700; src: url("fonts/spline-sans-mono-normal-latin.woff2") format("woff2"); }
+
 :root {
-  --paper: #faf9f5;
-  --ink: #1f1e1d;
-  --text: #2b2a28;
-  --dim: #6b6862;
-  --line: #e5e1d8;
-  --accent: #e95087;
-  --accent-strong: #c92a64;
-  --accent-ink: #a8265a;
-  --good: #2f7d4f;
-  --bad: #b42318;
+  color-scheme: light dark;
+  --display: "Instrumenta Fraunces", Georgia, serif;
+  --ui: "Instrumenta Commissioner", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --mono: "Instrumenta Spline Sans Mono", "Cascadia Mono", Consolas, monospace;
+  --bar: light-dark(#faf7f2, #141210);
+  --paper: light-dark(#ffffff, #1d1a17);
+  --field: light-dark(#f7f3ed, #171512);
+  --card: light-dark(#ffffff, #26221e);
+  --card-hover: light-dark(#f3ede4, #302b26);
+  --line: light-dark(#e1d9ce, #352f29);
+  --line-strong: light-dark(#bfb5a8, #4d443b);
+  --outline: light-dark(#2b2620, #0d0c0a);
+  --extrude: light-dark(#2b2620, #070605);
+  --ink: light-dark(#1c1916, #f2ede6);
+  --dim: light-dark(#5c544c, #a39a90);
+  --accent: #ed7088;
+  --accent-on: #230f12;
+  --accent-deep: #7d2e3f;
+  --accent-text: light-dark(#7d2e3f, #ed7088);
+  --good: light-dark(#21763c, #67d283);
+  --bad: light-dark(#a14206, #f28c5c);
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; font-variation-settings: "FLAR" 40; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--paper); color: var(--text); font: 15px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; display: flex; flex-direction: column; }
-.masthead { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 20px; background: var(--ink); color: #f0ede6; }
-.masthead .mark { width: 40px; height: 40px; margin: -4px -4px -4px -8px; }
-.masthead .name { font: italic 600 20px/1 Georgia, "Times New Roman", serif; letter-spacing: 0.01em; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--ui); display: flex; flex-direction: column; }
+.masthead { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 20px; background: var(--bar); border-bottom: 2px solid var(--outline); }
+.masthead .mark { width: 34px; height: 34px; }
+.masthead .name, h1 { font-family: var(--display); font-weight: 650; font-variation-settings: "SOFT" 100, "WONK" 1; }
+.masthead .name { font-size: 22px; line-height: 1; }
 main { flex: 1; display: flex; flex-direction: column; padding: 28px 36px 24px; max-width: 720px; width: 100%; margin: 0 auto; }
-h1 { font: 600 24px/1.25 Georgia, "Times New Roman", serif; margin: 0 0 10px; color: var(--ink); }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 10px; }
 .lede { margin: 0 0 22px; color: var(--dim); }
-.checks { list-style: none; margin: 0 0 22px; padding: 0; border-top: 1px solid var(--line); }
-.checks li { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px solid var(--line); }
-.checks .what { flex: 1; }
+.checks { list-style: none; margin: 0 0 22px; padding: 0; border-top: 2px solid var(--line); }
+.checks li { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 2px solid var(--line); }
+.checks .what { flex: 1; font-weight: 600; }
 .checks .state { color: var(--dim); font-size: 14px; }
-.mark-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.mark-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line); border: 2px solid var(--outline); flex: none; }
 li.is-good .mark-dot { background: var(--good); }
 li.is-bad .mark-dot { background: var(--bad); }
-li.is-busy .mark-dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: 0.35; } }
+li.is-busy .mark-dot { background: var(--accent); }
 .progress { margin: 0 0 18px; }
-.bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ff8f5a); transition: width 400ms ease; }
-.step { margin: 10px 0 8px; font-weight: 600; color: var(--ink); }
-details summary { cursor: pointer; color: var(--accent-ink); font-size: 14px; }
-pre { margin: 8px 0 0; max-height: 170px; overflow: auto; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; color: var(--dim); }
-.message { margin: 0 0 18px; padding: 12px 14px; border-radius: 8px; background: #fff; border: 1px solid var(--line); }
-.message.is-bad { border-color: color-mix(in srgb, var(--bad) 40%, transparent); color: var(--bad); }
-.message.is-good { border-color: color-mix(in srgb, var(--good) 40%, transparent); color: var(--good); }
-.actions { margin-top: auto; display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; }
-button { font: inherit; font-size: 14px; border-radius: 8px; padding: 9px 18px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--text); }
-button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
-button.primary:hover:not(:disabled) { background: #b8245a; }
-button:disabled { opacity: 0.5; cursor: default; }
-button.ghost:hover { border-color: #cfc9bd; }
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bar { height: 12px; border-radius: 999px; background: var(--field); border: 2px solid var(--outline); overflow: hidden; }
+.fill { height: 100%; width: 0; background: var(--accent); transition: width 400ms ease; }
+.step { margin: 10px 0 8px; font-weight: 650; color: var(--ink); }
+details summary { cursor: pointer; color: var(--accent-text); font-size: 14px; font-weight: 600; }
+pre { margin: 8px 0 0; max-height: 170px; overflow: auto; padding: 10px 12px; background: var(--field); border: 2px solid var(--line); border-radius: 8px; font: 12px/1.5 var(--mono); white-space: pre-wrap; color: var(--dim); }
+.message { margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; background: var(--card); border: 2px solid var(--line); }
+.message.is-bad { border-color: var(--bad); color: var(--bad); }
+.message.is-good { border-color: var(--good); color: var(--good); }
+.actions { margin-top: auto; display: flex; justify-content: flex-end; gap: 12px; padding-top: 12px; }
+button { font: inherit; font-size: 14px; font-weight: 650; border-radius: 10px; min-height: 38px; padding: 0 18px; cursor: pointer; border: 2px solid var(--outline); background: var(--card); color: var(--ink); box-shadow: 3px 4px 0 var(--extrude); transition: transform .08s ease, box-shadow .08s ease; }
+button:not(:disabled):hover { background: var(--card-hover); }
+button:not(:disabled):active { transform: translate(3px, 4px); box-shadow: 0 0 0 var(--extrude); }
+button.primary { background: var(--accent); border-color: var(--accent-on); color: var(--accent-on); box-shadow: 3px 4px 0 var(--accent-deep); font-weight: 700; }
+button.primary:not(:disabled):hover { background: var(--accent); filter: brightness(1.06); }
+button.ghost { border-color: transparent; background: none; box-shadow: none; }
+button:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+button:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .fill, button { transition: none; } }

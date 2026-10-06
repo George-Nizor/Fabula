@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("fabula", {
   version: "0.1.0",
   platform: process.platform,
   getState: () => ipcRenderer.invoke("fabula:get-state"),
+  setChromeTheme: (theme) => ipcRenderer.invoke("fabula:set-chrome-theme", theme),
   assistantOptions: () => ipcRenderer.invoke("fabula:assistant-options"),
   assistantStatus: () => ipcRenderer.invoke("fabula:assistant-status"),
   assistantStart: (choice, size) => ipcRenderer.invoke("fabula:assistant-start", choice, size),

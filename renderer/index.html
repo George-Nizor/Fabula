@@ -4,7 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fabula</title>
+  <link rel="icon" href="brand/fabula.svg" type="image/svg+xml" />
+  <script src="theme-boot.js"></script>
+  <!-- The film's faces (the look system, content) and the window's own (brand v2, chrome). -->
   <link rel="stylesheet" href="fonts.css" />
+  <link rel="stylesheet" href="brand/chrome-fonts.css" />
+  <link rel="stylesheet" href="brand/instrumenta-icons.css" />
+  <link rel="stylesheet" href="brand-icons/fabula-icons.css" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="overlays.css" />
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
@@ -13,18 +19,18 @@
   <header class="topbar" id="topbar">
     <!-- The mark is the way home: every project is one click from here, and
          the open one is named in the window title and the inspector only. -->
-    <button type="button" class="brand" id="go-home" title="All projects (Ctrl+W)">
-      <img class="brand-mark" src="assets/fabula-mark.png" alt="" />
+    <button type="button" class="brand ii-hover" id="go-home" title="All projects (Ctrl+W)">
+      <span class="brand-mark" id="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">Fabula</span>
     </button>
     <nav class="stages" id="stages" hidden>
-      <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum">1</span>Cut</button>
-      <button type="button" class="stagebtn" id="tab-look"><span class="stepnum">2</span>Look</button>
-      <button type="button" class="stagebtn" id="tab-scenes" disabled><span class="stepnum">3</span>Scenes</button>
-      <button type="button" class="stagebtn" id="tab-export"><span class="stepnum">4</span>Export</button>
+      <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum" data-step-icon="scissors"></span>Cut</button>
+      <button type="button" class="stagebtn" id="tab-look"><span class="stepnum" data-step-icon="palette"></span>Look</button>
+      <button type="button" class="stagebtn" id="tab-scenes" disabled><span class="stepnum" data-step-icon="scenes"></span>Scenes</button>
+      <button type="button" class="stagebtn" id="tab-export"><span class="stepnum" data-step-icon="reel"></span>Export</button>
     </nav>
     <div class="progress" id="progress" role="button" tabindex="0" title="The Export step has the jobs and their logs" hidden>
-      <span class="pulse"></span>
+      <span class="pulse" id="progress-icon" aria-hidden="true"></span>
       <span class="progress-label" id="progress-label"></span>
       <span class="progress-detail" id="progress-detail"></span>
       <span class="progress-clock" id="progress-clock"></span>
@@ -35,20 +41,13 @@
     </div>
     <div class="panel-toggles">
       <button type="button" class="assistantbtn" id="open-assistant" title="Claude Code or Codex, in a pane in this window">
-        <svg class="assistantbtn-mark" width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 2.6l1.9 5.1a4 4 0 0 0 2.4 2.4l5.1 1.9-5.1 1.9a4 4 0 0 0-2.4 2.4L12 21.4l-1.9-5.1a4 4 0 0 0-2.4-2.4L2.6 12l5.1-1.9a4 4 0 0 0 2.4-2.4z" fill="currentColor"></path>
-          <circle cx="19.5" cy="4.5" r="1.9" fill="currentColor" opacity="0.75"></circle>
-          <circle cx="4.6" cy="19.4" r="1.3" fill="currentColor" opacity="0.55"></circle>
-        </svg>
+        <span class="assistantbtn-mark" data-icon="spark" data-size="22"></span>
         <span class="assistantbtn-label">Assistant</span>
         <span class="assistantbtn-dot" id="assistant-dot" hidden></span>
       </button>
-      <button type="button" class="panelbtn is-on" id="toggle-rail" title="Transcript panel" aria-label="Transcript panel" hidden>
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg>
-      </button>
-      <button type="button" class="panelbtn is-on" id="toggle-insp" title="Inspector panel" aria-label="Inspector panel" hidden>
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M10 2.5v11"></path></svg>
-      </button>
+      <button type="button" class="panelbtn is-on" id="toggle-rail" title="Transcript panel" aria-label="Transcript panel" hidden><span data-icon="panelLeft" data-size="18"></span></button>
+      <button type="button" class="panelbtn is-on" id="toggle-insp" title="Inspector panel" aria-label="Inspector panel" hidden><span data-icon="panelRight" data-size="18"></span></button>
+      <button type="button" class="panelbtn" id="theme-toggle" aria-label="Theme"></button>
     </div>
   </header>
 
@@ -56,7 +55,7 @@
   <section class="home" id="home" hidden>
     <div class="home-head">
       <h2 id="home-projects-title">Projects</h2>
-      <button type="button" class="button is-primary" id="home-new">New project…</button>
+      <button type="button" class="button is-primary" id="home-new" data-icon="camera">New project…</button>
     </div>
     <div class="projects-where">
       <span class="projects-where-label">Stored in</span>
@@ -65,17 +64,21 @@
       <button type="button" class="linkbtn" id="home-root-default" hidden>Use the default</button>
     </div>
     <ul class="projects-list" id="home-projects-list"></ul>
-    <p class="projects-empty" id="home-projects-empty" hidden>No projects yet.</p>
+    <div class="projects-empty is-first" id="home-projects-empty" hidden>
+      <span class="empty-mark" id="home-empty-mark" aria-hidden="true"></span>
+      <b>No films yet</b>
+      <span>Start with a recording of someone talking: New project, or drop the file anywhere on this window.</span>
+    </div>
     <p class="projects-status" id="home-status"></p>
   </section>
 
   <!-- A project is open but has no transcript yet: the assistant's first pass is next. -->
   <section class="empty" id="empty" hidden>
-    <img class="empty-mark" src="assets/fabula-mark.png" alt="" />
+    <span class="empty-mark" id="empty-mark" aria-hidden="true"></span>
     <h2 id="empty-line"></h2>
     <p class="hint" id="empty-hint"></p>
     <div class="empty-actions">
-      <button type="button" class="button is-primary" id="empty-firstpass">Run the first pass</button>
+      <button type="button" class="button is-primary" id="empty-firstpass" data-icon="spark">Run the first pass</button>
       <button type="button" class="button is-quiet" id="empty-close">Back to projects</button>
     </div>
   </section>
@@ -87,11 +90,9 @@
         <b id="assistant-title">Assistant</b>
         <span id="assistant-sub"></span>
       </div>
-      <button type="button" class="insp-mini" id="assistant-stop" hidden>Stop</button>
-      <button type="button" class="insp-mini" id="assistant-again" hidden>Start</button>
-      <button type="button" class="panelbtn" id="assistant-hide" title="Hide the assistant pane" aria-label="Hide the assistant pane">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8"></path></svg>
-      </button>
+      <button type="button" class="insp-mini" id="assistant-stop" data-icon="stop" hidden>Stop</button>
+      <button type="button" class="insp-mini" id="assistant-again" data-icon="spark" hidden>Start</button>
+      <button type="button" class="panelbtn" id="assistant-hide" title="Hide the assistant pane" aria-label="Hide the assistant pane"><span data-icon="close" data-size="18"></span></button>
     </header>
     <div class="assistant-term" id="assistant-term"></div>
   </aside>
@@ -173,7 +174,7 @@
       <footer class="sheet-foot">
         <span class="projects-status" id="assistant-status"></span>
         <button type="button" class="button is-quiet" id="assistant-cancel">Cancel</button>
-        <button type="submit" class="button is-primary" id="assistant-start">Start</button>
+        <button type="submit" class="button is-primary" id="assistant-start" data-icon="spark">Start</button>
       </footer>
     </form>
   </dialog>
@@ -235,7 +236,7 @@
       <footer class="sheet-foot">
         <span class="projects-status" id="dir-status">Renders a draft when it is done.</span>
         <button type="button" class="button is-quiet" id="dir-cancel">Cancel</button>
-        <button type="submit" class="button is-hero" id="dir-start">Make the video</button>
+        <button type="submit" class="button is-hero" id="dir-start" data-icon="wand">Make the video</button>
       </footer>
     </form>
   </dialog>
@@ -252,7 +253,7 @@
     </header>
     <ul class="projects-list is-full" id="projects-list"></ul>
     <footer class="projects-foot">
-      <button type="button" class="button" id="projects-new">New project…</button>
+      <button type="button" class="button" id="projects-new" data-icon="camera">New project…</button>
       <button type="button" class="button is-quiet" id="projects-close-project">Close project</button>
       <span class="projects-status" id="projects-status"></span>
       <button type="button" class="button is-quiet" id="projects-dismiss">Done</button>
@@ -296,6 +297,7 @@
              treatment as the assistant writes it, and the draft when it lands. -->
         <div class="insp-section insp-making" id="insp-making" hidden>
           <div class="making-head">
+            <span class="making-slate" id="making-slate" aria-hidden="true"></span>
             <b id="making-title">Making the video</b>
             <span class="making-chip" id="making-latitude"></span>
             <span class="making-clock" id="making-clock"></span>
@@ -311,8 +313,8 @@
             <button type="button" class="button is-small" id="making-waiting-act"></button>
           </div>
           <div class="making-draft" id="making-draft" hidden>
-            <button type="button" class="button is-primary is-small" id="making-watch">Watch the draft</button>
-            <button type="button" class="button is-small" id="making-render" title="The real render, at full size, starts in the Export step">Render the film…</button>
+            <button type="button" class="button is-primary is-small" id="making-watch" data-icon="play">Watch the draft</button>
+            <button type="button" class="button is-small" id="making-render" data-icon="reel" title="The real render, at full size, starts in the Export step">Render the film…</button>
             <span class="insp-status" id="making-draft-note"></span>
           </div>
           <div class="making-foot">
@@ -338,15 +340,15 @@
           <div class="insp-kv"><span>Selected</span><b id="sel-summary"></b></div>
           <p class="insp-selected" id="sel-text"></p>
           <div class="insp-actions">
-            <button type="button" class="insp-mini is-strong" id="sel-cut">Cut selection</button>
-            <button type="button" class="insp-mini is-strong" id="sel-keep" hidden>Keep selection</button>
+            <button type="button" class="insp-mini is-strong" id="sel-cut" data-icon="scissors">Cut selection</button>
+            <button type="button" class="insp-mini is-strong" id="sel-keep" data-icon="done" hidden>Keep selection</button>
             <button type="button" class="insp-mini" id="sel-clear">Clear</button>
           </div>
         </div>
         <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-actions insp-undo" id="insp-undo-wrap" hidden>
           <span class="insp-status" id="insp-undo-text"></span>
-          <button type="button" class="insp-mini" id="insp-undo">Undo</button>
+          <button type="button" class="insp-mini" id="insp-undo" data-icon="undo">Undo</button>
         </div>
         <details class="insp-details insp-keys-wrap">
         <summary>Keys</summary>
@@ -374,7 +376,7 @@
           <textarea id="insert-note" rows="3" placeholder="What should go here instead."></textarea>
         </label>
         <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insert-note-send">Send</button>
+          <button type="button" class="insp-mini" id="insert-note-send" data-icon="send">Send</button>
           <button type="button" class="insp-mini" id="insert-close">Deselect</button>
           <span class="insp-status" id="insert-status"></span>
         </div>
@@ -476,8 +478,8 @@
           <button type="button" class="insp-mini is-nudge" id="insp-end-fwd" title="One word later">+</button>
         </div>
         <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insp-duplicate">Duplicate</button>
-          <button type="button" class="insp-mini is-danger" id="insp-remove">Remove</button>
+          <button type="button" class="insp-mini" id="insp-duplicate" data-icon="copy">Duplicate</button>
+          <button type="button" class="insp-mini is-danger" id="insp-remove" data-icon="trash">Remove</button>
           <button type="button" class="insp-mini" id="insp-close">Deselect</button>
         </div>
         <span class="insp-status" id="insp-status"></span>
@@ -489,7 +491,7 @@
           <textarea id="insp-note" rows="3" placeholder="What should change, in your words."></textarea>
         </label>
         <div class="insp-actions">
-          <button type="button" class="insp-mini" id="insp-note-send">Send</button>
+          <button type="button" class="insp-mini" id="insp-note-send" data-icon="send">Send</button>
           <span class="insp-status" id="insp-note-status"></span>
         </div>
       </div>
@@ -507,8 +509,8 @@
       <div class="rail-label">Presets</div>
       <div class="gallery" id="look-presets"></div>
       <div class="insp-actions">
-        <button type="button" class="button is-small" id="look-save">Save as brand…</button>
-        <button type="button" class="insp-mini" id="look-reset">Reset to preset</button>
+        <button type="button" class="button is-small" id="look-save" data-icon="badge">Save as brand…</button>
+        <button type="button" class="insp-mini" id="look-reset" data-icon="undo">Reset to preset</button>
         <span class="insp-status" id="look-status"></span>
       </div>
       <div class="rail-label">Titles<small>How a title arrives</small></div>
@@ -607,7 +609,7 @@
     <div class="dock-grip" id="dock-grip" title="Drag to make the timeline taller" role="separator" aria-label="Resize the timeline"><span></span></div>
     <div class="transport">
       <button id="playpause" type="button" class="playbtn" aria-label="Play">
-        <svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 1.5v9l7-4.5z" fill="currentColor"></path></svg>
+        <span data-icon="playSolid" data-size="18"></span>
       </button>
       <span class="time"><b id="time-now">0:00.0</b><span class="time-sep" id="time-sep"> · </span><span id="time-total"></span></span>
       <label class="toggle" id="skipwrap"><input type="checkbox" id="skipcuts" checked /> Skip cuts</label>
@@ -621,9 +623,9 @@
         </span>
       </span>
       <span class="zoomctl" id="zoomctl">
-        <button type="button" class="zoombtn" id="zoom-out" title="Zoom out · ctrl + wheel over the timeline" aria-label="Zoom out">−</button>
+        <button type="button" class="zoombtn" id="zoom-out" title="Zoom out · ctrl + wheel over the timeline" aria-label="Zoom out"><span data-icon="minus" data-size="16"></span></button>
         <span class="zoom-level" id="zoom-level" title="How much of the film the timeline shows">all</span>
-        <button type="button" class="zoombtn" id="zoom-in" title="Zoom in · ctrl + wheel over the timeline" aria-label="Zoom in">+</button>
+        <button type="button" class="zoombtn" id="zoom-in" title="Zoom in · ctrl + wheel over the timeline" aria-label="Zoom in"><span data-icon="add" data-size="16"></span></button>
         <button type="button" class="insp-mini" id="zoom-fit" title="Show the whole film">Fit</button>
       </span>
       <span class="transport-note" id="transport-note"></span>
@@ -640,10 +642,12 @@
     </div>
   </footer>
 
-  <div class="dropzone" id="dropzone" hidden><div class="dropzone-card">Drop to start a project</div></div>
+  <div class="dropzone" id="dropzone" hidden><div class="dropzone-card"><span data-icon="camera" data-size="64"></span><span class="dropzone-text" id="dropzone-text">Drop to start a project</span></div></div>
 
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="brand/instrumenta-icons.js"></script>
+  <script src="brand-icons/fabula-icons.js"></script>
   <script src="overlays.js"></script>
   <script src="main.js"></script>
 </body>

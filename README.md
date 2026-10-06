@@ -1,6 +1,10 @@
 # Fabula
 
-Raw footage in. A told story out.
+![Fabula banner](docs/images/fabula-banner.png)
+
+<p align="center"><img src="docs/brand/fabula-animated.svg" alt="Fabula slate" width="96" /></p>
+
+Cut a talking-head video by its words, then let Claude Code or Codex make it into a film.
 
 Fabula is a transcript-driven talking-head video editor: it transcribes a recording locally
 (WhisperX on CUDA), proposes cuts for dead air, fillers, and false starts, lets you review every
@@ -9,6 +13,13 @@ speaker — layouts that move the head around the frame, named graphics, and mot
 assistant writes as code for the moments that have to move — with your choice of Claude Code or
 Codex as the editor, using your existing subscription. One button, **Make it into a video**,
 takes a reviewed cut to a draft film from a short brief.
+
+<p align="center">
+  <img src="docs/images/fabula-look-dark.png" alt="The Look step in the dark theme: preset cards, each drawn by the film's own painter" width="49%" />
+  <img src="docs/images/fabula-export-light.png" alt="The Export step in the light theme: the film, the clean cut, shorts and files" width="49%" />
+</p>
+
+The window follows the system's dark or light; the sun, moon or screen at the top right pins one.
 
 ## Projects
 
@@ -257,14 +268,20 @@ It writes the home screen, the Assistant sheet and, with a project named, the op
 Export step as PNGs, then quits (`FABULA_SNAPSHOT_LOOK=<gallery id>` adds a Look gallery,
 `FABULA_SNAPSHOT_SCENE=<index>` a scene's inspector, `FABULA_SNAPSHOT_EVAL=<js>` an answer from the
 page). For any other view, `FABULA_SNAPSHOT_SCRIPT=<file.json>` names a list of steps, each
-`{ "size": [w, h], "run": "<js>", "wait": ms, "shot": "name", "print": "label" }` with every key
-optional, applied in that order — click a tab, open an inspector, resize, photograph. Give the run
+`{ "size": [w, h], "media": [{ "name", "value" }], "run": "<js>", "print": "label", "key": "Tab",
+"wait": ms, "shot": "name" }` with every key optional, applied in that order (`media` emulates a media
+feature such as `prefers-reduced-motion`; `key` presses a key as a keyboard would) — click a tab, open an inspector, resize, photograph. Give the run
 its own `FABULA_PROJECTS_ROOT` (a copy of the projects to look at): opening a project moves the
 root's open-project pointer, and the person's own root should not move under them. An
 `ELECTRON_RUN_AS_NODE` left in the shell by an assistant session makes Electron refuse its own
 switches ("bad option"); unset it for the launch. `scripts/probe-templates.cjs`, run the same way, renders every template in both shapes
 through the export page and tiles them into two sheets under `out/template-probe/` — run it after
 touching `core/templates.mjs` or the painter, and look.
+
+`node test-tools/screenshots/shoot.mjs` does all of that for the brand: every main screen of the
+window in dark and light, over a copy of three projects, with a contrast and a reduced-motion
+check ([`test-tools/screenshots/README.md`](test-tools/screenshots/README.md)). The window's look
+is written down in [`docs/brand/README.md`](docs/brand/README.md).
 
 ```bash
 npm install
@@ -273,4 +290,11 @@ npm run setup:tools   # static ffmpeg + WhisperX venv, no sudo
 npm start             # Electron shell
 ```
 
-Part of the [Instrumenta workspace](../README.md), registered in the launcher catalog as `fabula`.
+## Family
+
+Fabula is part of [Instrumenta](https://github.com/George-Nizor/Instrumenta), made by Bonehead
+Labs, and registered in its launcher as `fabula`. It follows the Instrumenta brand v2: a coral
+clapperboard whose slate holds transcript lines, drawn as a freestanding object
+([`docs/brand/README.md`](docs/brand/README.md)). The interface type (Fraunces, Commissioner,
+Spline Sans Mono) is SIL OFL 1.1, vendored in `renderer/brand/fonts` with its licences; the faces
+a film is set in are the look system's own, in `renderer/assets/fonts`. Licence: MIT (`package.json`).
