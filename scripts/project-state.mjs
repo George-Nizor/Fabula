@@ -9,6 +9,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { flattenWords } from "../core/cut-engine.mjs";
 import { resolveFormat, ceilingOf, validateFormat } from "../core/formats.mjs";
+import { motionLibsOf } from "../core/motion.mjs";
 import {
   REPO_ROOT,
   measureLoudness,
@@ -19,23 +20,33 @@ import {
   startJob,
 } from "./pipeline.mjs";
 
-export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean"];
+// The floor ffmpeg measures for silence sits near -70 LUFS.
+export const SILENT_LUFS = -60;
+
+export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean", "motion_film"];
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
-// A motion document's identity is its content: a rewritten scene is a new
-// picture, so the window reloads its frame and the render's chunk identity
-// changes, while touching the file without changing it changes nothing.
-// Hashed once per size and mtime; the window asks every half second.
+// A motion document's identity is its content, and the content of the
+// project libraries it loads (motion/lib/): a rewritten scene, or a rewritten
+// library under it, is a new picture, so the window reloads its frame and the
+// render's chunk identity changes, while touching a file without changing it
+// changes nothing. Hashed once per size and mtime; the window asks every half
+// second.
 const motionStamps = new Map();
-export function motionStamp(dir, src) {
+export function motionStamp(dir, src, libs = []) {
   const file = path.join(dir, src);
   try {
-    const stat = fs.statSync(file);
-    const key = `${stat.size}:${stat.mtimeMs}`;
+    const doc = fs.readFileSync(file, "utf8");
+    const own = [...new Set([...libs, ...motionLibsOf(doc)])].filter((lib) => lib.startsWith("project:")).sort()
+      .flatMap((lib) => ["js", "css"].map((ext) => path.join(dir, "motion", "lib", `${lib.slice("project:".length)}.${ext}`)));
+    const parts = [file, ...own].map((part) => { try { const stat = fs.statSync(part); return `${stat.size}:${stat.mtimeMs}`; } catch { return "-"; } });
+    const key = parts.join("|");
     const hit = motionStamps.get(file);
     if (hit?.key === key) return hit.stamp;
-    const stamp = crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+    const hash = crypto.createHash("sha1").update(doc);
+    for (const part of own) { try { hash.update(part).update(fs.readFileSync(part)); } catch { /* an absent library is part of the identity too */ } }
+    const stamp = hash.digest("hex").slice(0, 16);
     motionStamps.set(file, { key, stamp });
     return stamp;
   } catch {
@@ -53,7 +64,7 @@ export function attachSceneMedia(dir, scenes, assetUrl) {
     const graphic = scene?.graphic;
     if (!graphic) continue;
     if (graphic.kind === "motion") {
-      scene.graphic = { ...graphic, stamp: motionStamp(dir, graphic.src) };
+      scene.graphic = { ...graphic, stamp: motionStamp(dir, graphic.src, graphic.libs ?? []) };
       continue;
     }
     if (graphic.src) graphic.url = assetUrl(graphic.src);
@@ -199,7 +210,9 @@ function voiceLoudness(dir, map, measure) {
   } else if (!current) return {};
   if (typeof audio.voiceLoudness !== "number") return {};
   const out = { voiceLoudness: audio.voiceLoudness };
-  if (audio.voiceLoudness < -24) {
+  // Under -60 LUFS there is no voice to level: a motion film without a
+  // narration is silence until its music comes in.
+  if (audio.voiceLoudness < -24 && audio.voiceLoudness > SILENT_LUFS) {
     const target = readComposeConfig(dir).audio?.voice?.loudness;
     out.voiceNote = typeof target === "number"
       ? `the voice measures ${audio.voiceLoudness} LUFS as recorded; the stitch brings it to the ${target} LUFS target already set`

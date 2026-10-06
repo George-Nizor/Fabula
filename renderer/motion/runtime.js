@@ -226,6 +226,20 @@
     });
   }
 
+  // What a document needs loaded, read from its scripts: THREE means three,
+  // gsap means GSAP, and "// fabula-libs: project:shapes" names the
+  // project's own. The same reading as core/motion.mjs motionLibsOf.
+  function libsOf(doc) {
+    const scripts = [...String(doc).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map((m) => m[1]).join("\n");
+    const out = [];
+    if (/\bTHREE\s*\./.test(scripts)) out.push("three");
+    if (/\bgsap\s*\./.test(scripts)) out.push("gsap");
+    for (const m of scripts.matchAll(/\/\/\s*fabula-libs:\s*([^\n]+)/g)) {
+      for (const name of m[1].split(/[\s,]+/)) if (/^(project:)?[a-z0-9][a-z0-9-]*$/.test(name)) out.push(name);
+    }
+    return out;
+  }
+
   let token = null;
   let loaded = null;
 
@@ -245,10 +259,20 @@
     applyTheme(context.theme);
     setVar("--t", 0);
     setVar("--p", 0);
-    // Libraries first, in the order named: Fabula's (three, gsap), then the
-    // project's own shared code under motion/lib/ (project:<name>), which
-    // may lean on them. A project library may bring a stylesheet beside it.
-    for (const lib of message.libs ?? []) {
+    let doc = "";
+    try {
+      const response = await fetch(`fabula-motion://project/${message.src}?v=${encodeURIComponent(message.stamp ?? "")}`);
+      if (!response.ok) throw new Error(`${message.src} is not in the project (write_motion writes it)`);
+      doc = await response.text();
+    } catch (error) {
+      report(error.message);
+    }
+    // Libraries first: those the placement names and those the document
+    // needs (core/motion.mjs motionLibsOf reads them the same way), Fabula's
+    // before the project's own, which may lean on them. A project library
+    // may bring a stylesheet beside it.
+    const wanted = [...new Set([...(message.libs ?? []), ...libsOf(doc)])].sort((a, b) => a.startsWith("project:") - b.startsWith("project:"));
+    for (const lib of wanted) {
       const own = /^project:([a-z0-9][a-z0-9-]*)$/.exec(lib);
       if (own) {
         const css = await fetch(`fabula-motion://project/motion/lib/${own[1]}.css`).catch(() => null);
@@ -262,14 +286,6 @@
         window.gsap.ticker.lagSmoothing(0);
         window.gsap.globalTimeline.pause();
       } catch (error) { report(error.message); }
-    }
-    let doc = "";
-    try {
-      const response = await fetch(`fabula-motion://project/${message.src}?v=${encodeURIComponent(message.stamp ?? "")}`);
-      if (!response.ok) throw new Error(`${message.src} is not in the project (write_motion writes it)`);
-      doc = await response.text();
-    } catch (error) {
-      report(error.message);
     }
     const parsed = new DOMParser().parseFromString(doc, "text/html");
     const scripts = [...parsed.querySelectorAll("script")];

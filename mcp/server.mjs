@@ -79,7 +79,7 @@ import { listSavedThemes, saveTheme, loadTheme } from "../scripts/theme-store.mj
 import { configuredProjectsRoot, configuredMusicRoot, engineProjectsRoot, writeMusicRoot } from "../scripts/settings.cjs";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
 import { validateDirection, directionBrief, describeDirection, directionRefusal, rulesFor, LATITUDE_IDS, LATITUDES } from "../core/direction.mjs";
-import { validateMotionDoc, describeMotion, MOTION_LIBS, MOTION_NAME_RE } from "../core/motion.mjs";
+import { validateMotionDoc, describeMotion, motionLibsOf, MOTION_LIBS, MOTION_NAME_RE, MOTION_LIB_NAME_RE } from "../core/motion.mjs";
 import { validateTreatment, describeTreatment } from "../core/treatment.mjs";
 
 // media/ beside the checkout, or the folder fabula.settings.json names; read
@@ -2196,11 +2196,15 @@ const treatmentSpan = {
   toWordId: z.number().int().min(0).optional(),
   from_word_id: z.number().int().min(0).optional().describe("the same as fromWordId"),
   to_word_id: z.number().int().min(0).optional(),
+  fromSeconds: z.number().min(0).optional().describe("motion: seconds on the film's clock, in place of the word ids"),
+  toSeconds: z.number().min(0).optional(),
+  from_seconds: z.number().min(0).optional(),
+  to_seconds: z.number().min(0).optional(),
 };
 
 server.registerTool("set_treatment", {
   description:
-    "Write the film's treatment before placing a scene: the logline (one sentence — what the film SAYS), who it is for, two or three candidate shapes and the one you chose (the first idea is usually the cliché), the signature moment (the one gesture only this film makes, where its turn lands, anchored to its words), and the beats in order — each a word span, what happens in the story, what the viewer sees, and where the head is (on, corner, side, split, band, gone). Plus the sound plan and the look in a line each. The window shows it to the person while you work, so write it for them. The recording cannot be reordered: beats run in its order. Replaces the previous treatment; get_treatment reads it back.",
+    "Write the film's treatment before placing a scene: the logline (one sentence — what the film SAYS), who it is for, two or three candidate shapes and the one you chose (the first idea is usually the cliché), the signature moment (the one gesture only this film makes, where its turn lands, anchored to its words), and the beats in order — each a word span, what happens in the story, what the viewer sees, and where the head is (on, corner, side, split, band, gone). Plus the sound plan and the look in a line each. For motion — a motion film, or a motion sequence in a recorded film — it is also the storyboard, written before any reel: the spine (the one continuity device), the held frame, the bans, and on each beat the words on screen verbatim (onScreen) and how it moves and hands over (motion); beats of a motion film may be placed in seconds. The window shows it to the person while you work, so write it for them. The recording cannot be reordered: beats run in its order. Replaces the previous treatment; get_treatment reads it back.",
   inputSchema: {
     logline: z.string().max(200),
     purpose: z.string().max(300).optional(),
@@ -2214,7 +2218,12 @@ server.registerTool("set_treatment", {
       beat: z.string().max(120).describe("What happens in the story here"),
       picture: z.string().max(200).optional().describe("What the viewer sees"),
       head: z.enum(["on", "corner", "side", "split", "band", "gone"]).optional().describe("Where the talking head is"),
+      onScreen: z.string().max(120).optional().describe("motion: the words on screen in this beat, verbatim"),
+      motion: z.string().max(200).optional().describe("motion: how it moves, and how it hands over to the next beat"),
     })).min(1).max(40),
+    spine: z.string().max(240).optional().describe("motion: the one continuity device the film keeps"),
+    hold: z.string().max(200).optional().describe("motion: the frame held still on purpose, and where"),
+    bans: z.array(z.string().max(80)).max(8).optional().describe("motion: what this film will not do"),
     sound: z.string().max(240).optional(),
     look: z.string().max(240).optional(),
   },
@@ -2332,6 +2341,9 @@ server.registerTool("write_motion", {
   const rules = rulesFor(readDirection(dir));
   if (rules.motion === "refused") throw new Error(`the person's direction is ${rules.label}: only the kit and the named templates, no motion scenes. Nothing was written.`);
   const { notes } = validateMotionDoc(html);
+  const available = motionLibsFor(dir);
+  const missing = motionLibsOf(html).filter((lib) => !available.includes(lib));
+  if (missing.length) throw new Error(`the document needs ${missing.join(", ")}, which ${missing.length === 1 ? "is" : "are"} not here (${available.join(", ") || "no libraries"}); write a project library with write_motion_lib first. Nothing was written.`);
   const src = `motion/${name}.html`;
   fs.mkdirSync(path.join(dir, "motion"), { recursive: true });
   const existed = fs.existsSync(path.join(dir, src));
@@ -2346,6 +2358,30 @@ server.registerTool("write_motion", {
   } catch (error) {
     return ok({ ...answer, sheet: null, errors: [error.message], hint: "Written, but it could not be drawn; the error says why." });
   }
+});
+
+server.registerTool("write_motion_lib", {
+  description:
+    "Write code every motion scene in the project can share — motion/lib/<name>.js (and optionally motion/lib/<name>.css): the film's shape system, its type scale, a drawn character, the camera rig, helpers. A scene loads it by naming it in a script comment, \"// fabula-libs: project:<name>\", or in its graphic's libs. It runs in the same sandbox under the same rules as a scene (no timers, network, storage or clock), before the scene's own scripts and after three/gsap; attach what it offers to window (window.shapes = { … }). This is how a long film stays one piece: the reels share the world they draw instead of each copying it. Writing it again replaces it, and every scene using it redraws.",
+  inputSchema: {
+    name: z.string().regex(MOTION_LIB_NAME_RE).describe("lowercase-with-dashes; the files are motion/lib/<name>.js and .css"),
+    js: z.string().min(1).max(200000).describe("The script"),
+    css: z.string().max(100000).optional().describe("Styles every scene using it gets"),
+  },
+}, async ({ name, js, css }) => {
+  const dir = currentProjectDir();
+  const rules = rulesFor(readDirection(dir));
+  if (rules.motion === "refused") throw new Error(`the person's direction is ${rules.label}: only the kit and the named templates, no motion scenes. Nothing was written.`);
+  if (/<\/script/i.test(js)) throw new Error("a motion library is a plain script, without <script> tags");
+  validateMotionDoc(`<style>${css ?? ""}</style><script>${js}</script><script>fabula.scene({})</script>`);
+  const lib = path.join(dir, "motion", "lib");
+  fs.mkdirSync(lib, { recursive: true });
+  writeTextAtomic(path.join(lib, `${name}.js`), js);
+  if (css !== undefined) writeTextAtomic(path.join(lib, `${name}.css`), css);
+  else fs.rmSync(path.join(lib, `${name}.css`), { force: true });
+  noteActivity(`motion/lib/${name}.js`);
+  const users = fs.readdirSync(path.join(dir, "motion")).filter((file) => file.endsWith(".html") && motionLibsOf(fs.readFileSync(path.join(dir, "motion", file), "utf8")).includes(`project:${name}`));
+  return ok({ lib: `project:${name}`, files: [`motion/lib/${name}.js`, ...(css !== undefined ? [`motion/lib/${name}.css`] : [])], usedBy: users.map((file) => `motion/${file}`), hint: users.length ? "preview_motion each scene using it to see the change" : `name it in a scene with a line "// fabula-libs: project:${name}"` });
 });
 
 server.registerTool("preview_motion", {

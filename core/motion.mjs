@@ -79,6 +79,22 @@ function documentParts(doc) {
   return { script: scripts.join("\n"), style: styles.join("\n"), attributes: attributes.join("\n"), tags: tags.join("\n") };
 }
 
+// The libraries a document needs, read from its scripts: THREE means three,
+// gsap means GSAP, and a line "// fabula-libs: project:shapes, three" names
+// any explicitly. The runtime loads these itself (renderer/motion/runtime.js
+// reads them the same way), so a scene works without its placement naming
+// them; the server checks each exists.
+export function motionLibsOf(doc) {
+  const scripts = [...String(doc).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map((m) => m[1]).join("\n");
+  const out = new Set();
+  if (/\bTHREE\s*\./.test(scripts)) out.add("three");
+  if (/\bgsap\s*\./.test(scripts)) out.add("gsap");
+  for (const m of scripts.matchAll(/\/\/\s*fabula-libs:\s*([^\n]+)/g)) {
+    for (const name of m[1].split(/[\s,]+/)) if (/^(project:)?[a-z0-9][a-z0-9-]*$/.test(name)) out.add(name);
+  }
+  return [...out];
+}
+
 // Checks a motion document as written. Throws the first refusal; returns the
 // notes worth hearing (nothing moves, a clock read) when it passes.
 export function validateMotionDoc(doc) {
