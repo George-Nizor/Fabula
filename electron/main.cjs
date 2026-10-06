@@ -892,12 +892,15 @@ async function snapshotWindow(window) {
     }
     // A script of steps, when one is given: FABULA_SNAPSHOT_SCRIPT names a
     // JSON list of { size: [w, h], run: js, wait: ms, shot: name, print:
-    // label, key: "Tab", shift }; each key is optional and they apply in that order. It is how
+    // label, key: "Tab", shift, media: [{ name, value }] }; each key is optional and they apply in
+    // that order (media straight after size). It is how
     // any view of the window is photographed without a new env var per view.
     if (process.env.FABULA_SNAPSHOT_SCRIPT) {
       const steps = JSON.parse(fs.readFileSync(process.env.FABULA_SNAPSHOT_SCRIPT, "utf8"));
       for (const step of steps) {
         if (step.size) { window.setSize(step.size[0], step.size[1]); await wait(400); }
+        // Emulated media features, e.g. [{ name: "prefers-reduced-motion", value: "reduce" }].
+        if (step.media) await contents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: step.media });
         if (step.run !== undefined) {
           const answer = await run(step.run);
           if (step.print) console.log(JSON.stringify({ step: step.print, answer }));

@@ -156,7 +156,7 @@ button, input, select, textarea { font-family: inherit; }
 }
 
 .mono, .time, .progress-clock, .making-clock, .export-clock, .export-file-meta, .clip-head,
-.zoom-level, .rail-find-count, .stat b, .insp-kv b, .insp-swatch-value, .tl-ruler, .gap, kbd {
+.zoom-level, .rail-find-count, .stat b, #sum-cuts, #sum-removed, .insp-swatch-value, .tl-ruler, .gap, kbd {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
