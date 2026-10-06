@@ -134,14 +134,18 @@ randomness it does not seed. It comes in three sizes:
 - **A sequence** inside a recorded film: twenty seconds to two minutes where a serious film (a
   documentary, an argument) stops showing the speaker and becomes motion graphics over its own
   sound.
-- **A motion film**, with no recording. `new_motion` starts one from a length or a narration (a
-  Luna voiceover, a read you recorded, any audio file, transcribed for its word timings). Fabula
-  makes a stand-in for the recording, so music, effects, captions and the render work as they do
-  for any film, and no camera ever shows.
+- **A motion film**, with no recording. In the window, **New project → Motion graphics** takes a
+  length or a narration (a Luna voiceover, a read you recorded, any audio file, transcribed for its
+  word timings), then a short brief, and **Make the motion graphic** starts the assistant on it.
+  Fabula makes a stand-in for the recording, so music, effects, captions and the render work as
+  they do for any film, and no camera ever shows. From a terminal, the assistant's `new_motion`
+  does the same:
 
 ```bash
 npm run assistant -- --provider claude --model claude-opus-5-5 --task motion
 ```
+
+Pick the model in the brief's **Made by** line; Opus draws more finely, and Sonnet is quicker.
 
 The `motion` task works the way the best motion graphics are made with models today:
 
@@ -161,8 +165,8 @@ three.js 0.186 ships with Fabula for scenes that need depth. The craft is in
 [`docs/craft/plans/an-orbit-is-a-fall`](docs/craft/plans/an-orbit-is-a-fall). The design and its
 sources are in [`docs/motion-graphics.md`](docs/motion-graphics.md).
 
-**Unfinished:** the window has no **New motion graphic** button yet. Start a motion film from the
-assistant for now. Luna voiceover is not wired in yet either; pass the narration as a file.
+**Unfinished:** Luna is not wired in yet; generate the voiceover in Luna and choose the file as
+the narration. The storyboard is shown as the treatment, but not yet as a page to approve.
 
 Read [`docs/product-brief.md`](docs/product-brief.md) first: it holds the pipeline, the
 architecture, the decisions already made, and what has been proven or disproven.

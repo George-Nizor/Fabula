@@ -36,6 +36,7 @@ const els = {
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
   goHome: $("go-home"),
   newProject: $("new-project"), newProjectForm: $("new-project-form"), newPath: $("new-path"), newChoose: $("new-choose"), newTitle: $("new-title"), newFormat: $("new-format"), newFormatNote: $("new-format-note"), newNote: $("new-note"), newStatus: $("new-status"), newCancel: $("new-cancel"), newCreate: $("new-create"),
+  newKind: $("new-kind"), newLede: $("new-lede"), newRecordingField: $("new-recording-field"), newMotionFields: $("new-motion-fields"), newSeconds: $("new-seconds"), newNarration: $("new-narration"), newNarrationChoose: $("new-narration-choose"),
   rename: $("rename"), renameForm: $("rename-form"), renameTitle: $("rename-title"), renameStatus: $("rename-status"), renameCancel: $("rename-cancel"),
   assistant: $("assistant"), assistantForm: $("assistant-form"), assistantModel: $("assistant-model"), assistantCustomWrap: $("assistant-custom-wrap"), assistantCustom: $("assistant-custom"),
   assistantEffort: $("assistant-effort"), assistantPersonas: $("assistant-personas"), assistantStatus: $("assistant-status"), assistantCancel: $("assistant-cancel"), assistantStart: $("assistant-start"),
@@ -916,6 +917,14 @@ const staleMap = (e) => Object.fromEntries((e?.stale ?? []).map((s) => [s.artifa
 const cleanState = (e) => (!e?.have?.clean ? "none" : staleMap(e)["clean.mp4"] || staleMap(e)["clean.json"] ? "stale" : "current");
 
 function cutCall() {
+  // A motion film has nothing to cut: its one call is the brief.
+  if (state?.kind === "motion") {
+    // Its own cutaway stage is there from the start; made means a graphic.
+    const made = (compose()?.scenes ?? []).some((scene) => scene.type === "graphic");
+    return made
+      ? { head: "The motion graphic is made", note: "Change it scene by scene in Scenes, or make it again from a new brief.", button: "Make it again…", task: "make", quiet: true }
+      : { head: "A motion graphic", note: "No recording and nothing to cut. The assistant storyboards it, draws it as code and renders a draft.", button: "Make the motion graphic…", task: "make", alt: true };
+  }
   const e = state?.export;
   const clean = cleanState(e);
   if (clean === "stale" && compose()) {
@@ -3018,14 +3027,40 @@ function setNewPath(file, suggestedTitle) {
 
 const slugPreview = (title) => title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "project";
 
+// Made from a recording, or motion graphics only: a motion film takes a
+// length or a narration where a recorded one takes its footage.
+let newNarrationPath = null;
+const chosenKind = () => els.newKind.querySelector("input:checked")?.value ?? "recording";
+
+function setNewNarration(file) {
+  newNarrationPath = file;
+  els.newNarration.textContent = file ? shortPath(file, 32) : els.newNarration.dataset.empty;
+  els.newNarration.title = file ?? "";
+  els.newNarration.classList.toggle("is-empty", !file);
+  els.newSeconds.disabled = Boolean(file);
+  renderNewNote();
+}
+
 function renderNewNote() {
   const title = els.newTitle.value.trim();
-  els.newNote.textContent = title && newProjectPath ? `Folder “${slugPreview(title)}” in ${shortPath(state?.projectsRoot?.local ?? "media", 52)}` : "";
+  const motion = chosenKind() === "motion";
+  els.newRecordingField.hidden = motion;
+  els.newMotionFields.hidden = !motion;
+  els.newLede.textContent = motion
+    ? "A film that is all motion graphics. Next, a short brief, and the assistant makes it."
+    : "The recording is not copied. Fabula writes what it makes to a folder of its own.";
+  els.newCreate.textContent = motion ? "Create and write the brief…" : "Create project";
+  const seconds = Number(els.newSeconds.value);
+  const timed = Boolean(newNarrationPath) || (seconds >= 3 && seconds <= 900);
+  const ready = Boolean(title) && (motion ? timed : Boolean(newProjectPath));
+  els.newNote.textContent = ready ? `Folder “${slugPreview(title)}” in ${shortPath(state?.projectsRoot?.local ?? "media", 52)}` : "";
   const format = (state?.formats ?? []).find((f) => f.id === chosenFormat());
-  els.newFormatNote.textContent = format?.shortForm
-    ? "The head is cropped to fill the tall frame; a band layout shows the whole recording where a crop would lose the moment."
-    : "";
-  els.newCreate.disabled = !(title && newProjectPath);
+  els.newFormatNote.textContent = motion
+    ? (newNarrationPath ? "The film runs as long as the narration, plus a second; its words time the animation." : "")
+    : format?.shortForm
+      ? "The head is cropped to fill the tall frame; a band layout shows the whole recording where a crop would lose the moment."
+      : "";
+  els.newCreate.disabled = !ready;
 }
 
 // The shape is chosen here and nowhere else in the life of a project: the
@@ -3046,9 +3081,13 @@ function renderFormatChoice(chosen = "landscape") {
 
 const chosenFormat = () => els.newFormat.querySelector("input:checked")?.value ?? "landscape";
 
-function openNewProject(file = null, suggestedTitle = null) {
+function openNewProject(file = null, suggestedTitle = null, kind = "recording") {
   els.newStatus.textContent = "";
   els.newTitle.value = "";
+  for (const radio of els.newKind.querySelectorAll("input")) radio.checked = radio.value === (file ? "recording" : kind);
+  els.newSeconds.value = "30";
+  newNarrationPath = null;
+  setNewNarration(null);
   renderFormatChoice();
   setNewPath(file, suggestedTitle);
   if (!els.newProject.open) els.newProject.showModal();
@@ -3061,9 +3100,24 @@ els.newChoose.addEventListener("click", async () => {
   if (picked.ok) { setNewPath(picked.path, picked.suggestedTitle); els.newTitle.focus(); els.newTitle.select(); }
 });
 els.newTitle.addEventListener("input", renderNewNote);
+els.newSeconds.addEventListener("input", renderNewNote);
+for (const radio of els.newKind.querySelectorAll("input")) radio.addEventListener("change", renderNewNote);
+els.newNarrationChoose.addEventListener("click", async () => {
+  const picked = await window.fabula.pickNarration();
+  if (picked.ok) setNewNarration(picked.path);
+});
 els.newCancel.addEventListener("click", () => els.newProject.close());
 els.newProjectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (chosenKind() === "motion") {
+    const made = await window.fabula.createMotion({ title: els.newTitle.value, format: chosenFormat(), seconds: Number(els.newSeconds.value), narration: newNarrationPath });
+    if (!made.ok) { els.newStatus.textContent = made.error; return; }
+    els.newProject.close();
+    // The brief comes straight after: a motion film has nothing to review
+    // before the assistant starts, so the window asks for it at once.
+    openDirection({ motion: true });
+    return;
+  }
   if (!newProjectPath) { els.newStatus.textContent = "Choose a recording first."; return; }
   const result = await window.fabula.createProject(newProjectPath, els.newTitle.value, chosenFormat());
   if (result.ok) els.newProject.close();
@@ -3316,7 +3370,18 @@ els.assistantHide.addEventListener("click", () => showAssistantPane(false));
 
 const LATITUDE_LABELS = { free: "Free hand", guided: "Guided", strict: "By the book" };
 
-async function openDirection() {
+// The same brief makes a motion film: no recording, the whole film motion
+// graphics, made by the motion task. Set when the sheet opens, because a
+// motion film just created may not have reached the window's state yet.
+let directionMotion = false;
+
+async function openDirection({ motion = state?.kind === "motion" } = {}) {
+  directionMotion = motion;
+  $("dir-title").textContent = motion ? "Make the motion graphic" : "Make it into a video";
+  $("dir-lede").textContent = motion
+    ? "The assistant storyboards it, draws every frame as code, checks and judges its own shots, and renders a draft for you to watch. Say what it is for and what it must show."
+    : "The assistant composes the whole film from this brief and renders a draft for you to watch. Anything it makes can be changed afterwards.";
+  setLabel(els.dirStart, motion ? "Make the motion graphic" : "Make the video");
   els.dirStatus.textContent = "Renders a draft when it is done.";
   els.dirStatus.classList.remove("is-error");
   const previous = state?.making?.direction ?? null;
@@ -3346,7 +3411,10 @@ async function openDirection() {
   els.dirMusic.checked = previous ? previous.music : Boolean(state?.format?.shortForm);
   els.dirEffects.checked = previous ? previous.effects : false;
   els.dirWeb.checked = previous ? previous.web : true;
-  const latitude = previous?.latitude ?? "guided";
+  // Motion graphics are the assistant's own design from the first frame:
+  // Free hand and music by default.
+  if (motion && !previous) { els.dirMusic.checked = true; els.dirEffects.checked = true; }
+  const latitude = previous?.latitude ?? (motion ? "free" : "guided");
   for (const radio of els.directionForm.querySelectorAll('input[name="latitude"]')) radio.checked = radio.value === latitude;
   els.dirPersona.value = state?.format?.shortForm ? "farmer" : "editor";
   // Which assistant makes it: the saved choice, folded under one line; the
@@ -3409,11 +3477,14 @@ els.directionForm.addEventListener("submit", async (event) => {
   // A clean-cut job that could not start (one already running) is not a
   // reason to stop: the assistant waits on whatever job is running.
   if (result.render && !result.render.ok) els.approveStatus.textContent = result.render.error;
+  const motion = directionMotion || result.motion === true;
   if (assistantRunning) {
     showAssistantPane(false);
-    window.fabula.assistantInput(`The person pressed Make it into a video in the window. Read their brief with get_direction and make the film now, following the make steps: treatment, look, scenes, motion, sound, review, a draft render — without stopping to ask.\r`);
+    window.fabula.assistantInput(motion
+      ? `The person started a motion film in the window. It is the open project; read their brief with get_direction and make it now, following the motion steps: read_craft motion and describe_motion, the storyboard, the look, the shared library, the reels with their checks and rounds, the sound, a draft render — without stopping to ask.\r`
+      : `The person pressed Make it into a video in the window. Read their brief with get_direction and make the film now, following the make steps: treatment, look, scenes, motion, sound, review, a draft render — without stopping to ask.\r`);
   } else {
-    const choice = { provider: els.dirProvider.value, model: els.dirModel.value, effort: els.dirEffort.value, task: "make", persona: brief.persona };
+    const choice = { provider: els.dirProvider.value, model: els.dirModel.value, effort: els.dirEffort.value, task: motion ? "motion" : "make", persona: brief.persona };
     const started = await startAssistant(choice);
     // The pane is the log, not the view: the Making panel is where the
     // person watches. A failed start stays open so the error is read.

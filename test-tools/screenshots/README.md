@@ -12,7 +12,7 @@ node test-tools/screenshots/shoot.mjs --themes light --only cut,export
 ```
 
 Screens, each as `<theme>-<name>.png`: `home`, `home-empty` (no projects at all),
-`dialog-new-project`, `dialog-projects`, `cut`, `look`, `look-galleries`, `scenes`,
+`dialog-new-project`, `dialog-new-motion` (the same sheet making a motion film), `dialog-projects`, `cut`, `look`, `look-galleries`, `scenes`,
 `scenes-inspector`, `export`, `dialog-assistant`, `dialog-rename`, `dialog-brand`, `dialog-brief`,
 `focus` (two Tab presses into the masthead, so the ring is the keyboard's), `making` (the Making
 panel of a film made with Make it into a video), `short-scenes` (a vertical short),

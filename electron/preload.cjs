@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("fabula", {
   pathForFile: (file) => webUtils.getPathForFile(file),
   pickRecording: () => ipcRenderer.invoke("fabula:pick-recording"),
   createProject: (sourcePath, title, format) => ipcRenderer.invoke("fabula:create-project", sourcePath, title, format),
+  pickNarration: () => ipcRenderer.invoke("fabula:pick-narration"),
+  createMotion: (spec) => ipcRenderer.invoke("fabula:create-motion", spec),
   renameProject: (name, title) => ipcRenderer.invoke("fabula:rename-project", name, title),
   suggestClips: (format) => ipcRenderer.invoke("fabula:suggest-clips", format),
   createShort: (clip) => ipcRenderer.invoke("fabula:create-short", clip),

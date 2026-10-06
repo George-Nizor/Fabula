@@ -75,7 +75,8 @@ function steps(themeName, prefix, have) {
   const s = [{ size: [1440, 900] }, theme(themeName)];
   const shot = (name) => (!ONLY || ONLY.has(name) ? { shot: `${prefix}${name}` } : {});
   s.push({ wait: 800, ...shot("home") }, contrast("home"));
-  s.push({ run: click("home-new"), wait: 600, ...shot("dialog-new-project") }, closeDialogs);
+  s.push({ run: click("home-new"), wait: 600, ...shot("dialog-new-project") });
+  s.push({ run: js(`const r = document.querySelector('#new-kind input[value=motion]'); r.checked = true; r.dispatchEvent(new Event("change"));`), wait: 400, ...shot("dialog-new-motion") }, contrast("new motion"), closeDialogs);
   if (have.has(FILM)) {
     s.push(open(FILM), { run: click("tab-cut"), wait: 1500, ...shot("cut") }, contrast("cut"));
     s.push({ run: js(`document.querySelector(".word")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); document.querySelectorAll(".word")[6]?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));`), wait: 500 });

@@ -553,6 +553,9 @@ server.registerTool("new_motion", {
   writeProjectFormat(dir, format ?? DEFAULT_FORMAT);
   const name = narration ? takeNarration(dir, narration) : null;
   writeProjectKind(dir, "motion", { motion: { ...(name ? { narration: name, tail: tail_seconds ?? 1 } : { seconds }) } });
+  // Its stage from the start: a cutaway over the whole film (clamped to the
+  // film's real length when it is known; every plan write sets it again).
+  writeComposeConfig(dir, { scenes: filmStage([], name ? 3600 : seconds) });
   fs.writeFileSync(pointerFile(), JSON.stringify({ dir: projectName }, null, 2));
   answeredProject = projectName;
   launchJob(dir, jobSpec("motion", dir), RUNNER);

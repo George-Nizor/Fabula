@@ -205,9 +205,11 @@ function cleanDuration(cleanVideo, words) {
 // The motion documents one by one as well as their folder: write_motion
 // renames into the folder (the folder's time moves), but a document edited
 // in place by hand moves only its own time.
+// The motion documents and the project libraries they load (motion/lib/):
+// a rewritten library redraws every scene that uses it.
 function motionEntries(dir) {
-  try { return ["motion", ...fs.readdirSync(path.join(dir, "motion")).filter((name) => name.endsWith(".html")).sort().map((name) => path.join("motion", name))]; }
-  catch { return ["motion"]; }
+  const list = (sub, re) => { try { return fs.readdirSync(path.join(dir, ...sub)).filter((name) => re.test(name)).sort().map((name) => path.join(...sub, name)); } catch { return []; } };
+  return ["motion", ...list(["motion"], /\.html$/), path.join("motion", "lib"), ...list(["motion", "lib"], /\.(js|css)$/)];
 }
 
 function readCompose(dir) {
@@ -600,6 +602,9 @@ function readState() {
   const state = {
     project: path.basename(dir),
     title: meta.title || path.basename(dir),
+    // A motion film has no recording: no cut, no head, and its brief makes
+    // motion graphics (the motion task) instead of composing around a face.
+    kind: meta.kind === "motion" ? "motion" : "recording",
     format: format && { id: format.id, label: format.label, about: format.about, stage: format.stage, shortForm: format.shortForm, lengthRange: format.duration ?? null },
     derivedFrom: typeof meta.derivedFrom === "string" ? meta.derivedFrom : null,
     projects,
@@ -1094,6 +1099,56 @@ app.whenReady().then(() => {
     const file = picked.filePaths[0];
     return { ok: true, path: file, suggestedTitle: path.basename(file, path.extname(file)) };
   });
+  // A motion film's narration: a voiceover from Luna, a read the person
+  // recorded, any audio file.
+  ipcMain.handle("fabula:pick-narration", async (event) => {
+    const picked = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: "Choose a narration",
+      properties: ["openFile"],
+      filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "aac"] }],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true };
+    return { ok: true, path: picked.filePaths[0] };
+  });
+  // New motion graphic: a film with no recording, timed to a narration or a
+  // length. The project is made here the way the server's new_motion makes
+  // one, and the stand-in for its recording starts at once (job motion_film).
+  ipcMain.handle("fabula:create-motion", (event, spec) => {
+    if (!core) return { ok: false, error: "Still loading; try again in a moment." };
+    const ps = core.projectState;
+    const { title, format, seconds, narration } = spec && typeof spec === "object" ? spec : {};
+    let shown;
+    try { shown = ps.cleanTitle(title); } catch (error) { return { ok: false, error: error.message }; }
+    if (!narration && !(Number(seconds) >= 3 && Number(seconds) <= 900)) return { ok: false, error: "Give it a length between 3 and 900 seconds, or a narration." };
+    const name = ps.slugify(shown);
+    const dir = path.join(mediaRoot(), name);
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length) return { ok: false, error: `A project called “${shown}” already exists. Choose another name.` };
+    let narrationName = null;
+    if (narration) {
+      const ext = path.extname(String(narration)).toLowerCase();
+      if (!/^\.(wav|mp3|m4a|flac|ogg|aac)$/.test(ext)) return { ok: false, error: "A narration is a wav, mp3, m4a, flac, ogg or aac file." };
+      if (!fs.existsSync(narration)) return { ok: false, error: "That narration could not be found." };
+      narrationName = `narration${ext}`;
+    }
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      ps.writeProjectTitle(dir, shown);
+      ps.writeProjectFormat(dir, typeof format === "string" ? format : core.formats.DEFAULT_FORMAT);
+      if (narrationName) fs.copyFileSync(narration, path.join(dir, narrationName));
+      ps.writeProjectKind(dir, "motion", { motion: narrationName ? { narration: narrationName, tail: 1 } : { seconds: Number(seconds) } });
+      // Its stage from the start: a cutaway over the whole film, so the
+      // stand-in is never shown as a camera, even before there is a plan.
+      // (A narration's length is not known yet; the plan is clamped to the
+      // film, and every plan write sets the stage to its real length.)
+      writeJsonAtomic(path.join(dir, "compose.json"), { scenes: core.compose.filmStage([], narrationName ? 3600 : Number(seconds)) });
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+    fs.writeFileSync(pointerFile(), JSON.stringify({ dir: name }, null, 2));
+    const started = startRender("motion");
+    event.sender.send("fabula:state", readState());
+    return { ok: true, project: name, title: shown, ...(started.ok ? {} : { warning: started.error }) };
+  });
   ipcMain.handle("fabula:create-project", (event, sourcePath, title, format) => {
     if (typeof sourcePath !== "string") return { ok: false, error: "Choose a recording first." };
     const result = ingest(sourcePath, typeof title === "string" ? title : null, typeof format === "string" ? format : null);
@@ -1460,9 +1515,14 @@ app.whenReady().then(() => {
     try {
       fs.appendFileSync(path.join(dir, "activity.jsonl"), `${JSON.stringify({ at: direction.startedAt, tool: "make_video", mark: "start", startedAt: direction.startedAt, treatmentBefore, draftBefore })}\n`);
     } catch { /* the panel falls back to the clock */ }
-    const render = startRender("refresh");
+    // A motion film has nothing to cut: its stand-in is made once (and is
+    // usually ready by now); a recorded film's clean cut is refreshed.
+    const motionFilm = core.projectState.isMotionFilm(dir);
+    const render = motionFilm
+      ? (fs.existsSync(path.join(dir, "out", "clean.mp4")) || core.pipeline.runningJob(dir) ? { ok: true } : startRender("motion"))
+      : startRender("refresh");
     event.sender.send("fabula:state", readState());
-    return { ok: true, direction: core.direction.describeDirection(direction), render };
+    return { ok: true, direction: core.direction.describeDirection(direction), render, motion: motionFilm };
   });
 
   // The Export page: renders start here with the server's own job specs;

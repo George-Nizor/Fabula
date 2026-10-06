@@ -1,5 +1,15 @@
 # Fabula — product brief
 
+## New motion graphic in the window (2026-10-07, 0.3.1)
+
+**New project** asks what the film is made from: a recording, or motion graphics only. The
+motion form takes a length or a narration instead of footage; creating it starts the stand-in at
+once and opens the brief sheet in its motion form (Free hand, music and effects on), whose
+**Make the motion graphic** starts the assistant on the `motion` task with the model chosen in
+the sheet. A new motion film carries its full-length cutaway from the start, so the stand-in is
+never shown as a camera, and the Cut step says there is nothing to cut. Checked in the real
+window, dark and light, with every text run over WCAG AA.
+
 ## Motion graphics (2026-10-07, 0.3.0)
 
 The owner's ask: Fabula should make the kind of motion graphics people share from Claude, either as

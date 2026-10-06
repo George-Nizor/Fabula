@@ -139,15 +139,11 @@ Released in Fabula 0.3.0:
 
 ## What is left
 
-**Waiting on the window.** These touch `electron/main.cjs` and `renderer/main.js`, which the brand
-session is editing:
+**In the window** (0.3.1 added **New project → Motion graphics**: a length or a narration, then
+the brief sheet in its motion form, which starts the assistant on the `motion` task):
 
-- **New motion graphic** beside New video in the window. Its sheet takes a title, the shape, a
-  length or a narration file, and a brief. It then starts the assistant on the `motion` task.
 - **The storyboard gate.** The window shows the treatment's beats as a storyboard page. Under
   Guided, a sequence's storyboard waits for one click of approval before its reel is written.
-- The window re-reads a scene when a project library it uses changes (today it watches only the
-  scene documents).
 
 **After that:**
 

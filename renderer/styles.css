@@ -550,7 +550,7 @@ dialog.sheet::backdrop { background: var(--scrim); }
 
 .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--t-sm); color: var(--dim); font-weight: 600; }
 
-.field input[type="text"], .field select {
+.field :is(input[type="text"], input[type="number"]), .field select {
   font: inherit;
   font-size: var(--t-md);
   letter-spacing: 0;
@@ -563,9 +563,9 @@ dialog.sheet::backdrop { background: var(--scrim); }
   padding: 7px 10px;
 }
 
-.field input[type="text"]:hover, .field select:hover { border-color: var(--line-strong); }
-.field input[type="text"]:focus, .field select:focus { outline: none; border-color: var(--accent-text); }
-.field input[type="text"]:focus-visible, .field select:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.field :is(input[type="text"], input[type="number"]):hover, .field select:hover { border-color: var(--line-strong); }
+.field :is(input[type="text"], input[type="number"]):focus, .field select:focus { outline: none; border-color: var(--accent-text); }
+.field :is(input[type="text"], input[type="number"]):focus-visible, .field select:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
 
 .field-row { display: flex; gap: 8px; align-items: center; }
 
@@ -586,6 +586,10 @@ dialog.sheet::backdrop { background: var(--scrim); }
 }
 
 .field-path.is-empty { color: var(--dim); }
+
+/* New project, motion graphics: the length in seconds beside its unit. */
+#new-seconds { width: 7em; flex: none; }
+.field-unit { font-size: var(--t-sm); color: var(--dim); text-transform: none; letter-spacing: 0; font-weight: 400; }
 
 .sheet-form .field-note { margin: -6px 0 0; font-size: var(--t-sm); color: var(--dim); min-height: 1.2em; overflow-wrap: anywhere; }
 

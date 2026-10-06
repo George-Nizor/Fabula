@@ -12,7 +12,7 @@ const EFFORTS = {
   claude: ["low", "medium", "high", "xhigh", "max"],
 };
 
-const TASKS = ["compose", "make"];
+const TASKS = ["compose", "make", "motion"];
 const PERSONAS = ["editor", "farmer", "critic"];
 
 function choiceArgs({ provider, model, effort, task, persona } = {}) {
