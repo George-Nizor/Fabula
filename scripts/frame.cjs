@@ -79,6 +79,8 @@ async function motionSheet() {
     ...(Number.isInteger(seed) ? { seed } : {}),
     ...(flag("fade") === "false" ? { fade: false } : {}),
     ...(flag("over") === "true" ? { over: true } : {}),
+    // The check pass: the frame measures its own text after every draw.
+    ...(flag("check") === "false" ? {} : { check: true }),
   };
   const scenes = [{ type: "graphic", start: 0, end: seconds, graphic }];
   projectState.attachSceneMedia(projectDir, scenes, (rel) => pathToFileURL(path.join(projectDir, rel)).href);
@@ -115,6 +117,19 @@ async function motionSheet() {
   const instants = count === 1 ? [Number(flag("at") ?? seconds / 2)] : Array.from({ length: count }, (_, i) => Number(((seconds - 0.1) * (i + 0.5) / count).toFixed(2)));
   const tiles = [];
   let out = null;
+  // The check pass samples the scene far more densely than the sheet shows
+  // it — every fifth of a second, drawn but not photographed — because the
+  // faults it looks for (type crossing the edge mid-move, two lines passing
+  // through each other) live between the tiles.
+  const CHECK_STEP = 0.2;
+  if (graphic.check) {
+    const samples = Math.min(Math.ceil(seconds / CHECK_STEP), 300);
+    for (let i = 0; i < samples; i += 1) {
+      const t = Number(Math.min(i * CHECK_STEP + 0.05, seconds - 0.05).toFixed(3));
+      const layout = stageEngine.layoutAt(timeline, t, aspect, stage);
+      await contents.executeJavaScript(`__renderScene(${t}, ${JSON.stringify(layout)}, { headBlock: true })`);
+    }
+  }
   try {
     for (const [i, t] of instants.entries()) {
       const layout = stageEngine.layoutAt(timeline, t, aspect, stage);
@@ -148,8 +163,36 @@ async function motionSheet() {
   const sheets = fs.readdirSync(framesDir).filter((entry) => /^motion-.+\.png$/.test(entry)).map((entry) => ({ entry, at: fs.statSync(path.join(framesDir, entry)).mtimeMs })).sort((a, b) => b.at - a.at);
   for (const { entry } of sheets.slice(40)) fs.rmSync(path.join(framesDir, entry), { force: true });
   const errors = await contents.executeJavaScript("__motionErrors()");
-  console.log(JSON.stringify({ file: out, src, layout: layoutName, seconds, tiles: tiles.map(({ file, ...rest }) => rest), errors: errors?.[src] ?? [] }));
+  const checks = graphic.check ? summariseChecks((await contents.executeJavaScript("__motionChecks()"))?.[src] ?? [], CHECK_STEP, seconds) : undefined;
+  console.log(JSON.stringify({ file: out, src, layout: layoutName, seconds, tiles: tiles.map(({ file, ...rest }) => rest), errors: errors?.[src] ?? [], ...(checks ? { checks } : {}) }));
   app.quit();
+}
+
+// The check pass's frames, as findings with the seconds they hold for. A
+// fault seen at one sample and gone at the next is an entrance passing
+// through, worth knowing but not worth a rewrite: it is marked brief.
+function summariseChecks(frames, step, seconds) {
+  const ORDER = { "off-frame": 0, overlap: 1, unsafe: 2, small: 3 };
+  const seen = new Map();
+  for (const { t, findings } of [...frames].sort((a, b) => a.t - b.t)) {
+    for (const finding of findings) {
+      const key = `${finding.kind}|${finding.what}`;
+      const spans = seen.get(key) ?? [];
+      const last = spans.at(-1);
+      if (last && t - last.to <= step * 1.6) last.to = t;
+      else spans.push({ from: t, to: t });
+      seen.set(key, spans);
+    }
+  }
+  const out = [];
+  for (const [key, spans] of seen) {
+    const [kind, what] = key.split(/\|(.*)/s);
+    for (const span of spans) {
+      const seconds = span.to - span.from + step;
+      out.push({ kind, what, at: `${span.from.toFixed(1)}–${Math.min(span.to + step, seconds).toFixed(1)} s`, ...(seconds < 0.45 ? { brief: true } : {}) });
+    }
+  }
+  return out.sort((a, b) => (ORDER[a.kind] ?? 9) - (ORDER[b.kind] ?? 9) || Boolean(a.brief) - Boolean(b.brief) || parseFloat(a.at) - parseFloat(b.at)).slice(0, 30);
 }
 
 async function main() {

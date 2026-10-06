@@ -539,7 +539,7 @@ async function main() {
   // — status says it too, but nobody has to read status to press render.
   if (wholeOutput && composeFile.audio?.voice?.loudness == null) {
     const measured = cleanAudio?.voiceLoudness;
-    if (typeof measured === "number" && measured < QUIET_VOICE_LUFS) {
+    if (typeof measured === "number" && measured < QUIET_VOICE_LUFS && measured > -60) { // under -60 is no voice: a silent motion film
       say(`WARNING: the voice measures ${measured} LUFS and nothing is levelling it; platforms play at -14 to -16, so this film will be far too quiet. set_audio voice_loudness -16 (a film) or -14 (a short) and render again — the sound is only the stitch, so it takes seconds.`);
     }
   }

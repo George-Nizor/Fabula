@@ -1,0 +1,95 @@
+<style>
+  body { background: radial-gradient(130% 100% at 20% 10%, var(--field-1), var(--field-2) 55%, var(--field-3)); }
+  svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .planet { fill: var(--field-3); stroke: var(--text); stroke-width: 2; }
+  .tower { stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+  .trail { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .copy { position: absolute; left: 7vw; top: 15vh; width: 38vw; }
+  .line { position: absolute; left: 0; top: 0; width: 100%; font: 560 6.2vh/1.08 var(--font-display); color: var(--text); letter-spacing: -0.015em; text-wrap: balance; }
+  .line.claim { font-size: 7.4vh; font-weight: 640; }
+  .kicker { position: absolute; left: 7vw; top: 9vh; font: 600 2.4vh/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+</style>
+<div class="kicker">Why satellites stay up</div>
+<svg id="s"><circle class="planet" id="planet"/><line class="tower" id="tower"/><g id="trails"></g><g id="marks"></g><circle id="ring" fill="none" stroke-width="2"/><circle id="ball" r="13"/></svg>
+<div class="copy">
+  <div class="line">Everything falls.</div>
+  <div class="line">Throw it, and it lands further.</div>
+  <div class="line">But the ground curves away.</div>
+  <div class="line">Fast enough, and it never lands.</div>
+  <div class="line claim">An orbit is a fall that keeps missing.</div>
+</div>
+<script>
+  // fabula-libs: project:orbit-kit
+  const K = window.orbitKit;
+  const R = 3000; // the planet's radius in world pixels
+  const BEATS = [0, 3, 7.5, 12.5, 18.5];
+  const THROWS = [
+    { v: 0, from: 0.55, to: 1.3 },
+    { v: 0.3, from: 3.4, to: 4.4 },
+    { v: 0.5, from: 5.0, to: 6.3 },
+    { v: 0.95, from: 8.0, to: 11.9 },
+    { v: K.circular, from: 12.9, to: 17.9, orbit: true },
+  ].map((throw_) => ({ ...throw_, path: K.path(throw_.v) }));
+  const CAMERA = [
+    { t: 0, x: 150, y: -3200, zoom: 1 },
+    { t: 8.3, x: 150, y: -3200, zoom: 1 },
+    { t: 12.7, x: -2720, y: 0, zoom: 0.125 },
+  ];
+  let el = {}, lines = [], trails = [], marks = [], W, H;
+  const svg = (tag, cls) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); if (cls) n.setAttribute("class", cls); return n; };
+  fabula.scene({
+    setup({ width, height }) {
+      W = width; H = height;
+      const s = document.getElementById("s"); s.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      for (const id of ["planet", "tower", "ring", "ball"]) el[id] = document.getElementById(id);
+      lines = [...document.querySelectorAll(".line")];
+      trails = THROWS.map(() => { const p = svg("polyline", "trail"); document.getElementById("trails").append(p); return p; });
+      marks = THROWS.map(() => { const c = svg("circle"); c.setAttribute("r", 7); document.getElementById("marks").append(c); return c; });
+    },
+    render(t) {
+      const cam = fabula.camera(t, CAMERA);
+      const project = ([x, y]) => [W / 2 + (x * R - cam.x) * cam.zoom, H / 2 + (y * R - cam.y) * cam.zoom];
+      const accent = fabula.theme.accent, muted = fabula.theme.muted;
+      // The ground, which is a planet all along.
+      const [px, py] = project([0, 0]);
+      el.planet.setAttribute("cx", px); el.planet.setAttribute("cy", py); el.planet.setAttribute("r", R * cam.zoom);
+      const [gx, gy] = project([0, -1]); const [lx, ly] = project([0, -K.R0]);
+      el.tower.setAttribute("x1", gx); el.tower.setAttribute("y1", gy); el.tower.setAttribute("x2", lx); el.tower.setAttribute("y2", ly);
+      // The throws: the newest ball is the accent, the earlier ones step back to where they landed.
+      const latest = THROWS.reduce((n, th, i) => (t >= th.from - 0.45 ? i : n), 0);
+      THROWS.forEach((th, i) => {
+        const appear = fabula.spring(t - (th.from - 0.45), { damping: 22 });
+        const k = th.orbit && t > th.to ? ((t - th.from) / (th.to - th.from)) % 1 : (t - th.from) / (th.to - th.from);
+        const pos = project(K.at(th.path, k));
+        const current = i === latest;
+        const back = current || !THROWS[i + 1] ? 0 : fabula.range(t, THROWS[i + 1].from - 0.45, THROWS[i + 1].from - 0.1);
+        const mark = marks[i];
+        mark.setAttribute("cx", pos[0]); mark.setAttribute("cy", pos[1]);
+        mark.setAttribute("r", (current ? 13 : fabula.lerp(13, 7, back)) * Math.min(appear, 1.15));
+        mark.setAttribute("fill", fabula.mix(accent, muted, back));
+        mark.style.opacity = i > latest ? 0 : 1;
+        const trail = trails[i];
+        const drawn = th.orbit && t > th.to ? 1 : k;
+        trail.setAttribute("points", t > th.from ? K.trail(th.path, drawn, project) : "");
+        trail.setAttribute("stroke", fabula.mix(accent, muted, back));
+        trail.setAttribute("stroke-dasharray", back > 0.5 ? "2 9" : "none");
+        trail.style.opacity = 1 - 0.45 * back;
+      });
+      el.ball.style.display = "none";
+      // The impact of the first drop, a single ring, so the floor is felt.
+      const hit = fabula.range(t, THROWS[0].to, THROWS[0].to + 0.55);
+      const [hx, hy] = project([0, -1]);
+      el.ring.setAttribute("cx", hx); el.ring.setAttribute("cy", hy); el.ring.setAttribute("r", 13 + 40 * fabula.ease.out(hit));
+      el.ring.setAttribute("stroke", accent); el.ring.style.opacity = hit > 0 && hit < 1 ? 0.6 * (1 - hit) : 0;
+      // The words: one line per beat, wiped in from the left edge, out quickly upwards.
+      lines.forEach((line, i) => {
+        const start = BEATS[i] + (i === 0 ? 0.25 : 0.2), end = BEATS[i + 1] ?? 99;
+        const inK = fabula.ease.out(fabula.range(t, start, start + 0.7));
+        const outK = fabula.ease.in(fabula.range(t, end - 0.25, end));
+        line.style.clipPath = `inset(-10% ${100 - inK * 100}% -10% 0)`;
+        line.style.transform = `translate(${(1 - inK) * -1.2}vw, ${-outK * 2}vh)`;
+        line.style.opacity = 1 - outK;
+      });
+    },
+  });
+</script>

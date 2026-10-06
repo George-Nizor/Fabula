@@ -258,6 +258,7 @@ window.addEventListener("message", (event) => {
     } else if (data.fabula === "drawn") {
       entry.inFlight = false;
       entry.drawn = data.n;
+      if (Array.isArray(data.check)) entry.checks.push({ t: Number(data.t) || 0, findings: data.check.slice(0, 40) });
       motionPump(entry);
     }
     motionCheck(entry);
@@ -617,7 +618,11 @@ function buildGraphic(part) {
         src: graphic.src, stamp: graphic.stamp ?? "", params: graphic.params ?? {}, libs: graphic.libs ?? [],
         seed: graphic.seed ?? graphic.src, theme: part.motion?.theme ?? {}, width: logical.w, height: logical.h, span: part.motion?.span ?? 1,
         words: part.motion?.words ?? [], head: part.motion?.head ?? null,
+        // The check pass (scripts/frame.cjs, for write_motion): the frame
+        // measures its own text after every draw and says what it found.
+        check: graphic.check === true,
       },
+      checks: [],
     };
     motionFrames.set(token, entry);
     frame.src = MOTION_HOST;
@@ -1239,6 +1244,14 @@ window.FabulaStage = {
     for (const entry of liveMotionFrames()) {
       if (entry.errors.length) out[entry.spec.src] = [...new Set([...(out[entry.spec.src] ?? []), ...entry.errors])];
     }
+    return out;
+  },
+
+  // What the check pass measured in each motion scene, frame by frame:
+  // { src: [{ t, findings }] }, for scripts/frame.cjs to read back.
+  motionChecks() {
+    const out = {};
+    for (const entry of liveMotionFrames()) if (entry.checks.length) out[entry.spec.src] = [...(out[entry.spec.src] ?? []), ...entry.checks];
     return out;
   },
 

@@ -139,6 +139,19 @@ function validateGraphic(graphic, at, options = {}) {
   assertItems(graphic.items, at, graphic.kind, { min: 1, max: graphic.kind === "steps" ? 5 : 6, needValue: graphic.kind === "chart" });
 }
 
+// A scene placed on the film's clock rather than on its words.
+export function anchoredInSeconds(scene) {
+  return scene?.fromSeconds !== undefined || scene?.toSeconds !== undefined;
+}
+
+// A motion film has no camera: its stage is a cutaway from the first frame to
+// the last, whatever the plan says. Stage scenes in a motion film are
+// replaced by that one, so no plan can bring a stand-in "head" on screen.
+export function filmStage(scenes, durationSeconds) {
+  const toSeconds = Number(Math.max(durationSeconds, 0.1).toFixed(3));
+  return [{ type: "stage", layout: "cutaway", fromSeconds: 0, toSeconds, transition: "cut" }, ...scenes.filter((scene) => scene.type !== "stage")];
+}
+
 // options.motionLibs: the optional motion libraries installed here (the
 // server knows; core does no I/O). Without it every known library passes.
 export function validateScenes(scenes, words, options = {}) {
@@ -146,11 +159,20 @@ export function validateScenes(scenes, words, options = {}) {
   scenes.forEach((scene, index) => {
     const at = `scene ${index}`;
     if (!SCENE_TYPES.has(scene.type)) throw new Error(`${at}: unknown type "${scene.type}"`);
-    if (!byId.has(scene.fromWordId) || !byId.has(scene.toWordId)) {
-      throw new Error(`${at}: word ids must be 0–${words.length - 1}`);
-    }
-    if (byId.get(scene.toWordId).start < byId.get(scene.fromWordId).start) {
-      throw new Error(`${at}: the last word (${scene.toWordId}) comes before the first (${scene.fromWordId})`);
+    if (anchoredInSeconds(scene)) {
+      // A motion film may have no words at all: its scenes are placed on the
+      // film's clock instead, in seconds.
+      if (scene.fromWordId !== undefined || scene.toWordId !== undefined) throw new Error(`${at}: a scene is anchored to words or to seconds, not both`);
+      if (!Number.isFinite(scene.fromSeconds) || !Number.isFinite(scene.toSeconds) || scene.fromSeconds < 0) throw new Error(`${at}: fromSeconds and toSeconds are seconds on the film's clock`);
+      if (scene.toSeconds <= scene.fromSeconds) throw new Error(`${at}: toSeconds (${scene.toSeconds}) must come after fromSeconds (${scene.fromSeconds})`);
+      if (options.secondsAnchors === false) throw new Error(`${at}: scenes in a film made from a recording anchor to its words (fromWordId/toWordId), so a re-cut moves them; seconds are for motion films`);
+    } else {
+      if (!byId.has(scene.fromWordId) || !byId.has(scene.toWordId)) {
+        throw new Error(`${at}: word ids must be 0–${words.length - 1}`);
+      }
+      if (byId.get(scene.toWordId).start < byId.get(scene.fromWordId).start) {
+        throw new Error(`${at}: the last word (${scene.toWordId}) comes before the first (${scene.fromWordId})`);
+      }
     }
     if (scene.accent !== undefined && !ACCENT_RE.test(scene.accent)) {
       throw new Error(`${at}: accent must be #rrggbb`);
@@ -194,11 +216,9 @@ export const GRAPHIC_HANG_SECONDS = 0.5;
 export function resolveScenes(scenes, words, { durationSeconds = 0 } = {}) {
   validateScenes(scenes, words);
   const byId = new Map(words.map((word) => [word.id, word]));
-  const resolved = scenes.map((scene) => ({
-    ...scene,
-    start: byId.get(scene.fromWordId).start,
-    end: byId.get(scene.toWordId).end,
-  }));
+  const resolved = scenes.map((scene) => (anchoredInSeconds(scene)
+    ? { ...scene, start: scene.fromSeconds, end: durationSeconds > 0 ? Math.min(scene.toSeconds, durationSeconds) : scene.toSeconds }
+    : { ...scene, start: byId.get(scene.fromWordId).start, end: byId.get(scene.toWordId).end }));
   const cards = resolved.filter((scene) => scene.type === "graphic").sort((a, b) => a.start - b.start);
   // A card hangs through a seam to the next card — but not out of its own
   // layout: a full-stage card that hung from its cutaway into the focus

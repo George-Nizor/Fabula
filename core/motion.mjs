@@ -20,10 +20,15 @@
 export const MOTION_SRC_RE = /^motion\/[a-z0-9][a-z0-9-]{0,62}\.html$/;
 export const MOTION_NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const MOTION_MAX_CHARS = 200_000;
-// Libraries the runtime can load into a scene when they are installed. None
-// ships with Fabula; each is optional and the scene is refused a library
-// that is not present (the server checks).
+// Libraries the runtime can load into a scene. three.js ships with Fabula
+// (renderer/motion/vendor/); GSAP is optional and loads only when installed,
+// its licence barring it from a no-code builder's bundle. A scene is refused
+// a library that is not present (the server checks). A project's own shared
+// code lives under motion/lib/ and is named project:<name>.
+export const MOTION_PROJECT_LIB_RE = /^project:[a-z0-9][a-z0-9-]{0,62}$/;
+export const MOTION_LIB_NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const MOTION_LIBS = {
+  three: { file: "renderer/motion/vendor/three.min.js", about: "three.js 0.186 as the global THREE: WebGL scenes, cameras, lights, geometry. Make the renderer in setup with preserveDrawingBuffer: true, and call renderer.render(scene, camera) at the end of render(t)" },
   gsap: { file: "node_modules/gsap/dist/gsap.min.js", about: "GSAP timelines, seeked by the scene clock; register each with fabula.timeline(tl)" },
 };
 
@@ -74,6 +79,22 @@ function documentParts(doc) {
   return { script: scripts.join("\n"), style: styles.join("\n"), attributes: attributes.join("\n"), tags: tags.join("\n") };
 }
 
+// The libraries a document needs, read from its scripts: THREE means three,
+// gsap means GSAP, and a line "// fabula-libs: project:shapes, three" names
+// any explicitly. The runtime loads these itself (renderer/motion/runtime.js
+// reads them the same way), so a scene works without its placement naming
+// them; the server checks each exists.
+export function motionLibsOf(doc) {
+  const scripts = [...String(doc).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map((m) => m[1]).join("\n");
+  const out = new Set();
+  if (/\bTHREE\s*\./.test(scripts)) out.add("three");
+  if (/\bgsap\s*\./.test(scripts)) out.add("gsap");
+  for (const m of scripts.matchAll(/\/\/\s*fabula-libs:\s*([^\n]+)/g)) {
+    for (const name of m[1].split(/[\s,]+/)) if (/^(project:)?[a-z0-9][a-z0-9-]*$/.test(name)) out.add(name);
+  }
+  return [...out];
+}
+
 // Checks a motion document as written. Throws the first refusal; returns the
 // notes worth hearing (nothing moves, a clock read) when it passes.
 export function validateMotionDoc(doc) {
@@ -92,7 +113,7 @@ export function validateMotionDoc(doc) {
 }
 
 // The graphic as a plan carries it.
-export function validateMotionGraphic(graphic, at, { libs = Object.keys(MOTION_LIBS) } = {}) {
+export function validateMotionGraphic(graphic, at, { libs = null } = {}) {
   if (typeof graphic.src !== "string" || !MOTION_SRC_RE.test(graphic.src)) {
     throw new Error(`${at}: motion needs src "motion/<name>.html" (write_motion writes one)`);
   }
@@ -103,8 +124,11 @@ export function validateMotionGraphic(graphic, at, { libs = Object.keys(MOTION_L
   }
   if (graphic.params !== undefined && JSON.stringify(graphic.params).length > 20000) throw new Error(`${at}: motion params are at most 20000 characters of JSON`);
   if (graphic.libs !== undefined) {
-    if (!Array.isArray(graphic.libs) || graphic.libs.some((lib) => !libs.includes(lib))) {
-      throw new Error(`${at}: motion libs are chosen from ${libs.length ? libs.join(", ") : "none installed"}`);
+    // Without a list (the render, the window) every known library and any
+    // project library passes; the server checks what exists.
+    const known = (lib) => (libs ? libs.includes(lib) : Object.hasOwn(MOTION_LIBS, lib) || MOTION_PROJECT_LIB_RE.test(lib));
+    if (!Array.isArray(graphic.libs) || graphic.libs.length > 6 || graphic.libs.some((lib) => typeof lib !== "string" || !known(lib))) {
+      throw new Error(`${at}: motion libs are chosen from ${libs?.length ? libs.join(", ") : "the installed libraries and project:<name> for motion/lib/<name>.js"}`);
     }
   }
   if (graphic.seed !== undefined && !Number.isInteger(graphic.seed)) throw new Error(`${at}: motion seed is an integer`);
@@ -116,8 +140,8 @@ export function validateMotionGraphic(graphic, at, { libs = Object.keys(MOTION_L
 export function describeMotion({ stage = { width: 1920, height: 1080 }, fonts = [], libs = [] } = {}) {
   const tall = stage.height > stage.width;
   return {
-    what: "A motion scene is a small document you write — <style>, markup, <script> — drawn by Fabula's runtime at every frame of the film. Use it for the moments that have to MOVE to make sense, or where the film deserves a picture no template draws: a mechanism assembling itself, a number that becomes a shape, a map drawing its route, type choreographed to the words, the head framed by something drawn around it. Everything a browser can draw is available: HTML and CSS, SVG, Canvas 2D and WebGL.",
-    file: "write_motion { name, html } writes motion/<name>.html and returns a contact sheet of frames across it — LOOK at it, fix and write again. Place it with a graphic scene: { type: \"graphic\", from_word_id, to_word_id, graphic: { kind: \"motion\", src: \"motion/<name>.html\", params?, full?, over?, libs?, seed?, fade? } }. The card fades the whole scene in over 0.45 s and out over 0.35 s on top of whatever the scene does itself; fade: false when the scene makes its own entrance and exit. seed changes its noise (fabula.random and Math.random): one document placed twice with different seeds draws different noise.",
+    what: "A motion scene is a document you write — <style>, markup, <script> — drawn by Fabula's runtime at every frame of the film. Everything a browser can draw is available: HTML and CSS, SVG, Canvas 2D, WebGL and three.js. It comes in three sizes. A MOMENT inside a recorded film: a mechanism assembling itself, a number that becomes a shape, type choreographed to the words. A SEQUENCE inside a recorded film: twenty seconds to two minutes where the film stops showing the speaker and becomes motion graphics over its own sound — a documentary's explanation, the argument's turn — placed under a cutaway with fade: false, written as one reel. A MOTION FILM (new_motion): nothing but motion from the first frame to the last, timed to a narration or a length. For a sequence or a film, write a REEL: one document holding several shots (fabula.shot) in one shared world, with one camera (fabula.camera) and shapes that carry from shot to shot — that continuity is what makes motion graphics look designed rather than assembled.",
+    file: "write_motion { name, html } writes motion/<name>.html and returns a contact sheet of frames across it and the CHECK PASS: the scene's text measured every fifth of a second as drawn — off the frame, outside the safe area, two blocks overlapping, too small to read — each with the seconds it holds for. Fix every check that is not brief, then LOOK at the sheet, fix and write again. Place it with a graphic scene: { type: \"graphic\", from_word_id, to_word_id, graphic: { kind: \"motion\", src: \"motion/<name>.html\", params?, full?, over?, libs?, seed?, fade? } }. The card fades the whole scene in over 0.45 s and out over 0.35 s on top of whatever the scene does itself; fade: false when the scene makes its own entrance and exit. seed changes its noise (fabula.random and Math.random): one document placed twice with different seeds draws different noise.",
     canvas: `The scene draws at the film's own pixels: ${stage.width}×${stage.height} for a full-stage scene (full, the default), or the layout's content rect for full: false. 100vw × 100vh is the scene's box; fabula.width and fabula.height say it in pixels. The page is transparent: paint your own background when the scene owns the stage (under a cutaway), leave it transparent when it floats over the field or sits beside the head.${tall ? " This film is vertical: design for a tall frame — stack, do not spread." : ""}`,
     clock: "t is seconds since the scene began (not the film). CSS @keyframes animations and element.animate() run on the scene clock from the scene's start: to start one later give it an animation-delay. render(t, ctx) is called once for every frame (30 fps) — draw what the frame is from t alone; never accumulate state from the previous frame, because frames are rendered out of order and in parallel. setup(ctx) runs once before the first frame: build the DOM, precompute, lay out — ctx.head is already where the head is when the scene starts.",
     api: {
@@ -132,13 +156,30 @@ export function describeMotion({ stage = { width: 1920, height: 1080 }, fonts = 
       "fabula.spring(t, { stiffness, damping })": "A settling spring from 0 to 1, overshoot included.",
       "fabula.stagger(i, count, t, { from, each, span })": "Progress of item i in a staggered build.",
       "fabula.lerp, fabula.clamp, fabula.mix(colorA, colorB, k)": "The small arithmetic.",
+      "fabula.shot(t, [{ name, at } | { name, word, at }])": "A reel's shots in one document: the current shot as { name, index, t (seconds into it), p (0→1 across it), start, end, next }. A shot starts at a second, or on a spoken word with at as the fallback. Write each shot's motion over s.t and s.p, and keep the world (camera, shapes) shared across shots so things carry over instead of cutting.",
+      "fabula.camera(t, [{ t, x, y, zoom, ease? }]) / fabula.cameraCss(cam)": "A camera keyed in time, eased between keys, zoom interpolated in log space (a pull-back from 8× to 1× moves at one perceived speed). cameraCss gives the transform for a world element the size of the frame (transform-origin 0 0); a canvas can apply the same numbers with setTransform.",
+      "fabula.fit(element, { min, max })": "Sets the largest font size (px) at which the element's text fits its own box, and returns it. Call it in setup; the fonts are loaded by then. The check pass will tell you when a line still escapes.",
       "fabula.split(element, 'word' | 'char')": "Wraps each word (class word) or letter (class char) in an inline-block span with --i (its index) and --n (the count), for staggered CSS animation: animation-delay: calc(var(--i) * 60ms). Returns the spans.",
       "fabula.asset(name)": "The URL of a picture, clip or font under the project's assets/ — for <img src>, CSS url(), or new Image(). The file name or the assets/… path list_assets and fetch_image give.",
-      "fabula.timeline(tl)": "Register a GSAP timeline (libs: [\"gsap\"]) so the scene clock drives it. Timelines built without it do not move.",
+      "fabula.timeline(tl)": "Register a GSAP timeline so the scene clock drives it (GSAP loads when installed and the script uses gsap.). Timelines built without it do not move.",
+      "THREE": "three.js, loaded when the script uses THREE. Make the WebGLRenderer in setup on your own <canvas> with preserveDrawingBuffer: true and alpha: true, size it to fabula.width × fabula.height, and end render(t) with renderer.render(scene, camera). Light it (a key light and an ambient fill), keep geometry modest, never animate from a clock — position everything from t.",
+      "// fabula-libs: project:<name>": "A line in a script that loads the project's shared code from motion/lib/<name>.js (write_motion_lib) before the scene's own: the film's shape system, type scale or camera rig, written once for every reel.",
       "CSS --t, --p, --head-x/-y/-w/-h": "The clock, progress and head rectangle as CSS variables on :root, for calc() in styles.",
     },
     fonts: fonts.length ? `Vendored and ready by name: ${fonts.join(", ")}. The film's own are var(--font-display) and var(--font-body).` : "Use var(--font-display) and var(--font-body).",
-    libs: libs.length ? `Optional libraries installed here: ${libs.join(", ")} — name them in the graphic's libs.` : "No optional libraries are installed; CSS, the Web Animations API, SVG and Canvas are always there.",
+    libs: libs.length ? `Libraries here: ${libs.join(", ")} — a scene loads one by using it (THREE., gsap.) or naming it in a "// fabula-libs:" line; the project's own come from write_motion_lib.` : "No libraries are installed; CSS, the Web Animations API, SVG and Canvas are always there.",
+    vocabulary: [
+      "These are the defaults you fall into. Each one reads as generated motion; do the opposite on purpose.",
+      "Not everything rising 30 px and fading in: enter from where the thing comes from — scale from its anchor, draw along its path, wipe from its edge, become it from the previous shape.",
+      "Not one ease everywhere: out for entrances, in for exits, inOut for the camera, a spring (damping 18–26, no wobble) for an arrival. No more than two moves in a shot on the same curve.",
+      "Not one speed: the slowest beat should take three times the fastest. A held beat is a choice; give the film one held frame, still on purpose.",
+      "Build, breathe, resolve: the first third of a beat brings things in, the middle holds them, the last third hands over. Exits are faster than entrances.",
+      "One thing moves at a time. Stagger in order of importance, a whole stagger under half a second.",
+      "Build the end state in static markup first, then animate towards it — most text that leaves the frame was never laid out at rest.",
+      "Carry, do not cut: in a reel, the shape that ends a shot is the shape that starts the next — a dot becomes a planet, a bar becomes a timeline. The camera moves between ideas instead of the scene being replaced.",
+      "No decoration that says nothing: no particle fields, glows, lens flares, rainbow gradients, 3D card flips or emoji unless the idea is one of them. One accent colour, for the one thing the viewer must look at.",
+      "Anchor compositions to an edge or a grid line, not floating in the middle; leave the safe area clear.",
+    ],
     head: "Under a pip or full layout the head sits in a corner ABOVE the scene (over: true puts the scene above the head instead). ctx.head says where it is at this frame, so a scene can frame it, point at it, or keep its text clear of it. Under a cutaway there is no head and the scene owns the stage.",
     rules: [
       "Every pixel is a function of t. No timers, no requestAnimationFrame, no network, no storage — write_motion refuses them.",
@@ -147,6 +188,7 @@ export function describeMotion({ stage = { width: 1920, height: 1080 }, fonts = 
       "A scene is captured at every frame. Keep the DOM moderate, draw particle fields on a canvas, and avoid huge blurs over the whole stage.",
       "Type sized from the frame: font-size in vh/vmin or px against fabula.height, never from the page's default. Keep text inside the frame's safe area — 5% from every edge, and in a vertical film above 78% of the height: the burned-in captions sit below that line and the platform's controls below them.",
       "Hold the result long enough to read: a line of text wants its word count ÷ 3 seconds of stillness after it lands.",
+      "The check pass measures text in the DOM and SVG. Text drawn on a canvas or in WebGL is pixels: check it yourself on the sheet.",
     ],
     example: `<style>
   body { background: radial-gradient(circle at 30% 40%, var(--field-1), var(--field-3)); }

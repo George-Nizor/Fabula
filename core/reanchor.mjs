@@ -67,6 +67,11 @@ export function reanchorScene(scene, oldWords, newWords) {
 }
 
 // Every scene, in order; `scenes` is the compose file's list (word ids).
+// A scene placed in seconds (a motion film's) has no words to follow and is
+// left out of the report, and so left where it is.
 export function reanchorScenes(scenes, oldWords, newWords) {
-  return scenes.map((scene, index) => ({ index, type: scene.type, ...reanchorScene(scene, oldWords, newWords) }));
+  return scenes
+    .map((scene, index) => ({ scene, index }))
+    .filter(({ scene }) => scene.fromSeconds === undefined && scene.toSeconds === undefined)
+    .map(({ scene, index }) => ({ index, type: scene.type, ...reanchorScene(scene, oldWords, newWords) }));
 }

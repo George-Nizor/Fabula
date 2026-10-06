@@ -39,3 +39,22 @@ test("a treatment says what is missing or wrong", () => {
   assert.equal(validateTreatment({ logline: "x", beats: [{ fromWordId: 900, toWordId: 910, beat: "later" }] }).beats[0].fromWordId, 900);
   assert.equal(describeTreatment(null), null);
 });
+
+test("a motion treatment is its storyboard: beats in seconds, the spine, the held frame, the bans", () => {
+  const board = validateTreatment({
+    logline: "An orbit is a fall that keeps missing",
+    spine: "One ball: it falls, it is thrown, it orbits",
+    hold: "The closed ring, three seconds, at 0:10",
+    bans: ["no particles", "no 3D flips"],
+    beats: [
+      { fromSeconds: 0, toSeconds: 4, beat: "A ball falls", onScreen: "Everything falls", motion: "drops, lands with a short spring; the floor becomes the horizon" },
+      { from_seconds: 4, to_seconds: 12, beat: "Throw it harder and the ground curves away", on_screen: "Orbit" },
+    ],
+  });
+  assert.deepEqual(board.beats.map((b) => [b.fromSeconds, b.toSeconds, b.onScreen]), [[0, 4, "Everything falls"], [4, 12, "Orbit"]]);
+  assert.equal(board.beats[0].motion.startsWith("drops"), true);
+  assert.deepEqual(board.bans, ["no particles", "no 3D flips"]);
+  assert.equal(describeTreatment(board).spine, "One ball: it falls, it is thrown, it orbits");
+  assert.throws(() => validateTreatment({ logline: "x", beats: [{ fromSeconds: 5, toSeconds: 8, beat: "b" }, { fromSeconds: 1, toSeconds: 3, beat: "a" }] }), /film's order/);
+  assert.throws(() => validateTreatment({ logline: "x", beats: [{ fromSeconds: 5, toSeconds: 5, beat: "b" }] }), /seconds/);
+});

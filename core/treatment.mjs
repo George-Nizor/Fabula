@@ -20,11 +20,25 @@
 //   sound      the plan for the bed, the silences and the hits
 //   look       the look and why it suits this film
 //
+// For motion — a motion film, or a sequence inside a recorded one — the
+// treatment is also the storyboard, written before a line of the reel:
+//
+//   spine      the one continuity device the motion keeps (a shape that
+//              becomes each idea, a camera that never cuts, a line that
+//              draws the whole film)
+//   hold       the one frame held still on purpose, and where
+//   bans       what this film will not do ("no particles", "no 3D flips")
+//   and on each beat: onScreen, the words on screen verbatim, and motion,
+//   how it moves and how it hands over to the next beat.
+//
+// A motion film has no words to anchor to unless it has a narration: its
+// beats may anchor in seconds (fromSeconds/toSeconds) instead.
+//
 // Fabula cannot reorder a word of the recording, so beats follow the words:
 // the story is found in the order given, or built on top of it. No I/O.
 
 export const HEAD_STATES = new Set(["on", "corner", "side", "split", "band", "gone"]);
-export const TREATMENT_LIMITS = { logline: 200, purpose: 300, shape: 240, signature: 240, beat: 120, picture: 200, sound: 240, look: 240, beats: 40, shapes: 4 };
+export const TREATMENT_LIMITS = { logline: 200, purpose: 300, shape: 240, signature: 240, beat: 120, picture: 200, sound: 240, look: 240, beats: 40, shapes: 4, spine: 240, hold: 200, ban: 80, bans: 8, onScreen: 120, motion: 200 };
 
 const text = (value, max, field, { required = false } = {}) => {
   if (value === undefined || value === null || value === "") {
@@ -38,8 +52,15 @@ const text = (value, max, field, { required = false } = {}) => {
   return trimmed || undefined;
 };
 
-// Word anchors, checked against the clean transcript when there is one.
+// Word anchors, checked against the clean transcript when there is one —
+// or, for motion, seconds on the film's clock.
 function span(item, at, byId) {
+  const fromSeconds = item.fromSeconds ?? item.from_seconds;
+  const toSeconds = item.toSeconds ?? item.to_seconds;
+  if (fromSeconds !== undefined || toSeconds !== undefined) {
+    if (!Number.isFinite(fromSeconds) || !Number.isFinite(toSeconds) || fromSeconds < 0 || toSeconds <= fromSeconds) throw new Error(`${at}: fromSeconds and toSeconds are seconds on the film's clock, the second after the first`);
+    return { fromSeconds, toSeconds };
+  }
   const from = item.fromWordId ?? item.from_word_id;
   const to = item.toWordId ?? item.to_word_id ?? from;
   if (!Number.isInteger(from) || !Number.isInteger(to)) throw new Error(`${at} needs fromWordId and toWordId`);
@@ -81,11 +102,29 @@ export function validateTreatment(input, words = null) {
       ...span(beat, at, byId),
       beat: text(beat.beat, L.beat, `beats[${i}].beat`, { required: true }),
       ...(beat.picture ? { picture: text(beat.picture, L.picture, `beats[${i}].picture`) } : {}),
+      ...(beat.onScreen ?? beat.on_screen ? { onScreen: text(beat.onScreen ?? beat.on_screen, L.onScreen, `beats[${i}].onScreen`) } : {}),
+      ...(beat.motion ? { motion: text(beat.motion, L.motion, `beats[${i}].motion`) } : {}),
       ...(head ? { head } : {}),
     };
   });
+  // In order: by word where both beats are on words, by second where both
+  // are in seconds. (A motion film may mix them: seconds before the
+  // narration starts, words while it speaks.)
+  const startOf = (beat) => (beat.fromSeconds !== undefined ? { s: beat.fromSeconds } : { w: beat.fromWordId, s: byId?.get(beat.fromWordId)?.start });
   for (let i = 1; i < out.beats.length; i += 1) {
-    if (out.beats[i].fromWordId < out.beats[i - 1].fromWordId) throw new Error(`treatment beats[${i}] starts before beats[${i - 1}]: the recording cannot be reordered, so the beats run in its order`);
+    const [a, b] = [startOf(out.beats[i - 1]), startOf(out.beats[i])];
+    const before = a.w !== undefined && b.w !== undefined ? b.w < a.w : (a.s !== undefined && b.s !== undefined && b.s < a.s - 0.001);
+    if (before) throw new Error(a.w !== undefined && b.w !== undefined
+      ? `treatment beats[${i}] starts before beats[${i - 1}]: the recording cannot be reordered, so the beats run in its order`
+      : `treatment beats[${i}] starts before beats[${i - 1}]: the beats run in the film's order`);
+  }
+  const spine = text(input.spine, L.spine, "spine");
+  if (spine) out.spine = spine;
+  const hold = text(input.hold, L.hold, "hold");
+  if (hold) out.hold = hold;
+  if (input.bans !== undefined) {
+    if (!Array.isArray(input.bans) || input.bans.length > L.bans) throw new Error(`treatment bans is a list of up to ${L.bans}`);
+    out.bans = input.bans.map((ban, i) => text(ban, L.ban, `bans[${i}]`, { required: true }));
   }
   const sound = text(input.sound, L.sound, "sound");
   if (sound) out.sound = sound;
@@ -102,6 +141,7 @@ export function describeTreatment(treatment) {
     shape: treatment.shape ?? null,
     signature: treatment.signature?.what ?? null,
     beats: treatment.beats?.length ?? 0,
+    ...(treatment.spine ? { spine: treatment.spine } : {}),
     updatedAt: treatment.updatedAt ?? null,
   };
 }

@@ -9,6 +9,7 @@
 //   node scripts/job.mjs retranscribe  media/<project>
 //   node scripts/job.mjs refresh_clean media/<project>   (render_clean, then retranscribe; each skipped when current)
 //   node scripts/job.mjs first_pass    media/<project>   (transcribe, scan the framing, propose cuts; each skipped when done)
+//   node scripts/job.mjs motion_film   media/<project>   (a motion film's stand-in recording, its words and its clean cut)
 //
 // Exit 0 on success with progress.json cleared, 1 on failure with the note
 // left in progress.json and the error on stderr (captured to out/<stage>.log).
@@ -19,9 +20,11 @@ import { validateFraming } from "../core/framing-engine.mjs";
 import { editorialCuts } from "../core/story-engine.mjs";
 import { normalizeCuts } from "../core/cut-engine.mjs";
 import { ceilingOf } from "../core/formats.mjs";
+import { spawnSync } from "node:child_process";
 import { readProjectMeta } from "./project-state.mjs";
 import {
   REPO_ROOT,
+  FFMPEG,
   probeDimensions,
   probeDuration,
   measureLoudness,
@@ -39,7 +42,7 @@ import {
 
 const [stage, dirArg] = process.argv.slice(2);
 if (!stage || !dirArg) {
-  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe|refresh_clean> <project-dir>");
+  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe|refresh_clean|first_pass|motion_film> <project-dir>");
   process.exit(2);
 }
 const dir = path.resolve(REPO_ROOT, dirArg);
@@ -121,6 +124,17 @@ const steps = {
     const clean = path.join(dir, "out", "clean.mp4");
     if (!fs.existsSync(clean)) throw new Error("no out/clean.mp4 to transcribe");
     const map = readJson(path.join(dir, "out", "clean-map.json"));
+    // A motion film is never cut, so its clean cut says exactly what its
+    // stand-in said: the narration's words, or none. Whisper over a silent
+    // film only invents a "Thank you." at the end.
+    if (readProjectMeta(dir).kind === "motion") {
+      const current = path.join(dir, "clean.json");
+      const transcript = readJson(path.join(dir, "raw.json"));
+      transcript.fabula = { cutIdentity: map.cutIdentity, cleanIdentity: map.identity };
+      fs.writeFileSync(current, JSON.stringify(transcript));
+      say(`a motion film: clean.json is its narration's transcript as it stands (${transcript.segments.length} segments), stamped ${map.cutIdentity}`);
+      return;
+    }
     // The transcript being replaced is what reanchor_scenes matches the
     // scenes' old word ids against; keep it beside the new one.
     const current = path.join(dir, "clean.json");
@@ -181,6 +195,53 @@ const steps = {
     }
   },
 
+  // A motion film has no recording. Its stand-in is made here — raw.mp4, a
+  // still picture as long as the film with the narration (or silence) as its
+  // sound — and then it takes the path every recording takes: transcript,
+  // review (with nothing to cut), clean cut, clean transcript. Everything
+  // downstream, from the sound mix to the chunk cache, then works unchanged.
+  // The picture is never seen: a motion film's stage is a cutaway throughout.
+  async motion_film(report) {
+    const meta = readProjectMeta(dir);
+    if (meta.kind !== "motion") throw new Error("not a motion film (project.json kind)");
+    const motion = meta.motion ?? {};
+    const raw = path.join(dir, "raw.mp4");
+    const narration = motion.narration ? path.join(dir, motion.narration) : null;
+    if (narration && !fs.existsSync(narration)) throw new Error(`the narration ${motion.narration} is not in the project`);
+    if (!fs.existsSync(raw)) {
+      const seconds = narration ? probeDuration(narration) + (motion.tail ?? 1) : motion.seconds;
+      if (!(seconds > 0)) throw new Error("a motion film needs a length or a narration");
+      const tall = meta.format === "vertical";
+      const size = tall ? "360x640" : "640x360";
+      report("Making the film's stand-in");
+      const args = ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=black:s=${size}:r=30:d=${seconds.toFixed(3)}`];
+      if (narration) args.push("-i", narration, "-filter_complex", "[1:a]aresample=48000,apad[a]", "-map", "0:v", "-map", "[a]");
+      else args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a");
+      args.push("-t", seconds.toFixed(3), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "35", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ac", "2", raw);
+      const made = spawnSync(FFMPEG, args, { encoding: "utf8" });
+      if (made.status !== 0) throw new Error(`the stand-in could not be made: ${(made.stderr || "").slice(-600)}`);
+      say(`stand-in: ${seconds.toFixed(2)} s, ${narration ? `narration ${motion.narration}` : "silent"}`);
+    }
+    const transcriptFile = path.join(dir, "raw.json");
+    if (!fs.existsSync(transcriptFile)) {
+      if (narration) {
+        report("Transcribing the narration on the GPU (WhisperX large-v3)");
+        const transcript = transcribe(raw, transcriptFile);
+        say(`narration transcribed: ${transcript.segments.length} segments`);
+      } else {
+        fs.writeFileSync(transcriptFile, JSON.stringify({ segments: [], language: "en" }));
+        say("no narration: an empty transcript");
+      }
+    }
+    const reviewFile = path.join(dir, "review.json");
+    if (!fs.existsSync(reviewFile)) {
+      const review = computeReview(readJson(transcriptFile), raw, probeDuration(raw));
+      review.cuts = [];
+      fs.writeFileSync(reviewFile, JSON.stringify(review, null, 2));
+    }
+    await steps.refresh_clean(report);
+  },
+
   // The window's one button for "the cuts moved": the clean render and its
   // transcript, each skipped when it already matches, so pressing it twice
   // costs nothing the second time.
@@ -208,6 +269,7 @@ const labels = {
   transcribe: "Transcribing on the GPU",
   retranscribe: "Transcribing the clean cut",
   refresh_clean: "Refreshing the clean cut",
+  motion_film: "Making the motion film's clock",
 };
 
 const step = steps[stage];

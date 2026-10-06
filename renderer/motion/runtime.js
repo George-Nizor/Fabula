@@ -195,6 +195,64 @@
       const want = normal(match);
       return (context.words ?? []).find((w) => w.t0 >= after - 0.001 && normal(w.text) === want) ?? null;
     },
+    // A reel's shots: one document, many moments, one world. Each shot
+    // starts at a second (at) or on a spoken word (word, with an optional
+    // fallback second at); the current one comes back with its own clock,
+    // so a shot is written as render code over s.t / s.p while the world
+    // it draws in — the camera, the shapes that carry over — stays shared.
+    //   const s = fabula.shot(t, [{ name: "fall", at: 0 }, { name: "throw", word: "harder", at: 4 }]);
+    //   s.name, s.index, s.t (seconds into it), s.p (0→1 across it), s.start, s.end, s.next
+    shot(t, shots) {
+      const list = (shots ?? []).map((shot, index) => {
+        const spoken = shot.word ? fabula.word(shot.word, { after: shot.after ?? 0 })?.t0 : undefined;
+        return { ...shot, index, start: spoken ?? shot.at ?? 0 };
+      }).sort((a, b) => a.start - b.start);
+      if (!list.length) return null;
+      let i = 0;
+      while (i + 1 < list.length && t >= list[i + 1].start) i += 1;
+      const current = list[i];
+      const end = list[i + 1]?.start ?? context.span;
+      const length = Math.max(end - current.start, 1e-6);
+      return { ...current, t: t - current.start, p: clamp((t - current.start) / length), end, next: list[i + 1]?.name ?? null };
+    },
+    // A camera keyed in time: [{ t, x, y, zoom }], eased between keys, the
+    // zoom interpolated in log space so a pull-back from 8× to 1× moves at
+    // one perceived speed instead of rushing the first half. cameraCss
+    // turns it into a transform for a world element the size of the frame.
+    camera(t, keys, easeName = "inOut") {
+      const list = [...(keys ?? [])].sort((a, b) => a.t - b.t);
+      if (!list.length) return { x: 0, y: 0, zoom: 1 };
+      if (t <= list[0].t) return { x: list[0].x ?? 0, y: list[0].y ?? 0, zoom: list[0].zoom ?? 1 };
+      for (let i = 1; i < list.length; i += 1) {
+        if (t > list[i].t) continue;
+        const a = list[i - 1];
+        const b = list[i];
+        const k = (ease[b.ease ?? easeName] ?? ease.inOut)((t - a.t) / Math.max(b.t - a.t, 1e-6));
+        const zoom = Math.exp(lerp(Math.log(a.zoom ?? 1), Math.log(b.zoom ?? 1), k));
+        return { x: lerp(a.x ?? 0, b.x ?? 0, k), y: lerp(a.y ?? 0, b.y ?? 0, k), zoom };
+      }
+      const last = list.at(-1);
+      return { x: last.x ?? 0, y: last.y ?? 0, zoom: last.zoom ?? 1 };
+    },
+    cameraCss({ x = 0, y = 0, zoom = 1 } = {}) {
+      return `translate(${context.width / 2}px, ${context.height / 2}px) scale(${zoom}) translate(${-x}px, ${-y}px)`;
+    },
+    // The largest font size at which an element's text fits its own box
+    // (its width, and its height when it has one), between min and max
+    // pixels; sets it and returns it. Call it in setup, after the fonts.
+    fit(element, { min = 12, max = 400 } = {}) {
+      if (!element) return 0;
+      const fits = () => element.scrollWidth <= element.clientWidth + 1 && (element.clientHeight === 0 || element.scrollHeight <= element.clientHeight + 1);
+      let lo = min;
+      let hi = max;
+      for (let i = 0; i < 18 && hi - lo > 0.5; i += 1) {
+        const mid = (lo + hi) / 2;
+        element.style.fontSize = `${mid}px`;
+        if (fits()) lo = mid; else hi = mid;
+      }
+      element.style.fontSize = `${lo}px`;
+      return lo;
+    },
     get params() { return context.params ?? {}; },
     get theme() { return context.theme ?? {}; },
     get width() { return context.width; },
@@ -226,11 +284,129 @@
     });
   }
 
+  // What a document needs loaded, read from its scripts: THREE means three,
+  // gsap means GSAP, and "// fabula-libs: project:shapes" names the
+  // project's own. The same reading as core/motion.mjs motionLibsOf.
+  function libsOf(doc) {
+    const scripts = [...String(doc).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map((m) => m[1]).join("\n");
+    const out = [];
+    if (/\bTHREE\s*\./.test(scripts)) out.push("three");
+    if (/\bgsap\s*\./.test(scripts)) out.push("gsap");
+    for (const m of scripts.matchAll(/\/\/\s*fabula-libs:\s*([^\n]+)/g)) {
+      for (const name of m[1].split(/[\s,]+/)) if (/^(project:)?[a-z0-9][a-z0-9-]*$/.test(name)) out.push(name);
+    }
+    return out;
+  }
+
+  // ---- The check pass ----
+  // After a frame is drawn, the scene's own text is measured where it
+  // actually landed: the faults that pass every code check and only show in
+  // pixels — type off the frame or outside the safe area, two lines of text
+  // on top of each other, type too small to read. Text drawn on a canvas or
+  // in WebGL is pixels, not text, and is not measured.
+  let checking = false;
+  const TEXT_SKIP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
+  function visibleOpacity(element) {
+    let alpha = 1;
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === "none" || style.visibility === "hidden") return 0;
+      alpha *= Number(style.opacity);
+      if (alpha < 0.05) return alpha;
+    }
+    return alpha;
+  }
+  // What an inset() clip-path leaves visible of an element and its
+  // ancestors, in the frame's pixels: a line wiped in by a clip is not on
+  // screen until the wipe reaches it. Other clip shapes are not measured.
+  function clipRect(element) {
+    let box = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const clip = getComputedStyle(node).clipPath;
+      const m = /^inset\(([^)]*)\)/.exec(clip ?? "");
+      if (!m) continue;
+      const r = node.getBoundingClientRect();
+      const parts = m[1].split(/\s+round\s+/)[0].trim().split(/\s+/);
+      const [a, b = a, c = a, d = b] = parts;
+      const len = (value, size) => (String(value).endsWith("%") ? (parseFloat(value) / 100) * size : parseFloat(value) || 0);
+      box = {
+        left: Math.max(box.left, r.left + len(d, r.width)),
+        top: Math.max(box.top, r.top + len(a, r.height)),
+        right: Math.min(box.right, r.right - len(b, r.width)),
+        bottom: Math.min(box.bottom, r.bottom - len(c, r.height)),
+      };
+    }
+    return box;
+  }
+  function blockOf(element) {
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+      if (node instanceof SVGElement) { if (node.tagName.toLowerCase() === "text") return node; continue; }
+      const display = getComputedStyle(node).display;
+      if (!display.startsWith("inline") && display !== "contents") return node;
+    }
+    return element;
+  }
+  function checkFrame() {
+    const W = innerWidth;
+    const H = innerHeight;
+    const tall = H > W;
+    const safe = { left: W * 0.05, right: W * 0.95, top: H * 0.05, bottom: H * (tall ? 0.78 : 0.95) };
+    const blocks = new Map();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      const leaf = text.parentElement;
+      if (!leaf || TEXT_SKIP.has(leaf.tagName) || !text.textContent.trim()) continue;
+      if (visibleOpacity(leaf) < 0.15) continue;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const whole = range.getBoundingClientRect();
+      const clip = clipRect(leaf);
+      const rect = { left: Math.max(whole.left, clip.left), top: Math.max(whole.top, clip.top), right: Math.min(whole.right, clip.right), bottom: Math.min(whole.bottom, clip.bottom) };
+      rect.width = rect.right - rect.left; rect.height = rect.bottom - rect.top;
+      if (rect.width < 1 || rect.height < 1) continue;
+      const block = blockOf(leaf);
+      const size = parseFloat(getComputedStyle(leaf).fontSize) || 0;
+      const box = blocks.get(block) ?? { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity, size: Infinity, text: "" };
+      box.left = Math.min(box.left, rect.left); box.top = Math.min(box.top, rect.top);
+      box.right = Math.max(box.right, rect.right); box.bottom = Math.max(box.bottom, rect.bottom);
+      // An SVG's font size is in its own units; what reads is its height on screen.
+      box.size = Math.min(box.size, leaf instanceof SVGElement ? whole.height : size);
+      box.text += text.textContent;
+      blocks.set(block, box);
+    }
+    const found = [];
+    const name = (box) => `"${box.text.replace(/\s+/g, " ").trim().slice(0, 40)}"`;
+    const list = [...blocks.entries()];
+    for (const [, box] of list) {
+      const offFrame = box.left < -1 || box.top < -1 || box.right > W + 1 || box.bottom > H + 1;
+      if (offFrame) found.push({ kind: "off-frame", what: `${name(box)} runs off the frame` });
+      else {
+        const sides = [box.left < safe.left && "left", box.right > safe.right && "right", box.top < safe.top && "top", box.bottom > safe.bottom && (tall ? "bottom (below 78% the captions and the platform's controls cover it)" : "bottom")].filter(Boolean);
+        if (sides.length) found.push({ kind: "unsafe", what: `${name(box)} is outside the safe area (${sides.join(", ")})` });
+      }
+      if (box.size < H * 0.022) found.push({ kind: "small", what: `${name(box)} is set at ${Math.round(box.size)} px, under 2.2% of the frame's height — too small to read on a phone` });
+    }
+    for (let i = 0; i < list.length; i += 1) {
+      for (let j = i + 1; j < list.length; j += 1) {
+        const [ea, a] = list[i];
+        const [eb, b] = list[j];
+        if (ea.contains(eb) || eb.contains(ea)) continue;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w <= 0 || h <= 0) continue;
+        const smaller = Math.min((a.right - a.left) * (a.bottom - a.top), (b.right - b.left) * (b.bottom - b.top));
+        if (w * h > smaller * 0.15) found.push({ kind: "overlap", what: `${name(a)} and ${name(b)} overlap` });
+      }
+    }
+    return found.slice(0, 40);
+  }
+
   let token = null;
   let loaded = null;
 
   async function load(message) {
     token = message.token;
+    checking = message.check === true;
     context = {
       params: message.params ?? {},
       theme: message.theme ?? {},
@@ -245,17 +421,6 @@
     applyTheme(context.theme);
     setVar("--t", 0);
     setVar("--p", 0);
-    for (const lib of message.libs ?? []) {
-      if (!/^[a-z0-9-]+$/.test(lib)) continue;
-      await loadScript(`fabula-motion://lib/${lib}.js`);
-    }
-    if (window.gsap) {
-      try {
-        window.gsap.config({ force3D: false });
-        window.gsap.ticker.lagSmoothing(0);
-        window.gsap.globalTimeline.pause();
-      } catch (error) { report(error.message); }
-    }
     let doc = "";
     try {
       const response = await fetch(`fabula-motion://project/${message.src}?v=${encodeURIComponent(message.stamp ?? "")}`);
@@ -263,6 +428,26 @@
       doc = await response.text();
     } catch (error) {
       report(error.message);
+    }
+    // Libraries first: those the placement names and those the document
+    // needs (core/motion.mjs motionLibsOf reads them the same way), Fabula's
+    // before the project's own, which may lean on them. A project library
+    // may bring a stylesheet beside it.
+    const wanted = [...new Set([...(message.libs ?? []), ...libsOf(doc)])].sort((a, b) => a.startsWith("project:") - b.startsWith("project:"));
+    for (const lib of wanted) {
+      const own = /^project:([a-z0-9][a-z0-9-]*)$/.exec(lib);
+      if (own) {
+        const css = await fetch(`fabula-motion://project/motion/lib/${own[1]}.css`).catch(() => null);
+        if (css?.ok) { const style = document.createElement("style"); style.textContent = await css.text(); document.head.append(style); }
+        await loadScript(`fabula-motion://project/motion/lib/${own[1]}.js`);
+      } else if (/^[a-z0-9-]+$/.test(lib)) await loadScript(`fabula-motion://lib/${lib}.js`);
+    }
+    if (window.gsap) {
+      try {
+        window.gsap.config({ force3D: false });
+        window.gsap.ticker.lagSmoothing(0);
+        window.gsap.globalTimeline.pause();
+      } catch (error) { report(error.message); }
     }
     const parsed = new DOMParser().parseFromString(doc, "text/html");
     const scripts = [...parsed.querySelectorAll("script")];
@@ -279,20 +464,22 @@
     // The head as the stage had it when the scene was built, so setup can lay
     // out around it; every seek brings it again as it is at that frame.
     setHead(message.head);
+    // A face used only on a canvas is not asked for until the first draw —
+    // after ready — so the first frame drew in a fallback and the rest in the
+    // real face, and the film and the window disagreed on it. Every face the
+    // document names, and the film's own, are loaded before ready — and
+    // before setup, so a layout measured there (fabula.fit) is measured in
+    // the face it will be drawn in.
+    const named = `${doc}\n${JSON.stringify(context.theme?.fonts ?? {})}`;
+    const faces = [...document.fonts].filter((face) => named.includes(face.family.replace(/^["']|["']$/g, "")));
+    await Promise.allSettled(faces.map((face) => face.load().catch(() => report(`the font ${face.family} did not load`))));
     try {
       scene?.setup?.(frameContext(0, 0, { head: message.head ?? null }));
     } catch (error) {
       report(`setup: ${error.message}`);
     }
     const pictures = [...document.images].map((img) => img.decode().catch(() => report(`could not load ${img.getAttribute("src")}`)));
-    // A face used only on a canvas is not asked for until the first draw —
-    // after ready — so the first frame drew in a fallback and the rest in the
-    // real face, and the film and the window disagreed on it. Every face the
-    // document names, and the film's own, are loaded before ready.
-    const named = `${doc}\n${JSON.stringify(context.theme?.fonts ?? {})}`;
-    const faces = [...document.fonts].filter((face) => named.includes(face.family.replace(/^["']|["']$/g, "")));
-    const fonts = faces.map((face) => face.load().catch(() => report(`the font ${face.family} did not load`)));
-    await Promise.allSettled([...pending, ...pictures, ...fonts]);
+    await Promise.allSettled([...pending, ...pictures]);
     try { await document.fonts.ready; } catch { /* fonts are best effort */ }
     post({ fabula: "ready", token, errors: drain() });
   }
@@ -369,7 +556,9 @@
     }
     await seekMedia(t);
     await nextPaint();
-    post({ fabula: "drawn", token: message.token, n: message.n, errors: drain() });
+    let check;
+    if (checking) { try { check = checkFrame(); } catch (error) { report(`check: ${error.message}`); } }
+    post({ fabula: "drawn", token: message.token, n: message.n, t, errors: drain(), ...(check ? { check } : {}) });
   }
 
   // One message at a time, in order: a seek that arrives while the scene is
