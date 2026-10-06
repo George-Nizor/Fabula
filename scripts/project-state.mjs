@@ -318,6 +318,7 @@ export function jobSpec(kind, dir, options = {}) {
   if (kind === "transcribe") return { stage: "transcribe", label: "Transcribing on the GPU", program: "node", args: [job, "transcribe", dir] };
   if (kind === "refresh") return { stage: "refresh_clean", label: "Refreshing the clean cut", program: "node", args: [job, "refresh_clean", dir] };
   if (kind === "first") return { stage: "first_pass", label: "The first pass", program: "node", args: [job, "first_pass", dir] };
+  if (kind === "motion") return { stage: "motion_film", label: "Making the motion film's clock", program: "node", args: [job, "motion_film", dir] };
   if (kind === "final") {
     const args = ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", join(root, "scripts", "export-compose.cjs")];
     if (options.from !== undefined || options.to !== undefined) {
@@ -427,6 +428,20 @@ function writeProjectMeta(dir, patch) {
 // either shape — but it makes the clean cut stale, because the ceiling moved.
 export function projectFormat(dir) {
   return resolveFormat(readProjectMeta(dir)).id;
+}
+
+// What a project is made from: a recording (the default, every project before
+// motion films) or nothing but motion, timed to a narration, a music bed or a
+// length. A motion film's "recording" is a stand-in Fabula makes itself
+// (raw.mp4: the length and the narration, the picture never shown), so the
+// clean cut, the sound, the chunk cache and the render work unchanged.
+export function isMotionFilm(dir) {
+  return readProjectMeta(dir).kind === "motion";
+}
+
+export function writeProjectKind(dir, kind, extra = {}) {
+  if (kind !== "motion" && kind !== "recording") throw new Error(`a project is made from a recording or is a motion film, not ${kind}`);
+  return writeProjectMeta(dir, { kind, ...extra });
 }
 
 export function writeProjectFormat(dir, format) {

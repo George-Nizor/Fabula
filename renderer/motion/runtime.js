@@ -245,9 +245,16 @@
     applyTheme(context.theme);
     setVar("--t", 0);
     setVar("--p", 0);
+    // Libraries first, in the order named: Fabula's (three, gsap), then the
+    // project's own shared code under motion/lib/ (project:<name>), which
+    // may lean on them. A project library may bring a stylesheet beside it.
     for (const lib of message.libs ?? []) {
-      if (!/^[a-z0-9-]+$/.test(lib)) continue;
-      await loadScript(`fabula-motion://lib/${lib}.js`);
+      const own = /^project:([a-z0-9][a-z0-9-]*)$/.exec(lib);
+      if (own) {
+        const css = await fetch(`fabula-motion://project/motion/lib/${own[1]}.css`).catch(() => null);
+        if (css?.ok) { const style = document.createElement("style"); style.textContent = await css.text(); document.head.append(style); }
+        await loadScript(`fabula-motion://project/motion/lib/${own[1]}.js`);
+      } else if (/^[a-z0-9-]+$/.test(lib)) await loadScript(`fabula-motion://lib/${lib}.js`);
     }
     if (window.gsap) {
       try {

@@ -20,10 +20,15 @@
 export const MOTION_SRC_RE = /^motion\/[a-z0-9][a-z0-9-]{0,62}\.html$/;
 export const MOTION_NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const MOTION_MAX_CHARS = 200_000;
-// Libraries the runtime can load into a scene when they are installed. None
-// ships with Fabula; each is optional and the scene is refused a library
-// that is not present (the server checks).
+// Libraries the runtime can load into a scene. three.js ships with Fabula
+// (renderer/motion/vendor/); GSAP is optional and loads only when installed,
+// its licence barring it from a no-code builder's bundle. A scene is refused
+// a library that is not present (the server checks). A project's own shared
+// code lives under motion/lib/ and is named project:<name>.
+export const MOTION_PROJECT_LIB_RE = /^project:[a-z0-9][a-z0-9-]{0,62}$/;
+export const MOTION_LIB_NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const MOTION_LIBS = {
+  three: { file: "renderer/motion/vendor/three.min.js", about: "three.js 0.186 as the global THREE: WebGL scenes, cameras, lights, geometry. Make the renderer in setup with preserveDrawingBuffer: true, and call renderer.render(scene, camera) at the end of render(t)" },
   gsap: { file: "node_modules/gsap/dist/gsap.min.js", about: "GSAP timelines, seeked by the scene clock; register each with fabula.timeline(tl)" },
 };
 
@@ -92,7 +97,7 @@ export function validateMotionDoc(doc) {
 }
 
 // The graphic as a plan carries it.
-export function validateMotionGraphic(graphic, at, { libs = Object.keys(MOTION_LIBS) } = {}) {
+export function validateMotionGraphic(graphic, at, { libs = null } = {}) {
   if (typeof graphic.src !== "string" || !MOTION_SRC_RE.test(graphic.src)) {
     throw new Error(`${at}: motion needs src "motion/<name>.html" (write_motion writes one)`);
   }
@@ -103,8 +108,11 @@ export function validateMotionGraphic(graphic, at, { libs = Object.keys(MOTION_L
   }
   if (graphic.params !== undefined && JSON.stringify(graphic.params).length > 20000) throw new Error(`${at}: motion params are at most 20000 characters of JSON`);
   if (graphic.libs !== undefined) {
-    if (!Array.isArray(graphic.libs) || graphic.libs.some((lib) => !libs.includes(lib))) {
-      throw new Error(`${at}: motion libs are chosen from ${libs.length ? libs.join(", ") : "none installed"}`);
+    // Without a list (the render, the window) every known library and any
+    // project library passes; the server checks what exists.
+    const known = (lib) => (libs ? libs.includes(lib) : Object.hasOwn(MOTION_LIBS, lib) || MOTION_PROJECT_LIB_RE.test(lib));
+    if (!Array.isArray(graphic.libs) || graphic.libs.length > 6 || graphic.libs.some((lib) => typeof lib !== "string" || !known(lib))) {
+      throw new Error(`${at}: motion libs are chosen from ${libs?.length ? libs.join(", ") : "the installed libraries and project:<name> for motion/lib/<name>.js"}`);
     }
   }
   if (graphic.seed !== undefined && !Number.isInteger(graphic.seed)) throw new Error(`${at}: motion seed is an integer`);

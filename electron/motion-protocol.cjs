@@ -10,9 +10,11 @@
 //
 //   fabula-motion://runtime/<file>   the host page and runtime, the vendored
 //                                    fonts and their stylesheet (renderer/)
-//   fabula-motion://lib/<name>.js    an optional animation library, when it
-//                                    is installed (core/motion.mjs MOTION_LIBS)
-//   fabula-motion://project/<file>   the open project's motion/ documents and
+//   fabula-motion://lib/<name>.js    an animation library: vendored with
+//                                    Fabula (three) or optional and installed
+//                                    (gsap) — core/motion.mjs MOTION_LIBS
+//   fabula-motion://project/<file>   the open project's motion/ documents, its
+//                                    shared motion/lib/ scripts and styles, and
 //                                    assets/ — read-only, never above them
 //
 // Registered by every Electron that paints a stage: the window
@@ -51,8 +53,9 @@ const TYPES = {
 
 // What each host may serve, as patterns over the path under it.
 const RUNTIME_FILES = /^(motion\/(host\.html|runtime\.js)|fonts\.css|assets\/fonts\/[a-z0-9-]+\.woff2)$/;
-const PROJECT_FILES = /^(motion\/[a-z0-9][a-z0-9-]*\.(html|js|css|json|svg)|assets\/[^/\\]+\.(png|jpe?g|webp|gif|svg|woff2?|ttf|otf|mp4|webm|m4v|mp3|wav|ogg))$/i;
+const PROJECT_FILES = /^(motion\/(lib\/)?[a-z0-9][a-z0-9-]*\.(html|js|css|json|svg)|assets\/[^/\\]+\.(png|jpe?g|webp|gif|svg|woff2?|ttf|otf|mp4|webm|m4v|mp3|wav|ogg))$/i;
 const LIBS = {
+  three: "renderer/motion/vendor/three.min.js",
   gsap: "node_modules/gsap/dist/gsap.min.js",
 };
 

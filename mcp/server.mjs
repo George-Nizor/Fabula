@@ -52,6 +52,7 @@ import {
   jobSpec,
   launchJob,
   listProjects, describeProject, PROJECT_NAME_RE, readProjectMeta, writeProjectTitle, writeProjectFormat, projectFormat, slugify, cleanTitle,
+  isMotionFilm, writeProjectKind,
 } from "../scripts/project-state.mjs";
 import { FORMAT_IDS, DEFAULT_FORMAT, resolveFormat, describeFormats, stageOf } from "../core/formats.mjs";
 import { suggestClips, createShort } from "../scripts/shorts.mjs";
@@ -67,7 +68,7 @@ import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core
 import { punchPlan, punchSpans, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { critiqueFilm } from "../core/critic-engine.mjs";
 import { searchAudio, fetchAudio, SAFE_LICENSES } from "../scripts/audio-library.mjs";
-import { validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, bridgedReturns, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
+import { filmStage, anchoredInSeconds, validateScenes, resolveScenes, describeVariety, uncoveredCutaways, emptyPlacedLayouts, hiddenFullStage, overFullStage, absorbedStages, bridgedReturns, captionEmphasis, validateInserts, applyInsertChoice, captionMode, CAPTION_MODES, SCENE_TYPES, GRAPHIC_KINDS, IMAGE_MOTIONS, resolvePhraseCaptions, subtitleFile } from "../core/compose-engine.mjs";
 import { takeInbox, pendingInbox } from "../scripts/inbox.mjs";
 import { validateFraming } from "../core/framing-engine.mjs";
 import { LAYOUTS, TRANSITIONS, TRANSITION_SECONDS, MIN_DWELL_SECONDS as MIN_DWELL_FLOOR, resolveLayoutTimeline } from "../core/stage-engine.mjs";
@@ -111,7 +112,7 @@ const READ_TOOLS = new Set([
   "list_clean_words", "list_themes", "list_assets", "list_music", "search_images", "suggest_clips", "wait_render", "wait_for_input",
   "get_direction", "get_treatment", "describe_motion", "read_motion", "list_motion", "preview_motion",
 ]);
-const POINTER_TOOLS = new Set(["open_project", "switch_project", "close_project"]);
+const POINTER_TOOLS = new Set(["open_project", "new_motion", "switch_project", "close_project"]);
 // Polls that say nothing about the work; the window's log leaves them out.
 const QUIET_TOOLS = new Set(["status", "wait_for_input", "list_projects"]);
 // Tools that leave the pointer somewhere else than they found it; the
@@ -257,9 +258,38 @@ const installedMotionLibs = () => Object.entries(MOTION_LIBS).filter(([, lib]) =
 // What the plan writes validate against beyond the words: the libraries a
 // motion scene may name, and what the person's direction rules out.
 function checkPlan(dir, scenes, words) {
-  validateScenes(scenes, words, { motionLibs: installedMotionLibs() });
+  validateScenes(scenes, words, { motionLibs: motionLibsFor(dir), secondsAnchors: isMotionFilm(dir) });
   const refusal = directionRefusal(scenes, readDirection(dir), { existing: onDiskScenes(dir) });
   if (refusal) throw new Error(refusal);
+}
+
+// The libraries a motion graphic may name here: the installed ones, and the
+// project's own under motion/lib/ as project:<name>.
+function motionLibsFor(dir) {
+  const own = (() => {
+    try { return fs.readdirSync(path.join(dir, "motion", "lib")).filter((name) => /^[a-z0-9][a-z0-9-]*\.js$/.test(name)).map((name) => `project:${name.replace(/\.js$/, "")}`); } catch { return []; }
+  })();
+  return [...installedMotionLibs(), ...own];
+}
+
+// How long a film is: the clean cut's length, or for a motion film whose
+// clean cut is still being made, its stand-in's.
+function filmSeconds(dir) {
+  const paths = projectPaths(dir);
+  if (fs.existsSync(paths.clean)) return probeDuration(paths.clean);
+  return paths.video ? probeDuration(paths.video) : 0;
+}
+
+// A motion film's plan always opens on its own stage: a cutaway over the
+// whole film, so its stand-in recording is never seen (filmStage).
+function planFor(dir, scenes) {
+  return isMotionFilm(dir) ? filmStage(scenes, filmSeconds(dir)) : scenes;
+}
+
+// Where a scene starts, for keeping a plan in order: its first word or its
+// first second.
+function sceneStart(scene, byId) {
+  return anchoredInSeconds(scene) ? scene.fromSeconds : (byId.get(scene.fromWordId)?.start ?? 0);
 }
 
 function onDiskScenes(dir) {
@@ -369,7 +399,25 @@ function describeFinished(dir, stage) {
     const transcript = fs.existsSync(file) ? readJson(file) : null;
     return { stage, transcript: file, words: transcript ? flattenWords(transcript).length : null, log: logTail(log) };
   }
+  if (stage === "motion_film") {
+    const words = fs.existsSync(paths.cleanTranscript) ? flattenWords(readJson(paths.cleanTranscript)).length : null;
+    return { stage, seconds: fs.existsSync(paths.clean) ? Number(probeDuration(paths.clean).toFixed(2)) : null, words, clean: cleanSummary(dir), log: logTail(log) };
+  }
   return { stage, log: logTail(log) };
+}
+
+// A motion film's narration, copied into the project so the film does not
+// depend on where the file was. Returns the project-relative name.
+const NARRATION_EXT = /^\.(wav|mp3|m4a|flac|ogg|aac)$/i;
+function takeNarration(dir, given) {
+  const file = hostPath(given);
+  if (!fs.existsSync(file)) throw new Error(`no such file: ${file}`);
+  const ext = path.extname(file).toLowerCase();
+  if (!NARRATION_EXT.test(ext)) throw new Error(`a narration is wav, mp3, m4a, flac, ogg or aac, not ${ext || "a file without an extension"}`);
+  for (const name of fs.readdirSync(dir)) if (/^narration\./.test(name)) fs.rmSync(path.join(dir, name), { force: true });
+  const name = `narration${ext}`;
+  fs.copyFileSync(file, path.join(dir, name));
+  return name;
 }
 
 const server = new McpServer({ name: "fabula", version: "0.2.0" }, {
@@ -481,6 +529,51 @@ server.registerTool("open_project", {
     transcribed: fs.existsSync(paths.transcript),
     reviewed: fs.existsSync(paths.review),
   });
+});
+
+server.registerTool("new_motion", {
+  description:
+    "Start a MOTION FILM and make it the open project: a film that is nothing but animation, with no recording — the kind of piece that is all motion graphics from the first frame to the last. Its clock is a narration (an audio file: a voiceover from Luna, a read the person recorded) or, without one, a length in seconds. Fabula makes a stand-in for the recording itself, so the clean cut, the sound (set_audio for a music bed and effects), captions, previews and render_final all work as they do for a recorded film; the stage is a cutaway throughout, so no camera ever shows. Scenes in a motion film may anchor in seconds (from_seconds/to_seconds) as well as to the narration's words. Runs as a background job (seconds without a narration; a narration is transcribed on the GPU for its word timings). Then: describe_motion, read_craft motion, write the storyboard as the treatment, write_motion the reels, set_scenes to place them.",
+  inputSchema: {
+    title: z.string().describe("The film's name as the person wants it shown"),
+    format: z.enum([...FORMAT_IDS]).optional().describe("landscape (16:9, the default) or vertical (9:16)"),
+    seconds: z.number().min(3).max(900).optional().describe("The film's length, when there is no narration"),
+    narration: z.string().optional().describe("Path to the voiceover (wav/mp3/m4a/flac/ogg/aac); the film runs its length plus tail_seconds and its words become the timing"),
+    tail_seconds: z.number().min(0).max(10).optional().describe("Seconds of picture after the narration ends (default 1)"),
+    wait_seconds: waitSchema,
+  },
+}, async ({ title, format, seconds, narration, tail_seconds, wait_seconds }) => {
+  if (!narration && seconds === undefined) throw new Error("a motion film needs a narration or a length in seconds");
+  const shown = cleanTitle(title);
+  const projectName = slugify(shown);
+  const dir = path.join(mediaRoot(), projectName);
+  if (fs.existsSync(dir) && fs.readdirSync(dir).length) throw new Error(`a project called ${shown} (${projectName}) already exists; choose another title, or open it with switch_project`);
+  fs.mkdirSync(dir, { recursive: true });
+  writeProjectTitle(dir, shown);
+  writeProjectFormat(dir, format ?? DEFAULT_FORMAT);
+  const name = narration ? takeNarration(dir, narration) : null;
+  writeProjectKind(dir, "motion", { motion: { ...(name ? { narration: name, tail: tail_seconds ?? 1 } : { seconds }) } });
+  fs.writeFileSync(pointerFile(), JSON.stringify({ dir: projectName }, null, 2));
+  answeredProject = projectName;
+  launchJob(dir, jobSpec("motion", dir), RUNNER);
+  return settle(dir, wait_seconds ?? 45, () => ({ ...describeFinished(dir, "motion_film"), project: projectName, title: shown, format: projectFormat(dir), kind: "motion", next: "describe_motion, then read_craft motion; the storyboard goes in set_treatment; write_motion the reels and place them with set_scenes (from_seconds/to_seconds, or the narration's words)" }));
+});
+
+server.registerTool("set_narration", {
+  description: "Give a motion film a new narration (or its first one): the voiceover is copied into the project, the film's length becomes the narration's plus tail_seconds, and its words are transcribed for timing. Scenes anchored to the old narration's words should be re-placed afterwards (get_scenes, then update_scenes); scenes in seconds stay where they are. A background job like new_motion.",
+  inputSchema: {
+    narration: z.string().describe("Path to the voiceover (wav/mp3/m4a/flac/ogg/aac)"),
+    tail_seconds: z.number().min(0).max(10).optional(),
+    wait_seconds: waitSchema,
+  },
+}, async ({ narration, tail_seconds, wait_seconds }) => {
+  const dir = currentProjectDir();
+  if (!isMotionFilm(dir)) throw new Error("set_narration is for motion films; a recorded film's voice is its recording");
+  const name = takeNarration(dir, narration);
+  writeProjectKind(dir, "motion", { motion: { narration: name, tail: tail_seconds ?? 1 } });
+  for (const file of ["raw.mp4", "raw.json", "review.json"]) fs.rmSync(path.join(dir, file), { force: true });
+  launchJob(dir, jobSpec("motion", dir), RUNNER);
+  return settle(dir, wait_seconds ?? 45, () => describeFinished(dir, "motion_film"));
 });
 
 server.registerTool("list_projects", {
@@ -1122,6 +1215,10 @@ const optionSceneShape = z.object({
   to_word_id: z.number().int().min(0).optional(),
   fromWordId: z.number().int().min(0).optional().describe("the same, as get_scenes spells it"),
   toWordId: z.number().int().min(0).optional(),
+  from_seconds: z.number().min(0).optional().describe("motion films only: start on the film's clock, in place of from_word_id"),
+  to_seconds: z.number().min(0).optional(),
+  fromSeconds: z.number().min(0).optional(),
+  toSeconds: z.number().min(0).optional(),
   index: z.number().int().optional().describe("ignored: get_scenes' own numbering"),
   text: z.string().optional(), subtitle: z.string().optional(), style: z.string().optional(),
   accent: z.string().optional(), flair: z.boolean().optional(),
@@ -1130,8 +1227,8 @@ const optionSceneShape = z.object({
 });
 
 const shapeScene = (scene) => {
-  const { from_word_id, to_word_id, fromWordId, toWordId, index, ...rest } = scene;
-  const out = { ...rest, fromWordId: from_word_id ?? fromWordId, toWordId: to_word_id ?? toWordId };
+  const { from_word_id, to_word_id, fromWordId, toWordId, from_seconds, to_seconds, fromSeconds, toSeconds, index, ...rest } = scene;
+  const out = { ...rest, fromWordId: from_word_id ?? fromWordId, toWordId: to_word_id ?? toWordId, fromSeconds: from_seconds ?? fromSeconds, toSeconds: to_seconds ?? toSeconds };
   for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
   return out;
 };
@@ -1252,6 +1349,10 @@ server.registerTool("set_scenes", {
       to_word_id: z.number().int().min(0).optional(),
       fromWordId: z.number().int().min(0).optional().describe("the same, as get_scenes spells it — a plan read back can be sent back as it is"),
       toWordId: z.number().int().min(0).optional(),
+      from_seconds: z.number().min(0).optional().describe("motion films only: where the scene starts on the film's clock, in seconds, in place of from_word_id"),
+      to_seconds: z.number().min(0).optional().describe("motion films only: where it ends, in place of to_word_id"),
+      fromSeconds: z.number().min(0).optional(),
+      toSeconds: z.number().min(0).optional(),
       insertId: z.string().optional(),
       index: z.number().int().optional().describe("ignored: get_scenes' own numbering"),
       text: z.string().min(1).optional().describe("title/callout text"),
@@ -1314,6 +1415,8 @@ server.registerTool("set_scenes", {
     type: scene.type,
     fromWordId: scene.from_word_id ?? scene.fromWordId,
     toWordId: scene.to_word_id ?? scene.toWordId,
+    fromSeconds: scene.from_seconds ?? scene.fromSeconds,
+    toSeconds: scene.to_seconds ?? scene.toSeconds,
     text: scene.text,
     subtitle: scene.subtitle,
     style: scene.style,
@@ -1324,7 +1427,9 @@ server.registerTool("set_scenes", {
     transition: scene.transition,
     graphic: scene.graphic,
     ...((scene.insert_id ?? scene.insertId) ? { insertId: scene.insert_id ?? scene.insertId } : {}),
-  })), { format: projectFormat(dir) });
+  })).map((scene) => { for (const key of Object.keys(scene)) if (scene[key] === undefined) delete scene[key]; return scene; }), { format: projectFormat(dir) });
+  const planned = [...planFor(dir, shaped)];
+  shaped.splice(0, shaped.length, ...planned);
   checkPlan(dir, shaped, words);
   assertAssets(dir, shaped);
   const previous = readComposeConfig(dir);
@@ -1691,7 +1796,7 @@ const sceneEdits = (dir, mutate) => {
   const result = mutate(edited);
   // A template named in a patch or an added scene is rendered here, so what
   // is written is always a complete custom graphic.
-  const scenes = expandPlan(edited, { format: projectFormat(dir) });
+  const scenes = planFor(dir, expandPlan(edited, { format: projectFormat(dir) }));
   checkPlan(dir, scenes, words);
   assertAssets(dir, scenes);
   config.scenes = scenes;
@@ -1724,15 +1829,23 @@ const scenePatchShape = {
   transition: z.enum([...TRANSITIONS]).nullable().optional(),
   fromWordId: z.number().int().min(0).optional().describe("The same as from_word_id, as get_scenes spells it"),
   toWordId: z.number().int().min(0).optional().describe("The same as to_word_id, as get_scenes spells it"),
+  from_seconds: z.number().min(0).optional().describe("motion films: move the scene's start on the film's clock"),
+  to_seconds: z.number().min(0).optional().describe("motion films: move its end"),
+  fromSeconds: z.number().min(0).optional(),
+  toSeconds: z.number().min(0).optional(),
   graphic: z.record(z.any()).optional().describe("Fields to merge into the card — only the ones you name change; null on a field clears it. `params` merges too, one param at a time. A different kind or template, or hand-written html in place of a template, is a new card: give the whole graphic, nothing of the old one carries over."),
 };
 
 const applyPatch = (scene, patch) => {
-  const { index, from_word_id, to_word_id, fromWordId, toWordId, graphic, ...fields } = patch;
+  const { index, from_word_id, to_word_id, fromWordId, toWordId, from_seconds, to_seconds, fromSeconds, toSeconds, graphic, ...fields } = patch;
   const first = from_word_id ?? fromWordId;
   const last = to_word_id ?? toWordId;
   if (first !== undefined) scene.fromWordId = first;
   if (last !== undefined) scene.toWordId = last;
+  const opens = from_seconds ?? fromSeconds;
+  const closes = to_seconds ?? toSeconds;
+  if (opens !== undefined) scene.fromSeconds = opens;
+  if (closes !== undefined) scene.toSeconds = closes;
   for (const [key, value] of Object.entries(fields)) {
     if (value === null) delete scene[key];
     else if (value !== undefined) scene[key] = value;
@@ -1810,7 +1923,7 @@ server.registerTool("add_scenes", {
   return sceneEdits(dir, (scenes) => {
     const shaped = added.map(shapeScene);
     scenes.push(...shaped);
-    scenes.sort((a, b) => (byId.get(a.fromWordId)?.start ?? 0) - (byId.get(b.fromWordId)?.start ?? 0));
+    scenes.sort((a, b) => sceneStart(a, byId) - sceneStart(b, byId));
     return { added: shaped.length };
   });
 });
@@ -2676,7 +2789,7 @@ server.registerTool("reanchor_scenes", {
       config.scenes[entry.index].fromWordId = entry.fromWordId;
       config.scenes[entry.index].toWordId = entry.toWordId;
     }
-    validateScenes(config.scenes ?? [], newWords, { motionLibs: installedMotionLibs() });
+    validateScenes(config.scenes ?? [], newWords, { motionLibs: motionLibsFor(dir), secondsAnchors: isMotionFilm(dir) });
     config.cutIdentity = cleanTranscriptStamp(dir) ?? config.cutIdentity;
     if (!config.cutIdentity) delete config.cutIdentity;
     writeComposeConfig(dir, config);

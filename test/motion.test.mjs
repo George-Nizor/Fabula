@@ -74,9 +74,15 @@ test("a motion graphic names a document under motion/ and nothing it cannot load
   assert.throws(() => ok({ src: "motion/../x.html" }), /motion\/<name>\.html/);
   assert.throws(() => ok({ src: "motion/Orbit.html" }), /motion\/<name>\.html/);
   assert.throws(() => ok({ src: "motion/a.html", params: [] }), /params/);
-  assert.throws(() => ok({ src: "motion/a.html", libs: ["three"] }), /libs/);
-  assert.throws(() => validateMotionGraphic({ kind: "motion", src: "motion/a.html", libs: ["gsap"] }, "scene 0", { libs: [] }), /none installed/);
+  // three ships with Fabula; a project's own code under motion/lib/ is project:<name>.
+  ok({ src: "motion/a.html", libs: ["three", "project:shapes"] });
+  assert.throws(() => ok({ src: "motion/a.html", libs: ["lottie"] }), /libs/);
+  assert.throws(() => ok({ src: "motion/a.html", libs: ["project:../x"] }), /libs/);
+  // With the list the server knows, only what exists passes.
+  assert.throws(() => validateMotionGraphic({ kind: "motion", src: "motion/a.html", libs: ["gsap"] }, "scene 0", { libs: ["three"] }), /chosen from three/);
+  assert.throws(() => validateMotionGraphic({ kind: "motion", src: "motion/a.html", libs: ["project:shapes"] }, "scene 0", { libs: [] }), /libs/);
   assert.ok(Object.keys(MOTION_LIBS).includes("gsap"));
+  assert.ok(Object.keys(MOTION_LIBS).includes("three"));
 });
 
 test("the plan validator takes a motion scene like any graphic", () => {
