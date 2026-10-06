@@ -7,7 +7,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // The bridge grows named operations only, mirroring the suite's preload
 // discipline: no generic invoke pass-through, no node objects across the line.
 contextBridge.exposeInMainWorld("fabula", {
-  version: "0.1.0",
+  version: "0.2.0",
   platform: process.platform,
   getState: () => ipcRenderer.invoke("fabula:get-state"),
   setChromeTheme: (theme) => ipcRenderer.invoke("fabula:set-chrome-theme", theme),
