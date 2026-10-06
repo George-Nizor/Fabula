@@ -1,9 +1,9 @@
 # Fabula as a motion-graphics tool
 
-Design proposal, 2026-10-06. Nothing here is built yet. It answers the owner's question: can Fabula
-make the kind of full motion graphics Claude produces on its own (the single-file reels people post
-on Reddit and X), and what is in the way? It ends with a phased plan and the decisions; the
-owner's answers of the same day are folded in.
+Design and status, 2026-10-07. The owner's question: can Fabula make the kind of full motion
+graphics Claude produces on its own (the single-file reels people post on Reddit and X), and what
+is in the way? Below are the answer, what the best results do, what Fabula is becoming, what is
+built and what is left.
 
 ## The verdict on the hunch
 
@@ -104,336 +104,76 @@ Sources are listed at the end of this document. The short version:
 Two figures in the research could not be checked against a primary source: the Remotion Skills
 install counts, and the Opus 5.5 release date and pricing. Neither affects the design.
 
-## What Fabula should become
+## What Fabula is becoming
 
-Three things, built in this order, sharing one runtime, one render, one look and one assistant:
+One Fabula, two ways to start, one engine:
 
-- **Sequences inside a film.** In a serious film (a documentary-style piece, an explainer with a
-  real argument) the editor can decide that a stretch of the recording deserves a full, dedicated
-  motion sequence. The sequence takes the whole stage for that stretch while the clip's own audio
-  carries on underneath, timed to the clip's own words. This is the owner's first ask, and it needs
-  no new clock: the recording already is one.
-- **A better way of making motion.** The storyboard, the automatic checks, the critic and the
-  motion vocabulary below. Sequences need these first. Every motion scene benefits, and so does the
-  dedicated product.
-- **A dedicated motion product.** Motion films with no camera at all, timed to a Luna voiceover,
-  a music bed or a plain length with named beats. It is a separate product in the suite, built on
-  the same engine.
+- **New video**: a recording, cut and composed, as today. Motion goes in as moments, or as a
+  **sequence**: twenty seconds to two minutes where a serious film (a documentary, an argument)
+  stops showing the speaker and becomes motion graphics over its own sound.
+- **New motion graphic**: a **motion film** with no recording at all, timed to a narration (a Luna
+  voiceover or any audio file) or to a length. Motion graphics are the whole film.
 
-The talking-head editing that exists today keeps working throughout.
+Both are made the same way: a storyboard first, reels written as code in one shared world, a check
+pass that measures every reel, and the assistant judging its own shots in rounds. Everything runs on
+whichever model the session is started with; `--model claude-opus-5-5` runs the whole chain on Opus.
 
-### 1. Sequences: a dedicated motion piece over the clip's audio
+## What is built
 
-A **sequence** is a motion graphic placed over a span of the recording, typically 20 s to two
-minutes. It differs from today's motion scene in five ways:
+On the branch `feat/motion-graphics`, in a worktree, not yet merged:
 
-- **It owns the stage.** The span is a cutaway, so the head is gone and the field is the
-  sequence's own. The recording's audio plays on, ducked under music if the brief allows music.
-- **It is long and continuous.** It is a reel (section 3): one document with shots inside, one
-  camera, shapes that carry across shots. It is not a string of cards.
-- **Its clock is the film's.** Words are `fabula.word()` exactly as today, so a re-cut moves the
-  beats with the speech.
-- **It enters and leaves as a designed transition.** There is no card fade. The engine's dwell
-  rules treat it as one placed segment however many shots it holds.
-- **It has a purpose written down.** `set_treatment` already names the signature moment. A sequence
-  adds a line saying what it argues and why motion is the way to argue it, and that line goes to
-  the storyboard and the critic.
+| Piece | Where |
+| --- | --- |
+| Motion films: `new_motion` and `set_narration`. A stand-in recording carries the narration or silence through the ordinary clean-cut path, so sound, captions, cache and render are unchanged. The stage is a cutaway throughout. | `mcp/server.mjs`, `scripts/job.mjs` (`motion_film`), `scripts/project-state.mjs` |
+| Scenes and storyboard beats anchored in seconds, for films without words | `core/compose-engine.mjs`, `core/treatment.mjs` |
+| The storyboard in `set_treatment`: spine, held frame, bans, words on screen and motion per beat | `core/treatment.mjs` |
+| three.js 0.186, vendored, MIT | `renderer/motion/vendor/` |
+| Shared project code: `write_motion_lib` writes `motion/lib/<name>.js`, which a scene loads with a `// fabula-libs:` line. A library change re-renders the scenes that use it. | `electron/motion-protocol.cjs`, `renderer/motion/runtime.js` |
+| Scenes load what they use (`THREE.`, `gsap.`) without the placement naming it | `core/motion.mjs` `motionLibsOf` |
+| The check pass. `write_motion` samples the scene every 0.2 s and reports text off the frame, outside the safe area, overlapping or too small, each with its seconds. Clip-path wipes are honoured. | `renderer/motion/runtime.js`, `scripts/frame.cjs` |
+| Reel helpers: `fabula.shot` (shots in one document), `fabula.camera` (keyed, log zoom), `fabula.fit` | `renderer/motion/runtime.js` |
+| The craft: three sizes of motion, storyboard before code, reels in one world, the defaults to break, three.js, scoring rounds | `docs/craft/motion.md`, `describe_motion` |
+| More liberty under Free hand. Taste rules become advice; the check pass and the invariants do not. | `core/direction.mjs` |
+| The assistant's `motion` task: storyboard, look, shared library, reels, checks, rounds, place, sound, draft | `scripts/assistant.mjs` |
+| A worked film, *An orbit is a fall* (24 s, rendered at 1080p in 61 s) | `docs/craft/plans/an-orbit-is-a-fall/` |
 
-Almost all of this exists. A motion scene under a cutaway with `fade: false` is most of a sequence
-today; what is missing is the reel model, the making loop and the craft to decide when a film earns
-one. The craft guidance belongs in `docs/craft/editor.md` and the treatment: a documentary film has
-perhaps one to three sequences, at the points where the argument turns or a mechanism has to be
-seen working. A vlog has none.
+## What is left
 
-### 2. The making loop
+**Waiting on the window.** These touch `electron/main.cjs` and `renderer/main.js`, which the brand
+session is editing:
 
-This is where most of the quality comes from. It applies to sequences, to motion scenes in any film,
-and to the dedicated product.
+- **New motion graphic** beside New video in the window. Its sheet takes a title, the shape, a
+  length or a narration file, and a brief. It then starts the assistant on the `motion` task.
+- **The storyboard gate.** The window shows the treatment's beats as a storyboard page. Under
+  Guided, a sequence's storyboard waits for one click of approval before its reel is written.
+- The window re-reads a scene when a project library it uses changes (today it watches only the
+  scene documents).
 
-1. **Brief and treatment** (exists): purpose, latitude, look, the signature moment.
-2. **Storyboard.** `set_storyboard` writes `storyboard.json`:
-   - the message, stated as a claim;
-   - the spine, the one continuity device;
-   - beats of 1.5–3.5 s, with the on-screen words verbatim and the word or cue each reveal lands on;
-   - one held frame, and at least one "no …" ban.
+**After that:**
 
-   The window shows it as a page of key frames sketched as stills. After the build, the storyboard is
-   regenerated from what was made, because every launch film in the HyperFrames notes drifted from
-   its plan.
-3. **Write a reel, then check it automatically.** `write_motion` gains a check pass before it
-   returns, run in the same sandboxed frame:
-   - text that overflows its box or the safe area;
-   - two text boxes overlapping for more than a few frames (transients during entrances are
-     allowed);
-   - contrast of text against what is behind it;
-   - frame-to-frame pops: a single-frame jump in the picture that no cue explains;
-   - frozen stretches longer than 2 s inside a reel;
-   - colours outside the theme and fonts outside the vendored set.
+- **Luna voiceover** for motion films: read Luna's `app.json`, call its `/api/generate`, hand the
+  WAV to `set_narration`. Luna gives no word timings; WhisperX supplies them, as for recordings.
+- **Named cues** dragged on the timeline (`cues.json`, `fabula.cue`). Seconds, the narration's words
+  and `fabula.shot` cover the timing today; cues are the window's way to move a beat by hand.
+- **The critic as a separate session** with the scoring rubric, on the maker's model.
+- JPEG capture for opaque reels (about 1.4× faster), and motion blur on the master as an opt-in.
 
-   It samples at every cue, 0.3 s after every cue, and at a steady rate between. Findings come back
-   as a list with times, alongside the contact sheet.
-4. **Assertions the assistant writes.** An optional sidecar, `motion/<name>.check.json`, in the
-   MoVer and `*.motion.json` style: `appearsBy`, `before(a, b)`, `staysInFrame`, `keepsMoving`.
-   They are checked against the DOM without a render. This is how the assistant states what it
-   meant and hears when the frames disagree.
-5. **A draft video, judged in strips.** A 540p draft of the reel, plus the howseen sheet set: an
-   overview at 2 fps, a 12-frame strip around each fast move and handoff, and a phone-width sheet.
-6. **A critic that did not build it.** The critic persona runs as a separate, read-only session. It
-   scores each shot out of ten against a fixed rubric (readability, rhythm, continuity, brand) and
-   sends back only shots at 7 or below. It also restates the message from the frames alone. The
-   loop stops after three rounds or when nothing scores 7 or below.
+## Rendering speed
 
-### 3. Reels: continuity across a whole sequence
-
-A **reel** is a long motion document running on the film's clock rather than a per-scene one.
-Inside a reel, the assistant writes **shots** as functions of `t` with handoffs between them, so
-one object can become the next idea:
-
-```js
-fabula.reel({
-  setup(ctx) { /* build the shared world once: the shape system, the camera */ },
-  shots: [
-    { cue: "intro",   render(t, s) { /* s.p is this shot's progress */ } },
-    { cue: "problem", render(t, s) { /* the circle from intro becomes the bar chart */ } },
-  ],
-  camera(t) { return { x, y, zoom }; }, // keyed, zoom eased in log space
-});
-```
-
-`fabula.scene` keeps working, and a reel is a scene whose span holds many shots. What changes:
-
-- **`t` can be the film's own time** (`clock: "film"` on the graphic), so two reels, or a reel and
-  a title, agree on what instant it is.
-- **A project-local motion library.** `motion/lib/*.js` and `motion/lib/*.css` are served by the
-  protocol under the same allowlist and named in a graphic's `libs` as `project:<name>`. A shared
-  type scale, palette helpers or a drawn character are written once. This stays inside the sandbox:
-  the files are the project's own, read-only and offline.
-- **One reel per sequence, several for a long piece.** One document for a 30–60 s sequence is what
-  the reference reels are. A five-minute motion film is several reels joined by designed
-  transitions, because a single document that long is where coherence breaks down
-  (TheoremExplainAgent's runs managed about 20 s without an agent loop).
-
-### 4. The motion vocabulary
-
-`describe_motion` and `docs/craft/motion.md` gain a short section on what the model gets wrong by
-default. It is written as advice the check pass partly backs up:
-
-- named eases with direction (out for entrances, in for exits), spring presets with a damping
-  ratio of at least 0.72, and three speed tiers;
-- build, breathe, resolve in every beat, with exits faster than entrances;
-- one thing moves at a time; stagger in order of importance and under 0.5 s in total;
-- build the end state in static markup first, then animate from it (HyperFrames' layout rule,
-  which stops most overflow before it happens);
-- a ban list the brief can extend: rainbow gradients, particle fields as decoration, glow,
-  3D flips, emoji.
-
-The existing helpers (`range`, `spring`, `stagger`, `ease`, `split`) already cover the arithmetic.
-Two additions: `fabula.fit(element, box)` for text that must fit, and `fabula.camera` for the keyed,
-log-zoom camera.
-
-### 5. Fewer rules, more liberty
-
-The owner's answer: give the editor more liberty if it produces a better result. The proposal
-separates two kinds of rule.
-
-- **Taste rules move to advice under Free hand.** These include "a motion scene must earn its
-  place", the variety and pacing reads, the template-first habit in `CLAUDE.md`'s invariants, and
-  the one-camera-move-per-scene line in the craft. Under Free hand they are context the assistant
-  may overrule, and the invariants say so in one sentence. Guided keeps them as the default way of
-  working. By the book still enforces the kit.
-- **Quality checks stay at every latitude.** Text off the frame, a one-frame flash and an unreadable
-  contrast are faults, never style choices. The check pass reports them under Free hand too.
-
-That split is the honest way to give liberty without giving up the floor. The research is clear that
-the model's unconstrained defaults are the "AI look", so the vocabulary in section 4 stays in front
-of it as knowledge, not as a cage.
-
-### 6. Opus for the whole chain
-
-The assistant launcher already passes any exact model ID through (`scripts/assistant.mjs`,
-`selection`), so `npm run assistant -- --provider claude --model claude-opus-5-5` runs the maker on
-Opus today. Two additions make it the whole chain:
-
-- **The critic inherits the maker's model** unless the brief names another. Choosing Opus once means
-  Opus everywhere.
-- **The Make it into a video sheet gets a model choice** beside the provider, remembered per
-  provider as the CLI launcher already does. "Opus" is offered by name; anything else stays an exact
-  ID.
-
-Nothing in Fabula should be tuned to a smaller model's limits: the contract, the checks and the
-craft are model-neutral.
-
-### 7. The dedicated motion product
-
-Motion films with no recording. What they need beyond sequences:
-
-- **A clock that is not a recording:**
-
-  | Clock | What sets the length | Where the words come from |
-  | --- | --- | --- |
-  | `recording` | The clean cut (today) | WhisperX on the clean cut (today) |
-  | `voice` | A narration: Luna, a recorded read, any WAV | WhisperX on that file (already installed) |
-  | `score` | A duration, or a music bed's length | None; named cues only |
-
-  The cheapest way in keeps the renderer's assumptions: for a `voice` or `score` film, Fabula
-  synthesises `out/clean.mp4` with ffmpeg, a video of the right length carrying the narration or
-  silence. The render, the sound mix, captions and the chunk cache work unchanged, and the layout is
-  a cutaway throughout because there is no head.
-- **Cues: anchors that are not words.** Scenes anchor to cues, of which words are one kind:
-  - words, from the clock's transcript;
-  - named marks in `cues.json` (`{ "id": "drop", "at": 12.4 }`), placed by the assistant, dragged
-    by the person on the timeline, read with `fabula.cue("drop")`;
-  - beats from a music bed, offered as suggestions to snap a mark to, never trusted as a grid.
-- **Voice from Luna.** Luna is wanted here and not for the main editor, whose films carry their own
-  audio. What Luna offers and lacks:
-  - **It offers** Qwen3-TTS with nine built-in speakers under Apache-2.0, plus cloned profiles from
-    a recording you own. `POST /api/generate` on its loopback port returns a 24 kHz mono WAV.
-  - **It lacks word timings.** Fabula transcribes the WAV with WhisperX, as it does recordings.
-  - **The friction:** Luna must already be running on Windows; its token changes every launch
-    (`%APPDATA%\Luna\runtime\app.json`); it answers only on Windows' 127.0.0.1, so WSL needs
-    mirrored networking or `curl.exe`; it takes one request at a time and 5,000 characters at most.
-    A small CLI or MCP entry in Luna's own repository would remove most of it.
-  - **Voices to avoid** in published films: the legacy XTTS and RVC voices. One imitates a real
-    person, and neither has a licence in the repo.
-
-  `make_voice { script, speaker }` lets the assistant write the script, hear it back as words with
-  timings, and rewrite before any animation is made. That is the audio-first order the research
-  recommends.
-
-**How it becomes a product.** Suite products are independent repositories, each with its own
-`instrumenta/product.json`, and there is no mechanism for sharing code between them. The engine
-(runtime, protocol, render, checks) lives in Fabula and will change fast while sequences are built.
-So the dedicated product starts as a project kind inside Fabula, a "motion film" chosen at New
-project, and gets its own name, tile and catalog entry once the engine settles. The catalog code
-does not visibly refuse two entries over one checkout (`scripts/product-registry.cjs:264`), but
-whether a second manifest can live in one repository is unverified. If it cannot, the product
-moves to its own repository and takes the engine as a dependency at that point.
-
-### 8. Libraries
-
-- **three.js, vendored** (MIT; the owner said yes). Depth, light and camera moves are a large part
-  of the reels people share, and writing WebGL by hand is where a model invents APIs. It adds about
-  700 KB.
-- **GSAP stays optional, not bundled**, for the licence reason already recorded in the product brief.
-- **No Lottie authoring.** Importing a Lottie someone else made, as an asset, can come later.
-
-### 9. Rendering
-
-Measured on this machine on 2026-10-06. This was WSL with Chromium on its software renderer, because
-the GPU process does not start here, and three capture windows ran in parallel:
+A motion scene is captured at every frame, so a film that is all motion is the render's heaviest
+case. Measured 2026-10-06 on this machine (WSL, Chromium on its software renderer because its GPU
+process does not start here), per capture window. The render runs three in parallel.
 
 | Scene | Stage | Draw | Capture | Per window |
 | --- | --- | --- | --- | --- |
 | `thrust` (the rockets film's scene) | 1920×1080, PNG | 30 ms | 100 ms | 7.7 fps |
 | `thrust` | 960×540, PNG | 25 ms | 42 ms | 14.8 fps |
-| A heavy test scene: 3,000 canvas points, 120 SVG nodes, split type | 1920×1080, PNG | 42 ms | 110 ms | 6.6 fps |
+| A heavy test scene: 3,000 canvas points, 120 SVG nodes | 1920×1080, PNG | 42 ms | 110 ms | 6.6 fps |
 | The heavy scene | 1920×1080, JPEG 92 | 32 ms | 74 ms | 9.4 fps |
-| The heavy scene | 960×540, PNG | 20 ms | 48 ms | 14.8 fps |
 
-With three windows, a two-minute all-motion film (3,600 frames) takes roughly three minutes for the
-1080p master and about a minute and a half for a 540p draft, before encoding. A one-minute sequence
-in a longer film is half of that. That is workable, so **the capture path does not need replacing.**
-Two cheap gains: JPEG for opaque reels that own the stage (about 1.4× here; alpha layers stay PNG),
-and more capture windows on a machine with cores to spare. Encoding to WebP was slower than PNG.
-
-Motion blur is the expensive extra. Four to eight subframes per frame multiplies capture time by the
-same factor, so it belongs on the master only, as an opt-in per reel, never blended across a cut
-(the howseen method, `tmix` in ffmpeg). The Windows install's GPU may change all of these numbers;
-they should be re-measured there before anything else is sized on them.
-
-## Phased plan
-
-Each phase ships on its own and leaves the talking-head film working.
-
-**Phase 1: sequences in a film.**
-
-- A `sequence` graphic: a motion graphic on a cutaway span, no card fade, on the film's clock, with
-  its purpose line.
-- `fabula.reel` with shots, handoffs and the keyed camera, plus `motion/lib/`.
-- three.js vendored.
-- Craft: when a documentary-style film earns a sequence, in `docs/craft/editor.md` and the
-  treatment.
-- Free hand loosened as in section 5.
-
-This phase is done when a sequence of 45–90 s, made by the editor inside one of the existing real
-projects over its own audio, renders through the existing export, and a re-cut of the words under
-it moves its beats.
-
-**Phase 2: the checks.**
-
-- The check pass in `write_motion`, with findings by time.
-- The assertion sidecar.
-- Strips around fast moves and handoffs.
-- The motion vocabulary in `describe_motion` and the craft doc.
-- `fabula.fit` and `fabula.camera`.
-- JPEG capture for opaque reels.
-
-This phase is done when a deliberately broken reel (text off the frame, a one-frame flash, an
-overlap held for a second) is caught by the check, with times, before anyone looks.
-
-**Phase 3: storyboard, critic and the model choice.**
-
-- `set_storyboard`, its page in the window, and the gate as decided below.
-- The critic as a separate read-only session with the rubric and the round cap, on the maker's
-  model.
-- A model choice in the Make it into a video sheet.
-- The storyboard regenerated from the build afterwards.
-
-This phase is done when a sequence goes from storyboard to approved draft with the critic's scores
-recorded per round, and the second round scores higher than the first.
-
-**Phase 4: motion films.**
-
-- Clock sources `voice` and `score`.
-- `new_film`, which synthesises the clean video.
-- `cues.json`, cue anchors in `validateScenes` and `resolveScenes`, and `fabula.cue()`.
-- The window: the Cut step hidden for a film with no recording; cue marks on the timeline, draggable.
-- A worked reference film in `docs/craft/`: 45 s, made only with the tools.
-
-This phase is done when a 30–60 s piece made from a brief, with no recording, renders through the
-existing export, and moving a mark in the window moves its beat.
-
-**Phase 5: Luna, and the product of its own.**
-
-- A Luna adapter in Fabula: read `app.json`, call `/api/generate`, fetch the WAV, transcribe it.
-- A Luna-side CLI or MCP entry, agreed in Luna's own repository.
-- `make_voice { script, speaker }`.
-- The motion film gets its name, tile, artwork and catalog entry as a product of the suite.
-- Motion blur on the master as an opt-in.
-
-## Decisions
-
-The owner's answers of 2026-10-06, and the calls made where the owner asked for one.
-
-1. **One product or two: both.** Sequences live in Fabula's editor for documentary-style films. The
-   dedicated product comes later, starting as a project kind in Fabula and becoming its own product
-   once the engine settles (section 7).
-2. **Continuity model: reels.** Decided here at the owner's request. One document per moment with
-   joins between them would be less work, but it cannot carry a shape across a boundary, and that
-   carry is what makes the admired reels look the way they do.
-3. **The storyboard gate.** Decided here at the owner's request:
-   - **Free hand:** the storyboard is shown, and the work goes on.
-   - **Guided:** the person approves a sequence's storyboard before its reel is written. A short
-     motion scene of under 15 s only shows its storyboard.
-   - **By the book:** sequences are refused, as motion scenes are now.
-
-   Approval is one click in the window, with a note box for changes. A sequence is the most
-   expensive thing in a film to redo, which is why the gate sits there and nowhere else.
-4. **Models: the whole chain on Opus as an option.** The maker runs on Opus today by model ID. The
-   critic inherits the maker's model, and the brief sheet gets a model choice (section 6).
-5. **three.js: yes, vendored.**
-6. **Rules: more liberty under Free hand.** Taste rules become advice; the automatic quality checks
-   stay at every latitude (section 5). Whether Free hand becomes the default for documentary-style
-   films is left until phase 1 has made one.
-7. **Luna: for motion films only.** The main editor never needs it, because its films carry their
-   own audio.
-
-Still open, none of it blocking phase 1:
-
-- **The product's name**, when phase 5 comes. Motus is discontinued and its mark is Fabula's now, so
-  the suite's naming would want a new Latin word.
-- **A small CLI or MCP entry in Luna's repository**, or Fabula calling Luna's HTTP API as it is.
-  The CLI is sturdier; it is also a change to another product.
+In practice *An orbit is a fall* (24 s, SVG) rendered at 1080p in 61 s, and a 12 s three.js scene
+drafted at half size in 25 s. The capture path does not need replacing. These numbers should be
+measured again on the Windows install, whose GPU may change them.
 
 ## How the numbers were found
 
