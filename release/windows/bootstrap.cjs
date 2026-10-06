@@ -142,7 +142,7 @@ function openSetup() {
     minHeight: 520,
     title: "Fabula",
     backgroundColor: "#faf9f5",
-    icon: path.join(__dirname, "fabula-mark.png"),
+    icon: path.join(__dirname, process.platform === "win32" ? "fabula.ico" : "fabula-mark.png"),
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });

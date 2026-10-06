@@ -894,7 +894,9 @@ function createWindow() {
     minWidth: 960,
     minHeight: 620,
     backgroundColor: "#faf9f5",
-    icon: path.join(__dirname, "..", "brand", "fabula-mark-256.png"),
+    // The brand v2 slate (brand/, copied from Instrumenta): the ICO carries each size drawn at
+    // that size for the Windows taskbar; elsewhere the PNG.
+    icon: path.join(__dirname, "..", "brand", process.platform === "win32" ? "fabula.ico" : "fabula-256.png"),
     show: false,
     // On Windows the masthead is the title bar: the window's own frame would
     // put a second, grey strip above the brand row. The system controls
