@@ -69,7 +69,7 @@ export const TASKS = {
     "7. Place them: set_scenes with each reel over its span (from_seconds/to_seconds, or the narration's words), fade: false; the last frame of one reel is the first of the next, so the film never blinks through an empty stage.\n" +
     "8. Sound, as the brief allows: set_audio — the narration at -16 LUFS if there is one, a bed (search_audio) whose swells land on the beats, effects on the hits.\n" +
     "9. render_final draft: true, wait_render, film_sheet the draft and look at it as a viewer would; adopt_persona critic and critique_film; fix what is wrong and render the draft once more at most.\n" +
-    "10. Then stop and tell me in a few lines: the logline, the spine, the shot you are proudest of and when it plays, what you are least sure of, and that the draft is ready in the window. The real render waits for me.",
+    "10. Then stop and tell me in a few lines: the logline, the spine, the shot you are proudest of and when it plays, what you are least sure of, and that the draft is ready in the window. The real render waits for me unless the brief (get_direction) asks for it; then render_final once the draft is right, and say so.",
 };
 
 export function selection(provider, model = "", effort = "") {
