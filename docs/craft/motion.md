@@ -2,13 +2,27 @@
 
 `describe_motion` is the contract — what a motion document may contain, the `fabula.*` helpers,
 the rules the runtime enforces. This is the judgment: when a moment deserves motion, how to make
-it land on the words, and what goes wrong. It comes from making films with it; the examples are
-from the first one.
+it land on the words, how a long piece stays one piece, and what goes wrong. It comes from making
+films with it, and from how the best motion graphics are being made with models like you in 2026
+(the sources are in `docs/motion-graphics.md`).
+
+## Three sizes
+
+- **A moment** inside a recorded film: a few seconds where a card would not do. The rest of this
+  section is about when one is earned.
+- **A sequence** inside a recorded film: twenty seconds to two minutes where the speaker goes and
+  the film becomes motion graphics over its own sound. It belongs in a serious film (a documentary,
+  an argument, an explanation) at the point its turn depends on something being seen working:
+  how an orbit is a fall, how a vaccine teaches a cell, where the money went. One to three in a
+  film; none in a vlog. Place it under a cutaway, `fade: false`, written as one reel.
+- **A motion film** (`new_motion`): nothing but motion from the first frame to the last, timed to
+  a narration or to a length. Everything below applies, at full strength.
 
 ## When a moment earns motion
 
 A motion scene costs more than a card — to write, to check, and to render (it is captured at every
-frame). Spend it where movement IS the explanation:
+frame). Under Free hand this section is advice; under Guided it is how to spend one or two. Spend
+it where movement IS the explanation:
 
 - **A mechanism.** Gas goes down and the rocket goes up; a gear turns another; data moves through a
   pipeline. A card can name the parts; only motion shows them working.
@@ -25,6 +39,71 @@ Not for a point that is only words: a title, a callout or the head saying it doe
 motion around a sentence is decoration. Ask what the viewer would lose if the scene were a still
 card. If the answer is nothing, it is a card.
 
+## Storyboard before code
+
+Every sequence and every motion film starts as a storyboard in `set_treatment`, written before
+a line of the reel. It is the cheapest place to be wrong. Every film made in public with these
+methods drifted from its first idea; the ones that came out well drifted from a written one.
+
+- **The message as a claim.** "An orbit is a fall that keeps missing", not "orbits explained".
+- **The spine.** The one continuity device the whole piece keeps: a single ball that falls, is
+  thrown and orbits; a line that draws the whole film; a camera that never cuts. Everything else
+  hangs off it. A piece without a spine is a slideshow with transitions.
+- **Beats of 1.5 to 3.5 seconds**, each with the words on screen verbatim (`onScreen`), what moves
+  and how it hands over to the next (`motion`), and where it lands: on a narration word or a
+  second. A beat longer than about four seconds is two beats or a hold.
+- **One held frame**, still on purpose, where the idea lands (`hold`).
+- **Bans**: what this piece will not do (`bans`), so a later reel cannot drift back to the
+  defaults. "No particles", "no 3D flips", "nothing enters from below".
+- **A reference style named as a method** (`docs/craft/references.md`), never as adjectives.
+  "Clean and modern" describes every generated film.
+
+## One world: reels, shots and the camera
+
+The motion people share as "stunning" is almost never a sequence of separate scenes. It is one
+composition in which things transform: the dot becomes the planet, the planet's shadow becomes the
+chart's first bar, the camera pulls back and the chart turns out to be a coastline. Write it that
+way.
+
+- **A reel is one document holding several shots** (`fabula.shot`). The shots share one world,
+  built once in `setup`: the shapes, the type, the camera. A shot is render code over its own
+  `s.t` and `s.p`; what it hands to the next shot is the state of the world at its last frame.
+- **Carry, do not cut.** The last frame of a shot is the first of the next. If an element leaves,
+  it leaves by becoming something, by going out of frame on a camera move, or by being covered.
+  A crossfade between two unrelated pictures is the move of last resort.
+- **One camera**, keyed in time (`fabula.camera`), eased at both ends, zoom in log space. Move
+  between ideas by moving the camera across a world that already holds them.
+- **Shared code across reels.** A film longer than one reel draws from one library
+  (`write_motion_lib`): the palette helpers, the type scale, the shape system, the camera rig. Two
+  reels that each define their own circle are two films.
+- **Reel length**: 20 to 60 seconds. A single document much longer than a minute is where
+  coherence breaks down; join reels where one hands over to the next, on a shared frame.
+
+## The defaults you fall into
+
+`describe_motion` lists them as `vocabulary`. They are worth knowing as habits, because each one
+is the reason a generated film looks generated:
+
+- everything entering by rising 30 px and fading in;
+- one ease and one speed for everything, usually about half a second;
+- everything moving at once, centred and floating;
+- particle fields, glows, gradients and 3D flips standing in for an idea;
+- text set at web sizes, in whatever face was nearest.
+
+Doing the opposite on purpose is most of the distance between a demo and a film: entrances that
+come from where the thing comes from, a slow beat three times the length of the fast one, one
+thing moving at a time, the composition anchored to an edge, one accent colour on the one thing
+that matters.
+
+## three.js
+
+Use it when depth, light or a camera moving through space IS the idea: a planet and its orbit, a
+molecule, a city from above. Make the renderer in `setup` on your own canvas with
+`preserveDrawingBuffer: true`, light it with a key and a fill, and set every position, rotation and
+camera from `t`. Keep text in HTML over the canvas, where the check pass can measure it and the
+film's fonts are. Keep geometry modest: every frame is drawn on the machine's CPU when it has no
+GPU, and a film is thousands of frames.
+
 ## Land it on the words
 
 The narration is the clock. `fabula.words` holds every word spoken over the scene, timed from its
@@ -39,10 +118,14 @@ put and lands on the wrong word.
   roughly its word count over three, in seconds — before the scene ends or moves on.
 - Always give `fabula.word` a fallback second (`?.t0 ?? 2.4`), so the scene still plays in a
   preview that has no words, and say it in a comment.
+- **A motion film without a narration** has no words: its clock is the storyboard's seconds and
+  the music. Put beats on the bed's hits (listen to where it swells: `search_audio` describes
+  tracks, and the sheet shows nothing of sound), and keep the beats in the storyboard and in the
+  reel's `fabula.shot` list the same, so changing one tells you to change the other.
 
 ## Move like a camera, not like a slideshow
 
-- **One camera move per scene**, eased at both ends (`fabula.ease.inOut`, `fabula.spring` for an
+- **One camera move per shot**, eased at both ends (`fabula.ease.inOut`, `fabula.spring` for an
   arrival). A linear move reads as a machine, not a camera.
 - **Solve the camera, do not blend it.** Blending two framings — close on the subject, wide on the
   world — passes through views where neither is in frame. In the first film the orbit's pull-back
@@ -84,12 +167,20 @@ order, in parallel, and again after every edit; state kept between them is state
 
 ## Look, then look again
 
-1. `write_motion` returns a contact sheet across the scene. Look at every tile: is the subject in
-   frame, does the type fit, does anything collide at the extremes of its movement?
-2. Once the scene is placed, `preview_motion` draws it with the placement's own span and words
+1. `write_motion` returns the check pass and a contact sheet. The check pass measures the scene's
+   text every fifth of a second as it is drawn: off the frame, outside the safe area, two blocks
+   overlapping, too small to read, each with the seconds it holds for. Fix every finding that is
+   not marked brief before anything else; those are pixels, not taste. Then look at every tile:
+   is the subject in frame, does anything collide at the extremes of its movement, is it
+   beautiful?
+2. **Judge it like a critic who did not make it.** For each shot, score it out of ten against the
+   storyboard and the defaults above: does it read, does it move like one world, does it hold
+   where it should. Rewrite every shot at seven or below; leave the nines alone. Two rounds at
+   least, four at most: that is where the generated look goes away, and where returns stop.
+3. Once the scene is placed, `preview_motion` draws it with the placement's own span and words
    (name the placement with `scene` when one document is placed twice). The timings are now real;
    look again.
-3. `review_film` shows it in the rhythm of the whole film, and `film_sheet` shows what the render
+4. `review_film` shows it in the rhythm of the whole film, and `film_sheet` shows what the render
    actually wrote. The first made film's render had a stretch where a cover vanished: only the
    film sheet showed it.
 

@@ -2930,6 +2930,8 @@ server.registerTool("status", {
     project: pointer.dir,
     title: readProjectMeta(dir).title ?? pointer.dir,
     format: describeFormats().find((f) => f.id === projectFormat(dir)),
+    kind: isMotionFilm(dir) ? "motion" : "recording",
+    ...(isMotionFilm(dir) ? { motionFilm: { ...(readProjectMeta(dir).motion ?? {}), note: "A motion film: no recording, no head, no cuts. The stage is a cutaway throughout; scenes may sit in seconds (from_seconds/to_seconds) or on the narration's words. The work is the reels: storyboard in set_treatment, shared code in write_motion_lib, reels with write_motion, placed with set_scenes." } } : {}),
     derivedFrom: readProjectMeta(dir).derivedFrom ?? null,
     root: mediaRoot(),
     video: paths.video,
