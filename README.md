@@ -1,307 +1,227 @@
-# Fabula
-
 ![Fabula banner](docs/images/fabula-banner.png)
 
 <p align="center"><img src="docs/brand/fabula-animated.svg" alt="Fabula slate" width="96" /></p>
 
+# Fabula
+
 Cut a talking-head video by its words, then let Claude Code or Codex make it into a film.
 
-Fabula is a transcript-driven talking-head video editor: it transcribes a recording locally
-(WhisperX on CUDA), proposes cuts for dead air, fillers, and false starts, lets you review every
-cut as strikethrough text before anything renders, then plans and composites visuals around the
-speaker — layouts that move the head around the frame, named graphics, and motion scenes the
-assistant writes as code for the moments that have to move — with your choice of Claude Code or
-Codex as the editor, using your existing subscription. One button, **Make it into a video**,
-takes a reviewed cut to a draft film from a short brief. Fabula also makes **motion films**:
-pieces that are nothing but motion graphics, with no recording at all.
+Fabula is a transcript-driven talking-head video editor. It transcribes a recording locally
+(WhisperX on CUDA), proposes cuts for dead air, fillers and false starts, and shows every cut as
+strikethrough text for you to review before anything renders. Then it plans and composites visuals
+around the speaker: layouts that move the head around the frame, named graphics, and motion scenes
+the assistant writes as code. The assistant is Claude Code or Codex, on your existing subscription.
+**Make it into a video** takes a reviewed cut to a draft film from a short brief. Fabula also makes
+**motion films**, pieces that are nothing but motion graphics, with no recording.
 
 <p align="center">
   <img src="docs/images/fabula-look-dark.png" alt="The Look step in the dark theme: preset cards, each drawn by the film's own painter" width="49%" />
   <img src="docs/images/fabula-export-light.png" alt="The Export step in the light theme: the film, the clean cut, shorts and files" width="49%" />
 </p>
 
-The window follows the system's dark or light; the sun, moon or screen at the top right pins one.
+The window follows the system's dark or light; the control at the top right pins one.
+
+## Run it
+
+Fabula 0.3.1. The pipeline and the assistant run in WSL or Linux; the window can stay on Windows.
+You need Node 22 or newer, and Claude Code or Codex installed and signed in for the assistant.
+
+```bash
+npm install
+npm test              # node --test test/*.test.mjs; pure node, no media tools needed
+npm run setup:tools   # static ffmpeg and a WhisperX venv under tools/, no sudo
+npm start             # Electron window
+```
+
+In the Instrumenta launcher, an installed release runs the editor from an engine set up in your
+default WSL distribution, and a workspace checkout runs as is. Details are under
+[In the Instrumenta launcher](#in-the-instrumenta-launcher). Read
+[`docs/product-brief.md`](docs/product-brief.md) for the pipeline, the architecture and the
+decisions already made.
 
 ## Projects
 
-Fabula opens on its home screen: **New project…** and the list of projects you already have.
-A project is a recording where it lives plus what Fabula makes from it (transcripts, cuts,
-scenes, renders) in a folder of its own; nothing is copied, a 19 GB recording included.
+The home screen has **New project…** (Ctrl+N, or drop a recording on the window) and the list of
+projects you already have. A project is a recording where it lives plus what Fabula makes from it
+(transcripts, cuts, scenes, renders) in a folder of its own. Nothing is copied.
 
-**New project…** (Ctrl+N, or drop a recording anywhere on the window) asks for the recording, a
-name, and the shape it is delivered in — **Landscape** (16:9, 1920×1080) or **Vertical**
-(9:16, 1080×1920, for Shorts, Reels and TikTok). The shape is chosen here because the clean cut
-and every layout follow from it; `set_format` changes it later and says what that costs. The name is yours: it shows in the masthead, the window title and the project list, and
-you can change it at any time from the masthead menu or the pencil beside a project. The folder
-on disk is a slug of the name and never has to move, so renaming costs nothing.
+A new project asks for the recording, a name, and the delivery shape: **Landscape** (16:9, 1920×1080)
+or **Vertical** (9:16, 1080×1920, for Shorts, Reels and TikTok). The clean cut and every layout
+follow from the shape; `set_format` changes it later and says what that costs. The name shows in the
+masthead and the project list and can change any time, because the folder on disk is a slug that
+never has to move.
 
-Click the project's name in the masthead for its menu: rename, show its folder, close it, or
-open the full list (Ctrl+Shift+O). Ctrl+W closes the open project. From the list you can open
-another project, show its folder, or move one to the recycle bin (the recording is never
-touched). The assistant has the same view through `list_projects`, `open_project`,
+Click the project's name in the masthead to rename it, show its folder, close it (Ctrl+W) or open the
+full list (Ctrl+Shift+O). From the list you can also move a project to the recycle bin; the recording
+is never touched. The assistant has the same view through `list_projects`, `open_project`,
 `switch_project`, `rename_project` and `close_project`.
 
-Projects live in `media/` beside the checkout unless you say otherwise. The home screen and the
-list show where, and **Change…** lets you pick any folder, your Windows Videos folder included;
-Fabula offers to move the existing projects and saved themes there. The choice is kept in
-`fabula.settings.json` at the repository root as the path WSL sees (`/mnt/c/Users/…`), because
-the pipeline runs there and the window may run on Windows; both read the same file. A folder on
-the Windows side works, but renders are written to it through WSL, which is slower than the
+Projects live in `media/` beside the checkout unless you choose another folder with **Change…**,
+your Windows Videos folder included; Fabula offers to move existing projects and saved themes. The
+choice is kept in the gitignored `fabula.settings.json` as the path WSL sees (`/mnt/c/Users/…`). A
+Windows-side folder works, but renders are written to it through WSL, which is slower than the
 checkout's own disk.
 
 ## Choose your assistant
 
-Click **Assistant** in Fabula's top bar. A sheet asks which assistant (Claude Code on your
-Claude subscription, or Codex on your ChatGPT subscription), which model, and which reasoning
-effort. The model list is real: Claude Code's aliases (fable, opus, sonnet), and for Codex the
-models your account can use, read from the CLI's own cache; either accepts a custom model ID.
-Your last choices are remembered per assistant. The sheet also asks who the session works
-as: the **Editor**, a film editor cutting for someone who chose to watch, or the **Short-form
-farmer**, cutting for a feed — the first second and a half, a change every four seconds, an
-ending that sends people to the long film. A short-form project suggests the farmer. Press
-**Start** and the session opens in a terminal pane inside the window, its header naming
-exactly what was started. The CLI runs on
-the pipeline host (WSL from a Windows window) inside a real pseudo-terminal
-(`scripts/pty-bridge.py`, standard library only), with the window's choice passed as plain
-arguments to `scripts/assistant-run.sh`; nothing goes through a shell string. Hide the pane and
-the session keeps running; Stop ends it. Nothing opens outside the window.
+**Assistant** in the top bar opens a sheet for the provider (Claude Code or Codex), the model and
+the reasoning effort. Claude Code's aliases are listed, and for Codex the models your account can
+use, read from the CLI's own cache; either accepts a custom model ID. The sheet also sets who the
+session works as: the **Editor**, cutting for someone who chose to watch, or the **Short-form
+farmer**, cutting for a feed (a short-form project suggests the farmer). **Start** opens the session
+in a terminal pane inside the window, and its header names exactly what was started.
 
-The same launcher also runs by hand from a WSL/Linux terminal in this folder:
+The CLI runs on the pipeline host inside a real pseudo-terminal (`scripts/pty-bridge.py`, standard
+library only), with the sheet's choices passed as plain arguments to `scripts/assistant-run.sh`.
+Hiding the pane leaves the session running; Stop ends it. The same launcher runs from a terminal in
+this folder:
 
 ```bash
 npm run assistant                                         # asks provider, model and effort
 npm run assistant -- --saved                              # repeat your last selection
 npm run assistant -- --provider claude --model fable --effort high
 npm run assistant -- --provider codex --dry-run           # inspect without starting or saving
-npm run assistant -- --persona farmer                     # work as the short-form farmer (remembered)
+npm run assistant -- --persona farmer                     # work as the short-form farmer
 ```
 
-It connects Fabula's MCP tools for that session only, without editing global configuration;
-a Claude session gets only the `fabula` server. Install and sign into each CLI you want to use.
-The media tools run locally in WSL/Linux; the window can remain on Windows.
+It connects Fabula's MCP tools for that session only and leaves global configuration alone; a Claude
+session gets only the `fabula` server. Preferences live in the gitignored
+`.assistant-preferences.json`, and a session lock stops two launchers controlling the checkout at
+once. To switch assistant, exit and start again: cuts, scenes and manual edits stay in the project,
+conversation history does not.
 
-To switch assistant, exit the old one and start again. Existing cuts, scenes and manual edits
-stay in the project; conversation history is separate. A session lock prevents two of these
-launchers controlling the checkout at once. Preferences live in gitignored
-`.assistant-preferences.json`.
+Both assistants start from the same brief, held in `core/assistant-brief.mjs` and delivered through
+the CLI's system prompt or first message, `CLAUDE.md` and `AGENTS.md`, and the MCP server; a test
+fails if the copies drift. They follow [the same editing workflow](docs/assistant-workflow.md).
 
-The assistant reads the open project, reports where it stands, and waits for you in its pane.
-Type to it there. It watches the window for insert-point choices only while it is listening,
-which it does after setting insert points or when you tell it to; say "stop listening" to get
-the pane back. Both assistants follow [the same editing workflow](docs/assistant-workflow.md).
+## The working loop
 
-Whichever assistant you pick starts with the same brief. `core/assistant-brief.mjs` holds it,
-and it reaches the session four ways: Claude Code takes it as an appended system prompt, Codex
-leads its first message with it, `CLAUDE.md` and `AGENTS.md` carry it for the CLI that reads
-them, and the MCP server hands it to whichever client connects. A test fails if the copies
-drift. On top of that, `set_scenes` reads the plan back and reports what it sees — a run of one
-card kind, one kind dominating, no full-stage moment, a long stretch of nothing but the head —
-so the rule against a repetitive film arrives when the plan is written, not only at the start
-of the session. The look is reported the same way: an unset theme resolves to the default preset
-and looks decided, so `status`, `get_theme` and `set_scenes` all say plainly that nobody has
-chosen it yet, and name the brands you have saved.
+The window is where you watch and tweak; the assistant does the work. Both write to the same
+project files, so neither tramples the other.
 
-## Tall films, and shorts cut out of long ones
+1. **Start a project.** Name it and give it the recording. Creating the project starts the first
+   pass: transcription on the GPU, a scan for where the head sits, and proposed cuts (pauses,
+   fillers, a preamble before the film promises anything, a false start, a stutter, a retake).
+2. **Review the cut.** In the Cut step, click a struck word or pause to keep it, drag across words to
+   cut them, and use ctrl+F to find a phrase. When the cut is right, press **Make it into a video…**
+   and write a short brief: what the film is for, how closely to hold to the house style (**Free
+   hand**, **Guided** or **By the book**), the look, whether music, sound effects and web pictures
+   are allowed, and any notes.
+3. **The assistant makes a draft.** It renders the clean cut, writes a treatment, sets the look,
+   composes the scenes (moving the head between the full frame, a corner, a side column, a split
+   screen and gone), writes motion scenes where a moment has to move, sets the sound, reviews its
+   own work and renders a draft. The Making panel follows it phase by phase; **Watch the draft**
+   plays it in the window. The real render waits for you. **Compose it with me instead** keeps the
+   step-by-step path, composing with you in the pane.
+4. **Iterate by prompting.** "Make the intro title punchier", "put the Godot logo next to where I
+   mention it". The assistant reads the current plan and theme first, changes only what you asked,
+   and re-renders behind the gate.
 
-A vertical project is not a landscape one rotated. The same layout names answer in both shapes
-and resolve to different rectangles: `focus` puts the head edge to edge, cropped to the tall
-frame; `side` puts it across the top half with the visual owning the bottom; `band` keeps the
-head **whole**, in the recording's own shape, for a wide moment a crop would ruin. Nothing is
-baked — the clean cut is always the head at its own framing, the crop happens when the film is
-composed, and changing your mind about a shot never re-renders anything.
+The top bar has four numbered steps (Ctrl+1 to 4):
 
-Once a long film is cut, the **Shorts** card in the Export step reads its transcript for the
-moments that could stand on their own: runs of whole sentences with the words in front of you and
-plain notes on each — *opens on a promise*, *opens on "it" — the viewer has to supply what it
-refers to*, *does not end on a full stop*, *no numbers, comparisons or claims in it*. Press
-**Make a vertical short** and that moment becomes a project of its own.
+- **Cut**: skip-preview playback, struck words, framing guides that show what the render will pull.
+- **Look**: the brand. Theme presets (Studio, Broadcast, Paper, Neon, Mono, Ink, Slate, Signal, Dawn,
+  Terminal, Bloom, Pastel), your saved brands, and a gallery for every title, callout and caption
+  style, transition and punch-in, each card drawn by the painter that draws the film.
+- **Scenes**: the film on the 1080p stage. Click a timeline block for its text, style, fields and
+  word span, or duplicate or remove it. Drop a picture or clip onto the stage to place it beside
+  the head at the playhead. The box at the foot of the inspector tells the assistant what to change.
+- **Export**: render buttons, progress, what is out of date and why, and every file the renders wrote.
 
-The short references the same recording and inherits the long film's cut list with everything
-outside the span removed, so its clean cut is rendered from the original footage rather than
-cropped out of the finished composition — which is what lets it be framed for a tall frame. The
-look travels; the scene plan does not, because a composition written for a wide frame is the
-wrong composition for a tall one. Refresh its clean cut and compose it like any other project.
-The assistant has the same two tools, `suggest_clips` and `create_short`, and will argue with
-the shortlist rather than making all of it.
+The timeline is a window over the film: ctrl + wheel zooms, a plain wheel pans, the minimap shows
+the whole film, and J/K/L, comma and period, Home and End work as in any editor.
+
+The assistant can also mark insert points instead of writing every scene. Each shows in the
+transcript and timeline with a few ready-made options; hover to preview, click to choose, or type
+what you want there and send it.
+
+What the assistant has to work with: `docs/craft/` (the editor's craft, the short-form farmer's, a
+visual grammar and reference styles described as methods), `read_story` to mark the transcript up
+before composing, 27 named graphic templates filled in from fields, B-roll you have (`import_clip`),
+a pacing and variety read on every plan write, and `preview_sheet`, which tiles the film into one
+picture before it renders. It also handles a grade and voice clean-up (`set_theme`, `set_audio`), a
+music bed ducked from the transcript, captions, thumbnails (`render_thumbnail`), chapters
+(`export_chapters`) and image credits.
+
+Captions have four modes: burned in, closed (an SRT and VTT beside every render), both, or none
+(`set_captions`).
+
+### Renders
+
+Renders land in `media/<project>/out/`: `clean.mp4` is the cut, `screen.mp4` the recording's screen
+track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4` a span
+rendered on its own.
+
+The clean cut is rendered once per cut list and framing; layouts, punch-ins, scenes and captions
+never send it back to render. It is compared by content against `out/clean-map.json`, so toggling a
+cut and back costs nothing, and when the cuts really change, scenes move to the new word ids by
+matching the words at their ends. The final render is layered and cached: ffmpeg places the footage,
+only overlays that change are captured, and each chunk under `out/chunks/` is reused until
+something inside it changes. Both encode on the GPU when there is an NVIDIA card (NVENC works from
+WSL with the ffmpeg build `npm run setup:tools` installs). They run as background jobs with progress
+in the masthead, started from the Export step or by the assistant with the same arguments.
+
+## Tall films and shorts
+
+A vertical project is not a landscape one rotated. The same layout names resolve to different
+rectangles: `focus` crops the head edge to edge, `side` puts it across the top half, and `band` keeps
+the head whole for a wide moment a crop would ruin. The clean cut is always the head at its own
+framing and the crop happens at composition, so changing a shot never re-renders anything.
+
+Once a long film is cut, the **Shorts** card in Export suggests moments that could stand alone, with
+plain notes on each (*opens on a promise*, *does not end on a full stop*). **Make a vertical short**
+turns one into a project of its own that references the same recording and inherits the cut list
+trimmed to the span, so its clean cut is rendered from the original footage. The look travels; the
+scene plan does not, because a composition for a wide frame is wrong for a tall one. The assistant
+has the same tools, `suggest_clips` and `create_short`.
 
 ## Motion graphics
 
-The assistant writes motion graphics as code: an HTML, SVG, Canvas or three.js document drawn
-frame by frame from the film's clock in a sandboxed frame, with no network, no timers and no
-randomness it does not seed. It comes in three sizes:
-
-- **A moment** inside a recorded film, where a card would not do.
-- **A sequence** inside a recorded film: twenty seconds to two minutes where a serious film (a
-  documentary, an argument) stops showing the speaker and becomes motion graphics over its own
-  sound.
-- **A motion film**, with no recording. In the window, **New project → Motion graphics** takes a
-  length or a narration (a Luna voiceover, a read you recorded, any audio file, transcribed for its
-  word timings), then a short brief, and **Make the motion graphic** starts the assistant on it.
-  Fabula makes a stand-in for the recording, so music, effects, captions and the render work as
-  they do for any film, and no camera ever shows. From a terminal, the assistant's `new_motion`
-  does the same:
+The assistant writes motion graphics as code: an HTML, SVG, Canvas or three.js document drawn frame
+by frame from the film's clock in a sandboxed frame, with no network, no timers and no unseeded
+randomness. It comes in three sizes: a **moment** where a card would not do, a **sequence** of twenty
+seconds to two minutes where a serious film stops showing the speaker, and a **motion film** with no
+recording. For a motion film, **New project → Motion graphics** takes a length or a narration (any
+audio file, transcribed for word timings) and a short brief. From a terminal:
 
 ```bash
 npm run assistant -- --provider claude --model claude-opus-5-5 --task motion
 ```
 
-Pick the model in the brief's **Made by** line; Opus draws more finely, and Sonnet is quicker.
-
-The `motion` task works the way the best motion graphics are made with models today:
-
-1. A storyboard comes first (`set_treatment`): the claim, the one continuity device the piece
-   keeps, beats of a few seconds with their words on screen, a held frame, and what the piece will
-   not do.
-2. Reels follow: long documents with several shots in one shared world (`fabula.shot`, a keyed
-   camera with `fabula.camera`). Code every reel shares goes in a project library
-   (`write_motion_lib`).
-3. Every `write_motion` runs a **check pass**. It measures the scene's text every fifth of a
-   second as drawn and reports anything off the frame, outside the safe area, overlapping or too
-   small to read, with the seconds each fault holds for. The assistant then scores its own shots
-   and rewrites the weak ones.
-
-three.js 0.186 ships with Fabula for scenes that need depth. The craft is in
-[`docs/craft/motion.md`](docs/craft/motion.md), with a worked film in
-[`docs/craft/plans/an-orbit-is-a-fall`](docs/craft/plans/an-orbit-is-a-fall). The design and its
+The `motion` task writes a storyboard first (`set_treatment`), then reels of shots in one shared
+world (`write_motion`, with shared code in `write_motion_lib`). Every `write_motion` runs a check
+pass that measures the scene's text as drawn and reports anything off the frame, outside the safe
+area, overlapping or too small to read. three.js 0.186 ships with Fabula for scenes that need depth.
+The craft is in [`docs/craft/motion.md`](docs/craft/motion.md) with a worked film in
+[`docs/craft/plans/an-orbit-is-a-fall`](docs/craft/plans/an-orbit-is-a-fall); the design and its
 sources are in [`docs/motion-graphics.md`](docs/motion-graphics.md).
 
-**Unfinished:** Luna is not wired in yet; generate the voiceover in Luna and choose the file as
-the narration. The storyboard is shown as the treatment, but not yet as a page to approve.
-
-Read [`docs/product-brief.md`](docs/product-brief.md) first: it holds the pipeline, the
-architecture, the decisions already made, and what has been proven or disproven.
-
-## The working loop
-
-Fabula is a two-hander: the window is where you watch and tweak, the assistant does the work.
-What the assistant works with: `docs/craft/` (the editor's craft, the short-form farmer's, a
-visual grammar of what goes with what is said, and reference styles described as methods), a
-`read_story` tool that marks the transcript up before composing, twenty-seven named graphic
-templates (a timeline, a flow, before/after, myth and fact, a code window, a phone, a lower
-third, an end screen, a call to action…) filled in from fields, B-roll the person has
-(`import_clip`, played in a card while they talk), a pacing read on every plan write beside the
-variety read, and `preview_sheet`, which tiles the whole film into one picture so it can be
-looked at before it is rendered. It also finishes the job: a grade on the footage and a
-clean-up of the voice (`set_theme grade`, `set_audio voice_clean`), a music bed under the
-voice, ducked from the transcript's own words (`set_audio`), captions that lean on the word a
-phrase turns on, a thumbnail or several to choose between (`render_thumbnail`), the chapter
-list for the description (`export_chapters`) and the image credits, all listed in the Export
-step with the film.
-
-1. **Open Fabula and start a project** (New project…, or drop a recording on the window) and
-   give it a name. The clip is referenced where it lives — nothing is copied, a 19 GB recording
-   included — and the window says what to ask for next.
-2. **The first pass runs by itself.** Creating the project starts it: the recording is
-   transcribed on the GPU, the frame is scanned for where the head sits, and cuts are proposed —
-   the pauses and fillers, and the cuts an editor makes from reading: the preamble before the
-   film promises anything, a false start, a stutter, a retake.
-   The window shows each step as it lands. Review the cuts in the Cut step: click a struck word
-   or pause to keep it, drag across words and cut them by hand, or drag across struck words to
-   keep just those (ctrl+F finds a phrase in a long transcript). When the cut is right, press
-   **Make it into a video…** at the top of the inspector and write a short brief: what the film
-   is for, how closely to hold to the house style — **Free hand** (the assistant designs the
-   film: its own motion graphics, the layouts the story wants, a look it sets), **Guided** (the
-   templates and the look first) or **By the book** (only the kit and your look; every fault
-   fixed before the real render) — the look, whether music, sound effects and pictures from the
-   web are allowed, and any notes. **Make the video** renders the clean cut and hands the film to
-   the assistant, which works through it without stopping to ask: it writes a treatment (the
-   film's one sentence, its shape, its signature moment, where the head goes beat by beat),
-   sets the look, composes the scenes — moving the head between the full frame, a corner, a
-   side column, a split screen and gone — writes motion scenes where a moment has to move, sets
-   the sound, reviews its own work, and renders a draft. The inspector's Making panel follows
-   it phase by phase with the treatment under it; when the draft lands, **Watch the draft** (or
-   the Live / Draft switch over the stage) plays it in the window, and a note sent while it
-   plays says where in the draft it is about. The real render waits for you. **Compose it with
-   me instead** keeps the older, step-by-step path: the assistant composes with you in its pane.
-   The long steps are background jobs: they keep going if the session that started them ends,
-   and the window keeps showing where they are.
-3. **Review in the window.** The top bar is four numbered steps. **Cut**: play with
-   skip-preview, click struck words to keep them, watch the framing guides show what the render
-   will pull. **Look**: the brand — a gallery of theme presets (Studio, Broadcast, Paper, Neon,
-   Mono, Ink, Slate, Signal, Dawn, Terminal, Bloom, Pastel), the brands you have saved for the
-   channel, and a gallery for every title, callout and caption style, every transition and every
-   punch-in — each card a live stage playing that option, drawn by the painter that draws the
-   film, so nothing is chosen from a name alone. **Scenes**: the film on the 1080p stage with the
-   script tucked away in a drawer; click a timeline block and the inspector gives you its text,
-   its heading, its style, a card's own fields, its word span (underlined in the script), and
-   duplicate or remove — a removal can be undone for a few seconds. Drop a picture or a
-   clip of your own onto the stage and it is filed with the project and placed beside the head
-   over the words at the playhead, with the inspector open on it. The box at the foot of the
-   inspector tells the assistant what should change, about the film or the scene under
-   inspection. Drag the top edge of the transport to make the timeline taller.
-   **Export**: render buttons, progress, what is out of date and why, and every file the renders
-   wrote. Every change is saved to the project and previews immediately.
-
-   The timeline under Cut and Scenes is a window over the film: ctrl + wheel zooms around the
-   pointer, a plain wheel pans, the minimap above the ruler shows the whole film with the window
-   drawn on it (drag it, or click to go there), dragging the ruler scrubs, and J/K/L, comma and
-   period, Home and End do what they do in every editor.
-4. **Iterate by prompting.** *"Make the intro title punchier", "drop the chart, show the snail
-   still longer", "this is for my YouTube channel: red accent, my logo top right, banded
-   captions", "put the Godot and Photopea logos next to where I mention them"* — the assistant reads
-   the current plan and theme first (your tweaks included), changes only what you asked, fetches
-   pictures from the web into the project when a logo or a still is wanted, and re-renders
-   behind the gate. Your manual edits and the assistant's edits live in the same files, so neither side
-   tramples the other.
-
-Captions have four modes: burned into the picture in the look's caption style, closed (an SRT
-and a VTT beside every render, for the player to offer and the viewer to toggle), both, or none.
-The Look step and the `set_captions` tool set it.
-
-Ask the assistant to mark the film with insert points instead of writing every scene: each one
-shows in the transcript and the timeline with a few ready-made options (a side card, the spoken
-words, a full-screen cover). Hover to preview one on the stage, click to choose, or type what you
-want there and send it; the assistant adds it as an option. Anything larger, ask in its pane.
-
-The renders land in `media/<project>/out/` — `clean.mp4` is the cut, `screen.mp4` the recording's
-screen track when it has one, `final.mp4` the finished composition, and `preview-<from>-<to>.mp4`
-a span rendered on its own.
-
-There are two renders and they answer to different things. The clean cut is rendered once per cut
-list and framing, and the compose stage only moves it around: layouts, punch-ins, scenes,
-captions and accents never send it back to render. Changing the cuts afterwards is possible and
-is meant to be rare: the cut renders again, its transcript is redone, and the scenes are moved to
-the new word ids automatically by matching the words at their ends. It is compared by content, not by file time,
-so toggling a cut and toggling it back costs nothing; only a cut list or framing that actually
-differs from what `out/clean-map.json` records renders again. The final render is layered and
-cached: the footage is placed by ffmpeg, only the overlays that change are captured, and each
-chunk under `out/chunks/` (six to thirty seconds of film) is reused until something inside it
-changes — so a whole film takes minutes and a tweaked title takes about one. Both encode on the
-GPU when the machine has an NVIDIA card (NVENC works from WSL with the ffmpeg build
-`npm run setup:tools` installs), and both run as background jobs with their progress in the
-window's masthead. The Export step starts them
-too — the film, or *Refresh the clean cut* after the cuts moved, which renders and re-transcribes
-only what no longer matches — with the same arguments the tools use, so it does not matter which
-side pressed the button. On Windows the window hands the job to WSL through `wsl.exe`.
+**Unfinished:** Luna is not wired in yet; generate the voiceover in Luna and choose the file as the
+narration. The storyboard is shown as the treatment, but not yet as a page to approve.
 
 ## In the Instrumenta launcher
 
-**Installed from a release.** The launcher installs Fabula for Windows like any other app (Add
-apps, or Install on its tile) and keeps it up to date. The release is Electron's Windows runtime
-with a bootstrap as its app (`release/windows/`); the editor itself runs in WSL, because its
-pipeline and the assistant's terminal sessions are Linux programs. So the first time a version
-starts, the bootstrap sets up Fabula's engine in the default WSL distribution
-(`scripts/setup-engine.sh`, no sudo): the version's code under `~/.local/share/fabula/versions/`,
-Node when the distribution has no Node 22, ffmpeg, the Chromium libraries the renders need, and
-WhisperX on CUDA. That downloads about 7 GB once, and an update reuses all of it. The bootstrap then
-opens the editor from the engine through the `\\wsl.localhost` share, exactly as a checkout runs, so
-jobs and the assistant go to WSL the way they always have. The projects live in
-`~/.local/share/fabula/projects` unless you choose another folder; your settings carry over from
-version to version. What it needs from you: WSL with a Linux distribution, and Claude Code or
-Codex installed there for the assistant. `scripts/package-release.mjs` builds the bundle and
-`.github/workflows/release.yml` publishes it on a `v<version>` tag.
+**Installed from a release.** The launcher installs Fabula for Windows like any other app and keeps
+it up to date. The release is Electron's Windows runtime with a bootstrap as its app
+(`release/windows/`); the editor itself runs in WSL. The first time a version starts, the bootstrap
+sets up Fabula's engine in the default WSL distribution (`scripts/setup-engine.sh`, no sudo): the
+version's code under `~/.local/share/fabula/versions/`, Node when the distribution has no Node 22,
+ffmpeg, the Chromium libraries renders need, and WhisperX on CUDA. That is about 7 GB once, and an
+update reuses it. Projects live in `~/.local/share/fabula/projects` unless you choose another
+folder. You need WSL with a Linux distribution, and Claude Code or Codex installed there.
+`scripts/package-release.mjs` builds the bundle and `.github/workflows/release.yml` publishes it on
+a `v<version>` tag.
 
-**Run from this checkout.** In a developer's workspace Fabula is still the checkout:
-`scripts/bootstrap-windows.ps1` deploys the Windows Electron runtime into `dist/windows/` beside a
-`fabula-bundle.json` that names this checkout as the app, and the launcher's Prepare button runs
-exactly that. Open mirrors the runtime to local disk once and launches it with the checkout as its
-argument, so edits here are live. An installed release, when there is one, is what the launcher
-opens instead.
+**Run from this checkout.** In a workspace, `scripts/bootstrap-windows.ps1` deploys the Windows
+Electron runtime into `dist/windows/` beside a `fabula-bundle.json` that names this checkout as the
+app, and the launcher's Prepare button runs it. Open launches the runtime with the checkout as its
+argument, so edits are live. An installed release, when there is one, is what the launcher opens
+instead.
 
 ## Development
 
-To look at the window from a machine that cannot show it (a WSL shell, a CI box), run it headless
-and let it photograph itself:
+`npm test` is the check. To look at the window from a machine that cannot show it (a WSL shell, a CI
+box), run it headless and let it photograph itself:
 
 ```bash
 env -u ELECTRON_RUN_AS_NODE FABULA_PROJECTS_ROOT=/tmp/fabula-root \
@@ -310,36 +230,18 @@ env -u ELECTRON_RUN_AS_NODE FABULA_PROJECTS_ROOT=/tmp/fabula-root \
 ```
 
 It writes the home screen, the Assistant sheet and, with a project named, the open project and its
-Export step as PNGs, then quits (`FABULA_SNAPSHOT_LOOK=<gallery id>` adds a Look gallery,
-`FABULA_SNAPSHOT_SCENE=<index>` a scene's inspector, `FABULA_SNAPSHOT_EVAL=<js>` an answer from the
-page). For any other view, `FABULA_SNAPSHOT_SCRIPT=<file.json>` names a list of steps, each
-`{ "size": [w, h], "media": [{ "name", "value" }], "run": "<js>", "print": "label", "key": "Tab",
-"wait": ms, "shot": "name" }` with every key optional, applied in that order (`media` emulates a media
-feature such as `prefers-reduced-motion`; `key` presses a key as a keyboard would) — click a tab, open an inspector, resize, photograph. Give the run
-its own `FABULA_PROJECTS_ROOT` (a copy of the projects to look at): opening a project moves the
-root's open-project pointer, and the person's own root should not move under them. An
-`ELECTRON_RUN_AS_NODE` left in the shell by an assistant session makes Electron refuse its own
-switches ("bad option"); unset it for the launch. `scripts/probe-templates.cjs`, run the same way, renders every template in both shapes
-through the export page and tiles them into two sheets under `out/template-probe/` — run it after
-touching `core/templates.mjs` or the painter, and look.
+Export step as PNGs, then quits. `FABULA_SNAPSHOT_LOOK`, `FABULA_SNAPSHOT_SCENE`,
+`FABULA_SNAPSHOT_EVAL` and `FABULA_SNAPSHOT_SCRIPT` (a JSON list of steps) reach other views; read
+`snapshotWindow` in `electron/main.cjs` for the step format. Give the run its own
+`FABULA_PROJECTS_ROOT`, because opening a project moves the root's open-project pointer. An
+`ELECTRON_RUN_AS_NODE` left in the shell makes Electron refuse its own switches, hence `env -u`.
 
-`node test-tools/screenshots/shoot.mjs` does all of that for the brand: every main screen of the
-window in dark and light, over a copy of three projects, with a contrast and a reduced-motion
-check ([`test-tools/screenshots/README.md`](test-tools/screenshots/README.md)). The window's look
-is written down in [`docs/brand/README.md`](docs/brand/README.md).
+`node scripts/probe-templates.cjs`, run the same way, renders every template in both shapes into
+two sheets under `out/template-probe/`; run it after touching `core/templates.mjs` or the painter.
+`node test-tools/screenshots/shoot.mjs` photographs every main screen in dark and light with a
+contrast and reduced-motion check ([`test-tools/screenshots/README.md`](test-tools/screenshots/README.md)).
+The window's look is written down in [`docs/brand/README.md`](docs/brand/README.md).
 
-```bash
-npm install
-npm test              # core cut-engine suite (pure node, no tools needed)
-npm run setup:tools   # static ffmpeg + WhisperX venv, no sudo
-npm start             # Electron shell
-```
+---
 
-## Family
-
-Fabula is part of [Instrumenta](https://github.com/George-Nizor/Instrumenta), made by Bonehead
-Labs, and registered in its launcher as `fabula`. It follows the Instrumenta brand v2: a coral
-clapperboard whose slate holds transcript lines, drawn as a freestanding object
-([`docs/brand/README.md`](docs/brand/README.md)). The interface type (Fraunces, Commissioner,
-Spline Sans Mono) is SIL OFL 1.1, vendored in `renderer/brand/fonts` with its licences; the faces
-a film is set in are the look system's own, in `renderer/assets/fonts`. Licence: MIT (`package.json`).
+<sub>Part of [Instrumenta](https://github.com/George-Nizor/Instrumenta), made by [Bonehead Labs](https://boneheadlabs.org). Brand v2: coral clapperboard, interface type Fraunces, Commissioner and Spline Sans Mono (SIL OFL 1.1, vendored in `renderer/brand/fonts/` with its licences; the faces a film is set in belong to the look system, in `renderer/assets/fonts/`). Licence: MIT (`package.json`). See [`docs/brand/README.md`](docs/brand/README.md).</sub>
