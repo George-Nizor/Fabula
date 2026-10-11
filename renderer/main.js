@@ -45,6 +45,7 @@ const els = {
   projects: $("projects"), projectsList: $("projects-list"), projectsNew: $("projects-new"),
   projectsCloseProject: $("projects-close-project"), projectsStatus: $("projects-status"), projectsDismiss: $("projects-dismiss"),
   projectsRoot: $("projects-root"), projectsRootChange: $("projects-root-change"), projectsRootDefault: $("projects-root-default"),
+  installProgram: $("install-program"), installEngine: $("install-engine"), installNote: $("install-note"),
   player: $("player"), dock: $("dock"), dropzone: $("dropzone"),
   look: $("look"), lookPresets: $("look-presets"), lookBrands: $("look-brands"), lookSave: $("look-save"), lookReset: $("look-reset"), lookStatus: $("look-status"),
   exportPage: $("export"), exportMain: $("export-main"),
@@ -2957,6 +2958,21 @@ function renderProjectsDialog() {
   if (projects.length === 0) els.projectsList.append(make("li", "projects-empty", "No projects yet."));
   els.projectsCloseProject.hidden = !state?.project;
   renderWhere(els.projectsRoot, els.projectsRootDefault);
+  renderInstall();
+}
+
+// Where Fabula itself is: the program that draws this window, and the engine its jobs run in.
+function renderInstall() {
+  const install = state?.projectsRoot?.install;
+  if (!install) return;
+  els.installProgram.textContent = shortPath(install.program);
+  els.installProgram.title = `${install.program}\nShow this folder`;
+  els.installEngine.textContent = shortPath(install.engine);
+  els.installEngine.title = `${install.engine}\nShow this folder`;
+  const where = install.engineIn ? ` It runs in ${install.engineIn}.` : "";
+  els.installNote.textContent = install.checkout
+    ? `Running from a source checkout: the engine is the checkout itself.${where}`
+    : `Transcription, renders and the assistant are Linux programs, so the engine lives in WSL.${where}`;
 }
 
 function renderHome() {
@@ -3007,6 +3023,12 @@ for (const [change, useDefault, reveal] of [[els.projectsRootChange, els.project
   change.addEventListener("click", () => changeProjectsRoot(false));
   useDefault.addEventListener("click", () => changeProjectsRoot(true));
   reveal.addEventListener("click", () => window.fabula.revealProjectsRoot());
+}
+for (const [button, which] of [[els.installProgram, "program"], [els.installEngine, "engine"]]) {
+  button.addEventListener("click", async () => {
+    const result = await window.fabula.revealInstall(which);
+    if (!result.ok) setStatus(result.error);
+  });
 }
 // Progress lines arrive on their own channel and can trail the result; the
 // result has the last word.

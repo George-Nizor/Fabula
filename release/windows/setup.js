@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id);
 let target = null;
 let started = false;
+let projectsFolder = "";
 
 function setCheck(id, tone, text) {
   const row = $(`check-${id}`);
@@ -47,6 +48,10 @@ async function check() {
     start();
   } else {
     setCheck("engine", "", "To set up");
+    // A first setup asks where the projects go; an update leaves them where they are.
+    projectsFolder = projectsFolder || answer.suggestedProjects || "";
+    $("projects-folder").textContent = projectsFolder;
+    $("projects").hidden = false;
     $("start").disabled = false;
     if (new URLSearchParams(location.search).get("auto") === "1") start();
   }
@@ -60,13 +65,34 @@ async function start() {
   $("progress").hidden = false;
   setCheck("engine", "busy", "Setting up");
   say("");
+  const kind = document.querySelector('input[name="projects"]:checked')?.value || "wsl";
+  const projects = $("projects").hidden ? null : { kind, folder: kind === "windows" ? projectsFolder : "" };
+  $("projects").disabled = true;
   try {
-    await window.fabulaSetup.start(target);
+    await window.fabulaSetup.start({ ...target, projects });
   } catch (error) {
     started = false;
-    say(error.message, "bad");
+    $("projects").disabled = false;
+    $("start").disabled = false;
+    $("progress").hidden = true;
+    setCheck("engine", "", "To set up");
+    say(error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), "bad");
   }
 }
+
+$("projects-change").addEventListener("click", async (event) => {
+  event.preventDefault();
+  try {
+    const folder = await window.fabulaSetup.chooseProjects(projectsFolder);
+    if (!folder) return;
+    projectsFolder = folder;
+    $("projects-folder").textContent = folder;
+    document.querySelector('input[name="projects"][value="windows"]').checked = true;
+    say("");
+  } catch (error) {
+    say(error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), "bad");
+  }
+});
 
 window.fabulaSetup.onEvent((event) => {
   const log = $("log");
@@ -86,6 +112,7 @@ window.fabulaSetup.onEvent((event) => {
   }
   if (event.type === "failed") {
     started = false;
+    $("projects").disabled = false;
     setCheck("engine", "bad", "Stopped");
     say(event.text, "bad");
     $("log-wrap").open = true;

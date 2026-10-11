@@ -67,12 +67,28 @@ function versionDir(state, version) {
 // The command that runs the setup inside the distribution. A login shell, so whatever Node or
 // tools the person's profile puts on PATH are there to be found. -e hands the line to that shell
 // as it is; `--` would have the distribution's shell read it first.
-function setupCommand({ distro, script, tarball, version }) {
+// A first setup also says where the projects go (projectsRoot, as WSL sees it); without one they
+// stay under the engine's own folder.
+function setupCommand({ distro, script, tarball, version, projectsRoot = null }) {
   const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
+  const projects = projectsRoot ? ` --projects-root ${quote(projectsRoot)}` : "";
   return {
     command: "wsl.exe",
-    args: ["-d", distro, "-e", "bash", "-lc", `bash ${quote(script)} --version ${quote(version)} --tarball ${quote(tarball)}`],
+    args: ["-d", distro, "-e", "bash", "-lc", `bash ${quote(script)} --version ${quote(version)} --tarball ${quote(tarball)}${projects}`],
   };
 }
 
-module.exports = { decodeWslOutput, parseLine, parseProbe, setupCommand, toWslPath, uncPath, validState, versionDir };
+// Where the first setup puts the projects, from the choice on the setup screen: a folder on a
+// Windows drive (shown in Explorer, deletes go to the Recycle Bin, renders cross into WSL) as WSL
+// sees it, or null for the engine's own projects folder inside WSL (faster, but only reachable
+// through \\wsl.localhost, which has no Recycle Bin).
+function projectsRootFor(choice) {
+  if (!choice || choice.kind === "wsl") return null;
+  if (choice.kind !== "windows" || typeof choice.folder !== "string" || !choice.folder) throw new Error("Choose a folder for the projects.");
+  if (/[\x00-\x1f\x7f]/.test(choice.folder)) throw new Error("The projects folder path has characters that cannot be used.");
+  const posix = toWslPath(choice.folder).replace(/\/+$/, "");
+  if (/^\/mnt\/[a-z]$/.test(posix)) throw new Error("Choose a folder rather than the top of a drive.");
+  return posix;
+}
+
+module.exports = { decodeWslOutput, parseLine, parseProbe, projectsRootFor, setupCommand, toWslPath, uncPath, validState, versionDir };

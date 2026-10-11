@@ -730,6 +730,11 @@ dialog.projects::backdrop { background: var(--scrim); }
 }
 
 .projects-where-path:hover { border-color: var(--accent-text); }
+.install-where { margin-top: 10px; font-size: var(--t-sm); color: var(--dim); }
+.install-where summary { cursor: pointer; width: fit-content; }
+.install-where .projects-where { margin-top: 8px; }
+.install-where .projects-where-label { min-width: 4.5em; }
+.install-note { margin: 8px 0 0; }
 
 .projects-list.is-full { padding: 0 22px; overflow: auto; flex: 1; }
 

@@ -43,3 +43,19 @@ test("the setup runs in a login shell of the chosen distribution, its arguments 
   assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "-e", "bash", "-lc"]);
   assert.equal(args[5], "bash '/mnt/c/x/setup-engine.sh' --version '0.2.0' --tarball '/mnt/c/it'\\''s/f.tar.gz'");
 });
+
+test("a first setup can name the projects folder, quoted like the rest", () => {
+  const { args } = engine.setupCommand({ distro: "Ubuntu", script: "/s.sh", tarball: "/t.tar.gz", version: "0.2.0", projectsRoot: "/mnt/c/Users/Jo's/Videos/Fabula" });
+  assert.equal(args[5], "bash '/s.sh' --version '0.2.0' --tarball '/t.tar.gz' --projects-root '/mnt/c/Users/Jo'\\''s/Videos/Fabula'");
+  assert.doesNotMatch(engine.setupCommand({ distro: "Ubuntu", script: "/s.sh", tarball: "/t.tar.gz", version: "0.2.0" }).args[5], /projects-root/);
+});
+
+test("the projects choice becomes a folder as WSL sees it, or the engine's own", () => {
+  assert.equal(engine.projectsRootFor({ kind: "windows", folder: "C:\\Users\\George\\Videos\\Fabula\\" }), "/mnt/c/Users/George/Videos/Fabula");
+  assert.equal(engine.projectsRootFor({ kind: "wsl" }), null);
+  assert.equal(engine.projectsRootFor(null), null);
+  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "D:\\" }), /top of a drive/);
+  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "\\\\nas\\videos" }), /not on a drive/);
+  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "" }), /Choose a folder/);
+  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "C:\\a\nb" }), /characters/);
+});

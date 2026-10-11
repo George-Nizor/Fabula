@@ -87,6 +87,7 @@ function steps(themeName, prefix, have) {
     s.push({ run: click("tab-export"), wait: 1800, ...shot("export") }, contrast("export"));
     s.push({ run: click("open-assistant"), wait: 900, ...shot("dialog-assistant") }, closeDialogs);
     s.push({ run: js(`openProjects();`), wait: 600, ...shot("dialog-projects") }, closeDialogs);
+    s.push({ run: js(`openProjects(); document.getElementById("install-where").open = true;`), wait: 600, ...shot("dialog-projects-install") }, closeDialogs);
     s.push({ run: js(`openRename({ name: ${JSON.stringify(FILM)}, title: "Rockets, explained" });`), wait: 500, ...shot("dialog-rename") }, closeDialogs);
     s.push({ run: click("tab-look"), wait: 1500 }, { run: click("look-save"), wait: 600, ...shot("dialog-brand") }, closeDialogs);
     s.push({ run: click("tab-cut"), wait: 1200 }, { run: js(`openDirection();`), wait: 900, ...shot("dialog-brief") }, contrast("brief"), closeDialogs);

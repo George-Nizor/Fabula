@@ -19,6 +19,9 @@
 #   projects/        where the projects live, unless fabula.settings.json names another folder
 #
 # Usage: setup-engine.sh --version <v> --tarball <path to fabula-engine-<v>.tar.gz>
+#                        [--projects-root <folder as WSL sees it>]
+# --projects-root is the folder the person chose on the first setup's screen; it is written into
+# the settings only when there are none to carry forward, so an update never moves the projects.
 #
 # Prints "STEP <n> <total> <what>" as each step starts and "READY <FABULA_HOME>" at the end: the
 # window's setup screen reads those lines. Every step is skipped when its result is already there,
@@ -28,15 +31,21 @@ set -euo pipefail
 
 VERSION=""
 TARBALL=""
+PROJECTS_ROOT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="$2"; shift 2 ;;
     --tarball) TARBALL="$2"; shift 2 ;;
+    --projects-root) PROJECTS_ROOT="$2"; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
 if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
   echo "--version must be a version like 0.2.0" >&2
+  exit 2
+fi
+if [ -n "$PROJECTS_ROOT" ] && { [ "${PROJECTS_ROOT#/}" = "$PROJECTS_ROOT" ] || printf '%s' "$PROJECTS_ROOT" | grep -q '[[:cntrl:]\\"]'; }; then
+  echo "--projects-root must be an absolute folder as WSL sees it" >&2
   exit 2
 fi
 if [ ! -f "$TARBALL" ]; then
@@ -272,6 +281,10 @@ if [ ! -f "$settings" ]; then
   previous="$(ls -1dt "$HOME_DIR"/versions/*/fabula.settings.json 2>/dev/null | grep -v "/versions/$VERSION/" | head -1 || true)"
   if [ -n "$previous" ]; then
     cp "$previous" "$settings"
+  elif [ -n "$PROJECTS_ROOT" ]; then
+    mkdir -p "$PROJECTS_ROOT"
+    printf '{\n  "projectsRoot": "%s"\n}\n' "$PROJECTS_ROOT" > "$settings"
+    echo "projects go to $PROJECTS_ROOT"
   else
     printf '{}\n' > "$settings"
   fi

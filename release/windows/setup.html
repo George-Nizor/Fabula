@@ -23,6 +23,22 @@
       <li id="check-engine"><span class="mark-dot"></span><span class="what">Fabula's engine</span><span class="state" id="state-engine">—</span></li>
     </ul>
 
+    <fieldset id="projects" class="projects" hidden>
+      <legend>Where your projects go</legend>
+      <label class="option">
+        <input type="radio" name="projects" value="windows" checked />
+        <span class="text"><span class="what">A folder on Windows</span>
+          <span class="folder"><span id="projects-folder"></span> <button type="button" class="link" id="projects-change">Change…</button></span>
+          <span class="why">Easy to find in Explorer and to back up, and a removed project goes to the Recycle Bin. Renders write across into WSL, a little slower.</span></span>
+      </label>
+      <label class="option">
+        <input type="radio" name="projects" value="wsl" />
+        <span class="text"><span class="what">Inside WSL, beside the engine</span>
+          <span class="why">The fastest renders. Reached only through \\wsl.localhost, and a removed project is deleted for good.</span></span>
+      </label>
+      <p class="note">Your recordings are never copied, wherever this is. You can move the projects later from the editor.</p>
+    </fieldset>
+
     <section id="progress" class="progress" hidden>
       <div class="bar"><div class="fill" id="fill"></div></div>
       <p class="step" id="step">Starting…</p>

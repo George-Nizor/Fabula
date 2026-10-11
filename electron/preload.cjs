@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld("fabula", {
   revealProject: (name) => ipcRenderer.invoke("fabula:reveal-project", name),
   chooseProjectsRoot: (useDefault) => ipcRenderer.invoke("fabula:choose-projects-root", Boolean(useDefault)),
   revealProjectsRoot: () => ipcRenderer.invoke("fabula:reveal-projects-root"),
+  revealInstall: (which) => ipcRenderer.invoke("fabula:reveal-install", which),
   onProjectsRootProgress: (callback) => {
     ipcRenderer.on("fabula:projects-root-progress", (_event, text) => callback(text));
   },

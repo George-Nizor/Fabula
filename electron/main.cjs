@@ -519,8 +519,25 @@ async function removeProject(window, name) {
   if (choice.response !== 0) return { ok: false, cancelled: true };
   try {
     await shell.trashItem(dir);
-  } catch (error) {
-    return { ok: false, error: `Could not remove it: ${error.message}` };
+  } catch (trashError) {
+    // A project inside WSL is reached over \\wsl.localhost, which has no
+    // recycle bin; Windows refuses and Electron reports "Failed to perform
+    // delete operation". Say so and offer the only removal there is.
+    const permanent = await dialog.showMessageBox(window, {
+      type: "warning",
+      title: `Remove ${name}`,
+      message: `“${name}” cannot go to the recycle bin. Delete it permanently?`,
+      detail: `${WSL_PREFIX || dir.startsWith("\\\\") ? "Its folder is on a network or WSL location, which has no recycle bin." : `Windows refused: ${trashError.message}`}\n\nDeleting cannot be undone. The recording ${project.videoName} still stays where it is.`,
+      buttons: ["Delete permanently", "Keep"],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (permanent.response !== 0) return { ok: false, cancelled: true };
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      return { ok: false, error: `Could not remove it: ${error.message}` };
+    }
   }
   if (project.current || path.basename(projectDir() ?? "") === name) closeProject();
   return { ok: true };
@@ -530,7 +547,21 @@ async function removeProject(window, name) {
 
 function describeProjectsRoot() {
   const configured = settings.configuredProjectsRoot();
-  return { local: mediaRoot(), posix: configured ?? toPosixPath(defaultMediaRoot()) ?? defaultMediaRoot(), isDefault: !configured };
+  return { local: mediaRoot(), posix: configured ?? toPosixPath(defaultMediaRoot()) ?? defaultMediaRoot(), isDefault: !configured, install: describeInstall() };
+}
+
+// Where Fabula itself is, for the Projects window: the program that draws the window, and the
+// engine its jobs run in. Installed, those are the Windows bundle and FABULA_HOME in WSL; from a
+// checkout, both are the checkout (the program is its Electron runtime).
+function describeInstall() {
+  const engineProjects = settings.engineProjectsRoot();
+  const engine = engineProjects ? toLocalPath(path.posix.dirname(engineProjects)) : REPO;
+  return {
+    program: path.dirname(process.execPath),
+    engine,
+    engineIn: process.platform === "win32" && WSL_DISTRO ? `WSL (${WSL_DISTRO})` : null,
+    checkout: !engineProjects,
+  };
 }
 
 // A job that wrote progress and has not finished or failed is treated as
@@ -1080,6 +1111,13 @@ app.whenReady().then(() => {
   ipcMain.handle("fabula:reveal-projects-root", () => {
     fs.mkdirSync(mediaRoot(), { recursive: true });
     shell.openPath(mediaRoot());
+    return { ok: true };
+  });
+  ipcMain.handle("fabula:reveal-install", (_event, which) => {
+    const install = describeInstall();
+    const target = which === "program" ? install.program : which === "engine" ? install.engine : null;
+    if (!target || !fs.existsSync(target)) return { ok: false, error: "That folder is not there." };
+    shell.openPath(target);
     return { ok: true };
   });
   ipcMain.handle("fabula:reveal-project", (event, name) => {

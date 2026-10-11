@@ -10,7 +10,7 @@
 // the editor finds WSL from where it lives and bridges its jobs and its assistant into it,
 // without knowing it was installed.
 
-const { app, BrowserWindow, ipcMain, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
@@ -86,7 +86,15 @@ async function checkWsl() {
   }
   try {
     const { distro, home } = engine.parseProbe(probe.out);
-    return { ok: true, distro: previous?.distro || distro, home: previous?.distro ? previous.home : home, update: Boolean(previous), version: VERSION };
+    return {
+      ok: true,
+      distro: previous?.distro || distro,
+      home: previous?.distro ? previous.home : home,
+      update: Boolean(previous),
+      version: VERSION,
+      // What the first setup suggests for the projects: a Fabula folder in the person's Videos.
+      suggestedProjects: path.join(app.getPath("videos"), "Fabula"),
+    };
   } catch (error) {
     return { ok: false, reason: error.message };
   }
@@ -94,11 +102,11 @@ async function checkWsl() {
 
 let setup = null;
 
-function startSetup(window, { distro, home }) {
+function startSetup(window, { distro, home }, projectsRoot) {
   if (setup) return;
   const script = engine.toWslPath(path.join(ENGINE_FILES, "setup-engine.sh"));
   const tarball = engine.toWslPath(path.join(ENGINE_FILES, `fabula-engine-${VERSION}.tar.gz`));
-  const { command, args } = engine.setupCommand({ distro, script, tarball, version: VERSION });
+  const { command, args } = engine.setupCommand({ distro, script, tarball, version: VERSION, projectsRoot });
   const send = (event) => { if (!window.isDestroyed()) window.webContents.send("fabula-setup:event", event); };
   setup = spawn(command, args, { windowsHide: true });
   let ready = null;
@@ -137,9 +145,9 @@ function startSetup(window, { distro, home }) {
 function openSetup() {
   const window = new BrowserWindow({
     width: 760,
-    height: 600,
+    height: 760,
     minWidth: 620,
-    minHeight: 520,
+    minHeight: 600,
     title: "Fabula",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1d1a17" : "#ffffff",
     icon: path.join(__dirname, process.platform === "win32" ? "fabula.ico" : "fabula-mark.png"),
@@ -150,9 +158,21 @@ function openSetup() {
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   ipcMain.handle("fabula-setup:check", () => checkWsl());
   ipcMain.handle("fabula-setup:start", (_event, target) => {
-    const choice = engine.validState({ ...target, root: "/" });
+    const choice = engine.validState({ distro: target?.distro, home: target?.home, root: "/" });
     if (!choice) throw new Error("That is not a distribution to set up in.");
-    startSetup(window, choice);
+    // An update keeps the projects where they are: only a first setup passes a folder.
+    const projectsRoot = readState() ? null : engine.projectsRootFor(target?.projects);
+    startSetup(window, choice, projectsRoot);
+  });
+  ipcMain.handle("fabula-setup:choose-projects", async (_event, current) => {
+    const picked = await dialog.showOpenDialog(window, {
+      title: "Choose where Fabula keeps its projects",
+      defaultPath: typeof current === "string" && current ? current : app.getPath("videos"),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (picked.canceled || !picked.filePaths[0]) return null;
+    engine.projectsRootFor({ kind: "windows", folder: picked.filePaths[0] }); // a share or a drive's top is refused here
+    return picked.filePaths[0];
   });
   ipcMain.handle("fabula-setup:learn", () => shell.openExternal("https://learn.microsoft.com/windows/wsl/install"));
   // --setup starts the setup as soon as WSL checks out, without waiting for the button: for a

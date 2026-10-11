@@ -23,8 +23,13 @@ The window follows the system's dark or light; the control at the top right pins
 
 ## Run it
 
-Fabula 0.3.1. The pipeline and the assistant run in WSL or Linux; the window can stay on Windows.
-You need Node 22 or newer, and Claude Code or Codex installed and signed in for the assistant.
+Fabula 0.3.1. **Fabula is a Windows app that needs WSL.** Its window runs on Windows; its
+transcription (WhisperX on CUDA), its renders (ffmpeg, a headless Electron) and its assistant's
+sessions are Linux programs, and WSL is where they run. macOS is not supported, and on Linux Fabula
+runs only from a source checkout, for development: there is no Linux release.
+
+To develop, you need Node 22 or newer, and Claude Code or Codex installed and signed in for the
+assistant.
 
 ```bash
 npm install
@@ -52,9 +57,13 @@ masthead and the project list and can change any time, because the folder on dis
 never has to move.
 
 Click the project's name in the masthead to rename it, show its folder, close it (Ctrl+W) or open the
-full list (Ctrl+Shift+O). From the list you can also move a project to the recycle bin; the recording
-is never touched. The assistant has the same view through `list_projects`, `open_project`,
+full list (Ctrl+Shift+O). From the list you can also remove a project: it goes to the Recycle Bin, or, for a project
+inside WSL (which has none), is deleted for good after Fabula asks. The recording is never
+touched. The assistant has the same view through `list_projects`, `open_project`,
 `switch_project`, `rename_project` and `close_project`.
+
+The Projects window shows where everything is: the projects folder, and under **Where Fabula is
+installed**, the program and the engine, each a click from Explorer.
 
 Projects live in `media/` beside the checkout unless you choose another folder with **Change…**,
 your Windows Videos folder included; Fabula offers to move existing projects and saved themes. The
@@ -207,8 +216,11 @@ it up to date. The release is Electron's Windows runtime with a bootstrap as its
 sets up Fabula's engine in the default WSL distribution (`scripts/setup-engine.sh`, no sudo): the
 version's code under `~/.local/share/fabula/versions/`, Node when the distribution has no Node 22,
 ffmpeg, the Chromium libraries renders need, and WhisperX on CUDA. That is about 7 GB once, and an
-update reuses it. Projects live in `~/.local/share/fabula/projects` unless you choose another
-folder. You need WSL with a Linux distribution, and Claude Code or Codex installed there.
+update reuses it. The first setup asks where the projects go: a folder on Windows
+(`Videos\Fabula` suggested; shown in Explorer, removals go to the Recycle Bin, renders a little
+slower) or `~/.local/share/fabula/projects` inside WSL (fastest, but only reached through
+`\\wsl.localhost`). **Change…** moves them later. You need WSL with a Linux distribution, and
+Claude Code or Codex installed there.
 `scripts/package-release.mjs` builds the bundle and `.github/workflows/release.yml` publishes it on
 a `v<version>` tag.
 
