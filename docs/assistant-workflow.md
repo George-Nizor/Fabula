@@ -143,7 +143,10 @@ camera inset never is, because only a look at the frames tells one from a plain 
 propose cuts at a 0.8 s minimum pause. The
 person reviews the cuts in the Cut step: struck words and pauses toggle, dragging across
 words cuts them by hand, and dragging across struck words keeps just those (`keep_words` is
-the same gesture on the belt). **Approve the cut and compose** in the Cut inspector starts the
+the same gesture on the belt). Clicking a cut selects it, and the inspector moves its start and
+end in time (`move_cut`), for the sliver of a filler or a clipped word the aligner's timestamps
+leave at an edge. Filler cuts are already placed where the sound is, from the recording's
+loudness, rather than where WhisperX aligned the word, which is usually late for an "um". **Approve the cut and compose** in the Cut inspector starts the
 clean render and either tells the running session in its terminal or starts one with `--task
 compose`. Once the film is composed the same button reads **Refresh the clean cut** when a cut
 has moved, and the window re-anchors the scenes itself when the new transcript lands; you may

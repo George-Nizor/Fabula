@@ -1218,6 +1218,24 @@ app.whenReady().then(() => {
       return { ok: false, error: error.message };
     }
   });
+  // A cut's edges moved by hand from the inspector, in seconds.
+  ipcMain.handle("fabula:move-cut", (event, index, bounds) => {
+    const dir = projectDir();
+    const file = dir && path.join(dir, "review.json");
+    const review = file && readJson(file);
+    if (!review || !core) return { ok: false, error: "No cuts to move yet." };
+    if (!Number.isInteger(index) || !review.cuts?.[index]) return { ok: false, error: "That cut is gone; pick it again." };
+    const finite = (value) => value === undefined || Number.isFinite(value);
+    if (!bounds || !finite(bounds.start) || !finite(bounds.end)) return { ok: false, error: "A cut edge must be a time in seconds." };
+    try {
+      review.cuts = core.cut.setCutBounds(review.cuts, index, { start: bounds.start, end: bounds.end }, review.duration);
+      writeJsonAtomic(file, review);
+      event.sender.send("fabula:state", readState());
+      return { ok: true, cut: review.cuts[index] };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
   ipcMain.handle("fabula:keep-words", (event, wordIds) => {
     const dir = projectDir();
     const file = dir && path.join(dir, "review.json");

@@ -71,16 +71,58 @@ export function normalizeToken(text) {
   return String(text).toLowerCase().replace(/[^a-z'’-]/g, "");
 }
 
+// WhisperX places a filler late: "um" opens on a soft vowel its aligner
+// hears late, so the aligned start can sit 100–300 ms inside the sound and a
+// cut there leaves the loudest part in. Given the recording's loudness (dB per
+// `hop` seconds) the edges go where the sound does: outward from the aligned
+// word while the level stays within FILLER_DROP_DB of the filler's own peak,
+// never past the neighbouring words. Where a filler runs straight into its
+// neighbour the edge goes to the quietest point between them.
+const FILLER_DROP_DB = 30;
+const FILLER_REACH_SECONDS = 0.5;
+const FILLER_EDGE_PAD_SECONDS = 0.02;
+
+export function fillerSoundSpan(word, prev, next, envelope) {
+  const { hop, db } = envelope;
+  const at = (t) => Math.min(Math.max(Math.floor(t / hop), 0), db.length - 1);
+  const lo = Math.max(prev ? prev.end : 0, word.start - FILLER_REACH_SECONDS, 0);
+  const hi = Math.min(next ? next.start : db.length * hop, word.end + FILLER_REACH_SECONDS, db.length * hop);
+  let peak = -Infinity;
+  for (let i = at(word.start); i <= at(word.end); i += 1) peak = Math.max(peak, db[i]);
+  if (!Number.isFinite(peak)) return null;
+  const threshold = Math.max(peak - FILLER_DROP_DB, envelope.floor + 6);
+  const quietest = (from, to) => {
+    let best = from;
+    for (let i = from; i <= to; i += 1) if (db[i] < db[best]) best = i;
+    return best;
+  };
+  let i = at(word.start);
+  while (i - 1 >= at(lo) && db[i - 1] > threshold) i -= 1;
+  const onset = i - 1 < at(lo) && db[at(lo)] > threshold ? quietest(at(lo), at(word.start)) * hop : i * hop;
+  let j = at(word.end);
+  while (j + 1 <= at(hi) && db[j + 1] > threshold) j += 1;
+  const offset = j + 1 > at(hi) && db[at(hi)] > threshold ? quietest(at(word.end), at(hi)) * hop : (j + 1) * hop;
+  return { start: Math.max(onset, lo), end: Math.min(offset, hi) };
+}
+
 export function detectFillerCuts(words, options = {}) {
   const fillers = options.fillers ?? DEFAULT_FILLERS;
   const pad = options.padSeconds ?? 0.04;
+  const envelope = options.envelope ?? null;
   const cuts = [];
-  for (const word of words) {
+  for (const [index, word] of words.entries()) {
     const token = normalizeToken(word.text);
     if (!fillers.has(token)) continue;
+    let start = Math.max(word.start - pad, 0);
+    let end = word.end + pad;
+    const sound = envelope ? fillerSoundSpan(word, words[index - 1], words[index + 1], envelope) : null;
+    if (sound) {
+      start = Math.min(start, Math.max(sound.start - FILLER_EDGE_PAD_SECONDS, words[index - 1]?.end ?? 0));
+      end = Math.max(end, Math.min(sound.end + FILLER_EDGE_PAD_SECONDS, words[index + 1]?.start ?? Infinity));
+    }
     cuts.push({
-      start: Math.max(word.start - pad, 0),
-      end: word.end + pad,
+      start,
+      end,
       reason: "filler",
       detail: token,
       wordIds: [word.id],
@@ -214,4 +256,37 @@ export function keepWords(cuts, words, wordIds) {
     }
   }
   return normalizeCuts(out);
+}
+
+// The person moves one cut's edges by hand, in time rather than by word: the
+// aligner's word edges are a guess, and a filler or a breath often needs a
+// tenth of a second more or less than the words say. An edge stops at its
+// neighbouring cuts (moving into one would silently merge two edits) and at
+// the recording's ends, and a cut never shrinks below a frame. The sources
+// that sat on the old edge move with it, so the window still explains it.
+export const MIN_CUT_SECONDS = 0.02;
+export function setCutBounds(cuts, index, bounds, durationSeconds) {
+  const cut = cuts[index];
+  if (!cut) throw new Error("no such cut");
+  const lower = index > 0 ? cuts[index - 1].end : 0;
+  const upper = index + 1 < cuts.length ? cuts[index + 1].start : durationSeconds;
+  let start = Number.isFinite(bounds.start) ? bounds.start : cut.start;
+  let end = Number.isFinite(bounds.end) ? bounds.end : cut.end;
+  start = Math.min(Math.max(start, lower), upper - MIN_CUT_SECONDS);
+  end = Math.max(Math.min(end, upper), lower + MIN_CUT_SECONDS);
+  if (end - start < MIN_CUT_SECONDS) {
+    if (Number.isFinite(bounds.start) && bounds.start !== cut.start) start = end - MIN_CUT_SECONDS;
+    else end = start + MIN_CUT_SECONDS;
+  }
+  const round = (t) => Math.round(t * 1000) / 1000;
+  start = round(start);
+  end = round(end);
+  const sources = (cut.sources ?? [cut]).map((source) => ({
+    ...source,
+    start: Math.abs(source.start - cut.start) < 1e-6 || source.start < start ? start : source.start,
+    end: Math.abs(source.end - cut.end) < 1e-6 || source.end > end ? end : source.end,
+  })).filter((source) => source.end > source.start);
+  const out = cuts.slice();
+  out[index] = { ...cut, start, end, sources: sources.length ? sources : [{ start, end, reason: "manual", wordIds: [], enabled: true }] };
+  return out;
 }

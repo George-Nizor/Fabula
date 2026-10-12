@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { flattenWords, detectFillerCuts, detectGapCuts, normalizeCuts, keepSegments, totalCutSeconds, SILENT_KEEP_FLOOR_SECONDS } from "../core/cut-engine.mjs";
+import { flattenWords, detectFillerCuts, fillerSoundSpan, setCutBounds, detectGapCuts, normalizeCuts, keepSegments, totalCutSeconds, SILENT_KEEP_FLOOR_SECONDS } from "../core/cut-engine.mjs";
 import { addWordCut, keepWords } from "../core/cut-engine.mjs";
 
 function word(id, text, start, end) {
@@ -35,6 +35,37 @@ test("detectFillerCuts matches fillers case-insensitively through punctuation", 
   assert.equal(cuts[0].detail, "um");
   assert.ok(cuts[0].start < 0.5 && cuts[0].end > 0.8, "cut pads around the filler");
   assert.deepEqual(cuts[0].wordIds, [1]);
+});
+
+// A loudness track at 10 ms: quiet at -70 dB, speech at -10 dB over the spans given.
+const envelopeOf = (seconds, loud) => {
+  const db = new Float32Array(Math.round(seconds / 0.01)).fill(-70);
+  for (const [from, to] of loud) for (let i = Math.round(from / 0.01); i < Math.round(to / 0.01); i += 1) db[i] = -10;
+  return { hop: 0.01, db, floor: -70 };
+};
+
+test("detectFillerCuts moves a late-aligned filler's start back to where its sound begins", () => {
+  // WhisperX says "um" is 0.95–1.05; the sound is really 0.75–1.08.
+  const words = [word(0, "So", 0, 0.3), word(1, "um", 0.95, 1.05), word(2, "right", 1.5, 1.8)];
+  const envelope = envelopeOf(2, [[0, 0.3], [0.75, 1.08], [1.5, 1.8]]);
+  const [cut] = detectFillerCuts(words, { envelope });
+  assert.ok(Math.abs(cut.start - 0.73) < 0.011, `start ${cut.start}`);
+  assert.ok(Math.abs(cut.end - 1.10) < 0.011, `end ${cut.end}`);
+});
+
+test("a filler run straight into the word before it is never cut into that word", () => {
+  const words = [word(0, "can", 0.5, 0.8), word(1, "uh", 0.85, 1.0), word(2, "go", 1.5, 1.8)];
+  const envelope = envelopeOf(2, [[0.5, 1.0], [1.5, 1.8]]);
+  const span = fillerSoundSpan(words[1], words[0], words[2], envelope);
+  assert.ok(span.start >= 0.8 - 1e-9, `start ${span.start}`);
+  const [cut] = detectFillerCuts(words, { envelope });
+  assert.ok(cut.start >= 0.8 - 1e-9 && cut.start <= 0.81 + 1e-9, `start ${cut.start}`);
+});
+
+test("without a loudness track a filler cut is the aligned word plus its pad", () => {
+  const words = [word(0, "So", 0, 0.3), word(1, "um", 0.95, 1.05)];
+  const [cut] = detectFillerCuts(words);
+  assert.ok(Math.abs(cut.start - 0.91) < 1e-9 && Math.abs(cut.end - 1.09) < 1e-9);
 });
 
 test("detectGapCuts keeps breath padding and finds head and tail silence", () => {
@@ -155,4 +186,29 @@ test("a silent scrap between two cuts is absorbed; the same scrap with a word in
   const kept = keepSegments(cuts, 5, { words: speaking });
   assert.ok(kept.some((k) => Math.abs(k.start - 1.4) < 0.001), "the word between the two cuts survives");
   assert.ok(SILENT_KEEP_FLOOR_SECONDS > 0.2 && SILENT_KEEP_FLOOR_SECONDS < 1);
+});
+
+test("setCutBounds moves an edge in time, carrying the sources on it", () => {
+  const cuts = normalizeCuts([
+    { start: 1.0, end: 1.5, reason: "silence", wordIds: [], enabled: true },
+    { start: 2.0, end: 2.2, reason: "filler", detail: "um", wordIds: [3], enabled: true },
+    { start: 3.0, end: 3.5, reason: "silence", wordIds: [], enabled: true },
+  ]);
+  const moved = setCutBounds(cuts, 1, { start: 1.85 }, 10);
+  assert.equal(moved[1].start, 1.85);
+  assert.equal(moved[1].end, 2.2);
+  assert.equal(moved[1].sources[0].start, 1.85);
+  assert.equal(cuts[1].start, 2.0, "the input is not mutated");
+});
+
+test("setCutBounds stops at the neighbouring cuts and never collapses a cut", () => {
+  const cuts = normalizeCuts([
+    { start: 1.0, end: 1.5, reason: "silence", wordIds: [], enabled: true },
+    { start: 2.0, end: 2.2, reason: "filler", wordIds: [3], enabled: true },
+  ]);
+  assert.equal(setCutBounds(cuts, 1, { start: 0.2 }, 10)[1].start, 1.5);
+  assert.equal(setCutBounds(cuts, 1, { end: 99 }, 10)[1].end, 10);
+  const squeezed = setCutBounds(cuts, 1, { start: 2.5 }, 10)[1];
+  assert.ok(squeezed.end - squeezed.start >= 0.02 - 1e-9);
+  assert.equal(squeezed.end, 2.2);
 });

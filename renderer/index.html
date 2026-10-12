@@ -373,6 +373,25 @@
             <button type="button" class="insp-mini" id="sel-clear">Clear</button>
           </div>
         </div>
+        <div class="insp-section" id="insp-cut" hidden>
+          <div class="insp-kv"><span>Cut</span><b id="cut-summary"></b></div>
+          <p class="insp-selected" id="cut-text"></p>
+          <div class="insp-kv"><span>From</span><b id="cut-bounds"></b></div>
+          <div class="insp-actions is-nudge">
+            <span class="nudge-label">Start</span>
+            <button type="button" class="insp-mini is-nudge" id="cut-start-back" title="Start earlier (shift: 0.1 s)">−</button>
+            <button type="button" class="insp-mini is-nudge" id="cut-start-fwd" title="Start later (shift: 0.1 s)">+</button>
+            <span class="nudge-label">End</span>
+            <button type="button" class="insp-mini is-nudge" id="cut-end-back" title="End earlier (shift: 0.1 s)">−</button>
+            <button type="button" class="insp-mini is-nudge" id="cut-end-fwd" title="End later (shift: 0.1 s)">+</button>
+          </div>
+          <p class="insp-status" id="cut-status">Each press moves an edge 0.02 s; hold shift for 0.1 s.</p>
+          <div class="insp-actions">
+            <button type="button" class="insp-mini is-strong" id="cut-hear" data-icon="play">Hear it</button>
+            <button type="button" class="insp-mini" id="cut-toggle"></button>
+            <button type="button" class="insp-mini" id="cut-close">Close</button>
+          </div>
+        </div>
         <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-actions insp-undo" id="insp-undo-wrap" hidden>
           <span class="insp-status" id="insp-undo-text"></span>

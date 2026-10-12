@@ -43,6 +43,32 @@ export const CLEAN_GOP = 30;
 
 export const sha = (text) => crypto.createHash("sha1").update(text).digest("hex").slice(0, 16);
 
+// The recording's loudness every 10 ms, in dB, for placing filler cuts where
+// the sound is rather than where WhisperX aligned the word. Decoded at 8 kHz
+// mono: a ten-minute take is a few seconds and under 10 MB. Null when the
+// file has no audio or ffmpeg fails; the cut pass then trusts the words.
+export const ENVELOPE_HOP_SECONDS = 0.01;
+
+export function loudnessEnvelope(file, duration) {
+  const rate = 8000;
+  const result = spawnSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", String(rate), "-f", "s16le", "-"], {
+    maxBuffer: Math.ceil((duration + 5) * rate * 2) + (1 << 20),
+  });
+  if (result.status !== 0 || !result.stdout?.length) return null;
+  const pcm = result.stdout;
+  const win = Math.round(rate * ENVELOPE_HOP_SECONDS);
+  const count = Math.floor(pcm.length / 2 / win);
+  const db = new Float32Array(count);
+  for (let k = 0; k < count; k += 1) {
+    let sum = 0;
+    for (let i = k * win; i < (k + 1) * win; i += 1) { const v = pcm.readInt16LE(i * 2) / 32768; sum += v * v; }
+    db[k] = 10 * Math.log10(sum / win + 1e-12);
+  }
+  // The room's floor: what the quietest tenth of the take sits at.
+  const sorted = Float32Array.from(db).sort();
+  return { hop: ENVELOPE_HOP_SECONDS, db, floor: sorted.length ? sorted[Math.floor(sorted.length * 0.1)] : -90 };
+}
+
 // Integrated loudness of a file's first audio stream, in LUFS (EBU R128),
 // or null when it has no audio. A whole film takes a few seconds.
 export function measureLoudness(file) {
@@ -208,13 +234,14 @@ export function transcribe(videoPath, outPath, options = {}) {
 // every cut proposal with its reasons and word anchors, enabled flags on.
 export function computeReview(transcript, videoPath, duration, options = {}) {
   const words = flattenWords(transcript);
+  const envelope = options.envelope !== undefined ? options.envelope : loudnessEnvelope(videoPath, duration);
   const gapOptions = {
     mediaDurationSeconds: duration,
     minGapSeconds: options.minGapSeconds,
     keepBreathSeconds: options.keepBreathSeconds,
   };
   const cuts = normalizeCuts([
-    ...detectFillerCuts(words),
+    ...detectFillerCuts(words, { envelope }),
     ...detectGapCuts(words, gapOptions),
   ]);
   return {

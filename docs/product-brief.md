@@ -1,5 +1,16 @@
 # Fabula — product brief
 
+## Filler cuts follow the sound; a cut's edges move in time (2026-10-13, 0.3.2)
+
+WhisperX aligns "um" and "uh" late, often 100–300 ms inside the sound, so a filler cut on the
+word's timestamps left its loudest part in. The cut pass now reads the recording's loudness every
+10 ms and moves each filler cut's edges out to where the sound starts and stops, never into the
+neighbouring words (`fillerSoundSpan` in `core/cut-engine.mjs`). Pauses are unchanged. Found on the
+first real project: all 30 filler cuts were late. In the Cut step a cut can now be clicked (on the
+timeline, or as struck text) and its edges moved 0.02 s at a time (shift: 0.1 s), stopping at
+neighbouring cuts; `move_cut` is the same on the belt. The preview now skips a cut 40 ms early,
+because a jump made after entering the cut let its first instant be heard.
+
 ## New motion graphic in the window (2026-10-07, 0.3.1)
 
 **New project** asks what the film is made from: a recording, or motion graphics only. The

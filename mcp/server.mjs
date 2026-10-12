@@ -64,7 +64,7 @@ import { validateAudio, describeAudio, bedSpans, assetAudioPath, effectSounds, s
 import { chapterList } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
-import { normalizeCuts, flattenWords, keepWords, totalCutSeconds } from "../core/cut-engine.mjs";
+import { normalizeCuts, flattenWords, keepWords, setCutBounds, totalCutSeconds } from "../core/cut-engine.mjs";
 import { punchPlan, punchSpans, DEFAULT_PUNCH_ZOOM } from "../core/shot-engine.mjs";
 import { critiqueFilm } from "../core/critic-engine.mjs";
 import { searchAudio, fetchAudio, SAFE_LICENSES } from "../scripts/audio-library.mjs";
@@ -867,6 +867,25 @@ server.registerTool("add_cut", {
   const added = review.cuts.findIndex((cut) =>
     cut.sources.some((s) => s.reason === reason && s.wordIds[0] === wordIds[0]));
   return ok({ added: describeCut(review.cuts[added], added, wordText), stats: reviewStats(review) });
+});
+
+server.registerTool("move_cut", {
+  description:
+    "Move one cut's start and/or end by index (from list_cuts), in seconds of the raw recording. Word timestamps are the aligner's guess: use this when the person hears a sliver of a filler or a clipped word at a cut's edge. An edge stops at the neighbouring cuts and the recording's ends. The window shows the same control in the Cut step's inspector.",
+  inputSchema: {
+    index: z.number().int().min(0).describe("Cut index from list_cuts"),
+    start: z.number().min(0).optional().describe("New start, seconds"),
+    end: z.number().min(0).optional().describe("New end, seconds"),
+  },
+}, async ({ index, start, end }) => {
+  const dir = currentProjectDir();
+  const review = readReview(dir);
+  if (index >= review.cuts.length) throw new Error(`no cut ${index}; there are ${review.cuts.length}`);
+  if (start === undefined && end === undefined) throw new Error("give a start, an end, or both");
+  review.cuts = setCutBounds(review.cuts, index, { start, end }, review.duration);
+  writeReview(dir, review);
+  const wordText = new Map(review.words.map((word) => [word.id, word.text]));
+  return ok({ moved: describeCut(review.cuts[index], index, wordText), stats: reviewStats(review) });
 });
 
 server.registerTool("keep_words", {

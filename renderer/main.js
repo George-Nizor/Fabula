@@ -31,6 +31,9 @@ const els = {
   brand: $("brand"), brandForm: $("brand-form"), brandName: $("brand-name"), brandStatus: $("brand-status"), brandCancel: $("brand-cancel"),
   inspHeading: $("insp-heading"), inspHeadingWrap: $("insp-heading-wrap"),
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
+  inspCut: $("insp-cut"), cutSummary: $("cut-summary"), cutText: $("cut-text"), cutBounds: $("cut-bounds"), cutStatus: $("cut-status"),
+  cutStartBack: $("cut-start-back"), cutStartFwd: $("cut-start-fwd"), cutEndBack: $("cut-end-back"), cutEndFwd: $("cut-end-fwd"),
+  cutHear: $("cut-hear"), cutToggle: $("cut-toggle"), cutClose: $("cut-close"),
   inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selKeep: $("sel-keep"), selClear: $("sel-clear"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
@@ -577,7 +580,7 @@ els.transcript.addEventListener("pointerdown", (event) => {
     // The click that follows this pointerup is the drag's, not a word pick;
     // if the pointer was released off the transcript no click comes at all,
     // so the flag is dropped once the event queue has had its turn.
-    if (dragging) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); renderSelection(); }
+    if (dragging) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); selectedCut = null; renderSelection(); renderCutInspector(); }
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -598,6 +601,92 @@ els.selKeep.addEventListener("click", async () => {
   else els.selSummary.textContent = result.error;
 });
 els.selClear.addEventListener("click", clearSelection);
+
+// ---- Moving a cut ----
+//
+// Word edges are the aligner's guess, and a filler or a breath often wants a
+// tenth of a second more or less than the words allow. Clicking a cut (on the
+// timeline, or struck text) opens it here, and its edges move in time.
+// The cut is remembered by where it was as well as its index, so a cut list
+// the assistant rewrites underneath finds it again or lets it go.
+
+const CUT_NUDGE_SECONDS = 0.02;
+const CUT_NUDGE_SHIFT_SECONDS = 0.1;
+const SKIP_LOOKAHEAD_SECONDS = 0.04;
+let selectedCut = null; // { index, start, end }
+
+function currentCut() {
+  if (!selectedCut) return null;
+  const cuts = review()?.cuts ?? [];
+  const same = cuts[selectedCut.index];
+  if (same && same.end > selectedCut.start && same.start < selectedCut.end) return same;
+  const middle = (selectedCut.start + selectedCut.end) / 2;
+  const found = cuts.findIndex((cut) => cut.start <= middle && cut.end >= middle);
+  if (found < 0) { selectedCut = null; return null; }
+  selectedCut.index = found;
+  return cuts[found];
+}
+const selectedCutIndex = () => (currentCut() ? selectedCut.index : -1);
+
+function selectCut(index) {
+  const cut = review()?.cuts?.[index];
+  selectedCut = cut ? { index, start: cut.start, end: cut.end } : null;
+  if (selectedCut) { selection = null; paintSelection(); renderSelection(); }
+  els.cutStatus.textContent = "Each press moves an edge 0.02 s; hold shift for 0.1 s.";
+  renderCutInspector();
+  renderCutTimeline();
+}
+
+// A cut edge to the hundredth: 0:09.70.
+const fmtEdge = (t) => {
+  const hundredths = Math.round(Math.max(t, 0) * 100);
+  const m = Math.floor(hundredths / 6000);
+  return `${m}:${((hundredths - m * 6000) / 100).toFixed(2).padStart(5, "0")}`;
+};
+
+function renderCutInspector() {
+  const cut = mode === "cut" ? currentCut() : null;
+  els.inspCut.hidden = !cut;
+  if (!cut) return;
+  selectedCut.start = cut.start;
+  selectedCut.end = cut.end;
+  els.cutSummary.textContent = `${[...new Set(cut.sources.map((s) => s.reason))].join(" + ")}${cut.enabled ? "" : " · kept"}`;
+  const inside = (review()?.words ?? []).filter((word) => word.end > cut.start + EPSILON && word.start < cut.end - EPSILON);
+  els.cutText.textContent = inside.length ? `“${inside.map((word) => word.text).join(" ")}”` : "A pause.";
+  els.cutBounds.textContent = `${fmtEdge(cut.start)} – ${fmtEdge(cut.end)} · ${(cut.end - cut.start).toFixed(2)} s`;
+  setLabel(els.cutToggle, cut.enabled ? "Keep the footage" : "Cut it again", cut.enabled ? "undo" : "scissors");
+}
+
+const moveCutEdge = (edge, direction) => async (event) => {
+  const cut = currentCut();
+  if (!cut) return;
+  const by = direction * (event.shiftKey ? CUT_NUDGE_SHIFT_SECONDS : CUT_NUDGE_SECONDS);
+  const result = await window.fabula.moveCut(selectedCut.index, { [edge]: cut[edge] + by });
+  if (!result.ok) { els.cutStatus.textContent = result.error; return; }
+  const moved = result.cut[edge];
+  els.cutStatus.textContent = Math.abs(moved - (cut[edge] + by)) > 0.001
+    ? `The ${edge} stops at ${fmtEdge(moved)}: ${edge === "start" ? "the cut before" : "the cut after"} or the ${edge === "start" ? "beginning" : "end"} of the recording is there.`
+    : `${edge === "start" ? "Start" : "End"} moved to ${fmtEdge(moved)}. Hear it to check.`;
+  selectedCut.start = result.cut.start;
+  selectedCut.end = result.cut.end;
+};
+els.cutStartBack.addEventListener("click", moveCutEdge("start", -1));
+els.cutStartFwd.addEventListener("click", moveCutEdge("start", 1));
+els.cutEndBack.addEventListener("click", moveCutEdge("end", -1));
+els.cutEndFwd.addEventListener("click", moveCutEdge("end", 1));
+// Two seconds of run-up, then across the cut as the edit plays it.
+els.cutHear.addEventListener("click", () => {
+  const cut = currentCut();
+  if (!cut) return;
+  els.skipcuts.checked = true;
+  seek(Math.max(cut.start - 2, 0));
+  els.video.play();
+});
+els.cutToggle.addEventListener("click", () => {
+  const cut = currentCut();
+  if (cut) window.fabula.setCut(selectedCut.index, !cut.enabled);
+});
+els.cutClose.addEventListener("click", () => { selectedCut = null; renderCutInspector(); renderCutTimeline(); });
 els.emptyFirstPass.addEventListener("click", async () => {
   const result = await window.fabula.render("first", {});
   if (!result.ok) els.emptyHint.textContent = result.error;
@@ -788,7 +877,7 @@ function renderCutTimeline() {
   els.laneCuts.replaceChildren();
   r.cuts.forEach((cut, index) => {
     const block = document.createElement("div");
-    block.className = `tl-block is-cutblock${cut.enabled ? "" : " is-kept"}`;
+    block.className = `tl-block is-cutblock${cut.enabled ? "" : " is-kept"}${index === selectedCutIndex() ? " is-selected" : ""}`;
     block.title = cutTitle(cut);
     place(block, cut.start, cut.end, total, 0.15);
     block.dataset.seek = String(Math.max(cut.start - 0.6, 0));
@@ -967,9 +1056,11 @@ function renderProjectPanel() {
     els.sumShots.textContent = r.shotPlan ? `alternating ${Math.round(r.shotPlan.zoom * 100)}%` : "off";
     els.sumFraming.textContent = describeFraming(r.framing);
     els.sumClean.textContent = { none: "not rendered", stale: "out of date", current: "up to date" }[cleanState(state?.export)];
-    els.inspEmpty.textContent = "Click a word to jump. Click struck text to keep it. Drag across words to cut.";
+    els.inspEmpty.textContent = "Click a word to jump. Click struck text to keep it. Drag across words to cut. Click a cut on the timeline to move its edges.";
     renderSelection();
+    renderCutInspector();
   } else {
+    els.inspCut.hidden = true;
     els.inspCutSummary.hidden = true;
     els.inspKeysCut.hidden = true;
     els.inspKeysScenes.hidden = mode !== "scenes";
@@ -2207,6 +2298,7 @@ els.transcript.addEventListener("click", (event) => {
   if (mode === "cut" && target.dataset.cutIndex !== undefined) {
     const index = Number(target.dataset.cutIndex);
     window.fabula.setCut(index, !review().cuts[index].enabled);
+    selectCut(index);
     return;
   }
   if (target.dataset.start !== undefined) {
@@ -2222,6 +2314,7 @@ els.timeline.addEventListener("click", (event) => {
   if (target.dataset.seek !== undefined) {
     seek(Number(target.dataset.seek) + 0.01);
     if (target.dataset.scene !== undefined) openInspector(Number(target.dataset.scene));
+    if (mode === "cut" && target.dataset.cutIndex !== undefined) selectCut(Number(target.dataset.cutIndex));
     return;
   }
 });
@@ -2763,8 +2856,11 @@ function tick() {
   if (mode === "cut") {
     total = review().duration;
     if (els.skipcuts.checked && !els.video.paused) {
+      // Jump a little before the cut, not after it: the playhead is read once
+      // a frame and the audio already queued plays out after a seek, so a
+      // jump made inside the cut lets its first tens of milliseconds be heard.
       for (const cut of enabledCuts()) {
-        if (now >= cut.start && now < cut.end) {
+        if (now >= cut.start - SKIP_LOOKAHEAD_SECONDS && now < cut.end) {
           els.video.currentTime = cut.end + 0.001;
           return; // next frame reads the new position
         }

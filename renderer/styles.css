@@ -1446,6 +1446,9 @@ body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 
 .tl-block.is-cutblock.is-kept { background: transparent; border: 1.5px dotted var(--accent-text); }
 
+/* The cut open in the inspector, whose edges are being moved. */
+.tl-block.is-cutblock.is-selected { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 2; }
+
 .tl-block.is-screenblock {
   border-radius: 4px;
   background: var(--screen-tint);
