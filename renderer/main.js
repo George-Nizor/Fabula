@@ -74,6 +74,9 @@ const els = {
   themeAccent: $("theme-accent"), themeAccentValue: $("theme-accent-value"), themeAccent2: $("theme-accent2"), themeAccent2Value: $("theme-accent2-value"),
   lookTitles: $("look-titles"), lookCallouts: $("look-callouts"), lookCaptions: $("look-captions"), lookTemplates: $("look-templates"),
   lookTransitions: $("look-transitions"), lookPunch: $("look-punch"),
+  lookSteps: $("look-steps"), lookBrandbox: $("look-brandbox"), lookPrev: $("look-prev"), lookNext: $("look-next"),
+  lookLiveColours: $("look-live-colours"), lookLiveFootage: $("look-live-footage"), lookLiveMark: $("look-live-mark"),
+  brandTitle: $("brand-title"), brandLede: $("brand-lede"),
   themeFontDisplay: $("theme-font-display"), themeFontBody: $("theme-font-body"), themeFontSerif: $("theme-font-serif"),
   themeTitleCase: $("theme-title-case"), themeRadius: $("theme-radius"), themeRadiusValue: $("theme-radius-value"),
   themeGlow: $("theme-glow"), themeGlowValue: $("theme-glow-value"),
@@ -1387,8 +1390,17 @@ function previewSurface() {
   head.append(inner);
   const overlay = document.createElement("div");
   overlay.className = "ov-layer";
-  frame.append(head, overlay);
-  return { frame, head, overlay };
+  // What a preview says about itself, when its picture alone is not enough
+  // (a punch-in: which shot this is, and the tighter frame on the wide one).
+  const crop = document.createElement("div");
+  crop.className = "preview-crop";
+  crop.hidden = true;
+  head.append(crop);
+  const badge = document.createElement("div");
+  badge.className = "preview-badge";
+  badge.hidden = true;
+  frame.append(head, overlay, badge);
+  return { frame, head, overlay, badge, crop };
 }
 
 // A timeline written by hand rather than through resolveLayoutTimeline: a
@@ -1400,9 +1412,9 @@ const previewTimeline = (segments, theme) =>
 // script(t) -> { compose, layout, punch }. Registered previews are painted
 // by one loop that only runs while the Look step is showing.
 function addPreview(host, loopSeconds, script) {
-  const { frame, head, overlay } = previewSurface();
+  const { frame, head, overlay, badge, crop } = previewSurface();
   host.append(frame);
-  const preview = { frame, head, overlay, loopSeconds, script };
+  const preview = { frame, head, overlay, badge, crop, loopSeconds, script };
   previews.add(preview);
   paintPreview(preview, 0);
   return frame;
@@ -1410,7 +1422,11 @@ function addPreview(host, loopSeconds, script) {
 
 function paintPreview(preview, clock) {
   const t = clock % preview.loopSeconds;
-  const { compose, layout, punch } = preview.script(t);
+  const { compose, layout, punch, badge, crop } = preview.script(t);
+  preview.badge.hidden = !badge;
+  if (badge && preview.badge.textContent !== badge) preview.badge.textContent = badge;
+  preview.crop.hidden = !(crop > 1);
+  if (crop > 1) preview.crop.style.inset = `${((1 - 1 / crop) / 2) * 100}%`;
   const plan = window.FabulaStage.plan(compose, t, layout);
   plan.punch = punch ?? 1;
   window.FabulaStage.applyTheme(preview.frame, plan.theme);
@@ -1529,11 +1545,16 @@ function transitionScript(theme, transition) {
   return (t) => ({ compose, layout: layoutOf(timeline, t) });
 }
 
-// Punch-ins are a step, not a move: two shots, alternating.
+// Punch-ins are a step, not a move: two shots, alternating. The wide shot
+// shows the tighter frame outlined, then the cut to it; each is labelled.
 function punchScript(theme, zoom) {
   const timeline = previewTimeline([{ start: 0, end: 99, layout: "focus" }], theme);
   const compose = previewCompose(theme);
-  return (t) => ({ compose, layout: layoutOf(timeline, t), punch: t > 2 ? zoom : 1 });
+  if (!(zoom > 1)) return (t) => ({ compose, layout: layoutOf(timeline, t), punch: 1, badge: "Same shot at every cut" });
+  const tight = `Tight · ${Math.round(zoom * 100)}%`;
+  return (t) => t < 2
+    ? { compose, layout: layoutOf(timeline, t), punch: 1, badge: "Wide", crop: zoom }
+    : { compose, layout: layoutOf(timeline, t), punch: zoom, badge: tight };
 }
 
 function lookCard({ id, title, about, active, onPick, action, script, loop = 4 }) {
@@ -1614,70 +1635,208 @@ const fillOptions = (select, values, current) => {
   select.value = current;
 };
 
+// The Look step's parts, one screen each, in the order a look is built.
+const LOOK_SCREENS = [
+  { id: "brand", label: "Brand" },
+  { id: "colours", label: "Colours and type" },
+  { id: "titles", label: "Titles" },
+  { id: "callouts", label: "Callouts" },
+  { id: "captions", label: "Captions" },
+  { id: "transitions", label: "Transitions" },
+  { id: "punch", label: "Punch-ins" },
+  { id: "footage", label: "Field and footage" },
+  { id: "mark", label: "Mark and handle" },
+  { id: "graphics", label: "Graphics", note: "reference" },
+];
+let lookScreen = (() => { try { return localStorage.getItem("fabula.lookScreen") ?? "brand"; } catch { return "brand"; } })();
+if (!LOOK_SCREENS.some((screen) => screen.id === lookScreen)) lookScreen = "brand";
+let brandConfirmDelete = null; // the brand whose Delete is asking "sure?"
+
+function setLookScreen(id) {
+  lookScreen = id;
+  brandConfirmDelete = null;
+  try { localStorage.setItem("fabula.lookScreen", id); } catch { /* remembered for this session only */ }
+  renderLookPage();
+  document.querySelector("#look .look-main")?.scrollTo({ top: 0 });
+}
+
+// What each part is set to now, in a few words, for the list on the left.
+function lookSummary(id, l) {
+  const t = l.theme;
+  const caps = { none: "off", open: "burned in", closed: "CC file", both: "burned in + CC file" }[l.captionMode] ?? l.captionMode;
+  switch (id) {
+    case "brand": return l.brand ? `${l.brand.name}${l.brand.matches ? "" : " · changed"}` : `no brand · ${t.preset}`;
+    case "colours": return `${t.fonts.display} · ${t.titleCase === "upper" ? "UPPER" : "as written"}`;
+    case "titles": return t.titleStyle;
+    case "callouts": return t.calloutStyle;
+    case "captions": return l.captionMode === "none" ? "off" : `${caps} · ${t.captionStyle}`;
+    case "transitions": return t.transition === "cut" ? "cut" : `${t.transition} · ${(t.transitionSeconds ?? t.transitionSecondsDefault ?? 0).toFixed(1)} s`;
+    case "punch": return l.punch?.zoom ? `${Math.round(l.punch.zoom * 100)}%` : "off";
+    case "footage": return t.grade && Object.keys(t.grade).length ? "graded" : "as shot";
+    case "mark": return [t.logo ? "logo" : "", t.watermark ?? ""].filter(Boolean).join(" · ") || "none";
+    default: return "";
+  }
+}
+
+function renderLookNav(l) {
+  els.lookSteps.replaceChildren(...LOOK_SCREENS.map((screen, i) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `look-step${screen.id === lookScreen ? " is-on" : ""}`;
+    const summary = screen.note ?? lookSummary(screen.id, l);
+    button.innerHTML = `<span class="look-step-num">${i + 1}</span><span class="look-step-text"><b>${esc(screen.label)}</b><span>${esc(summary)}</span></span>${screen.id === "colours" ? `<span class="look-step-swatch" style="--a:${esc(l.theme.accent)};--b:${esc(l.theme.accent2)}"></span>` : ""}`;
+    button.addEventListener("click", () => setLookScreen(screen.id));
+    item.append(button);
+    return item;
+  }));
+  // The brand box: which brand this project uses, and the one action that
+  // matters now: carry a change back to it, or keep the look as a brand.
+  const box = els.lookBrandbox;
+  box.replaceChildren();
+  box.append(make("div", "look-brandbox-label", "Brand"));
+  if (l.brand) {
+    box.append(make("div", "look-brandbox-name", esc(l.brand.name)));
+    box.append(make("div", `look-brandbox-state${l.brand.matches ? "" : " is-changed"}`, l.brand.matches ? "This project matches it." : "This project has changes the brand does not."));
+    if (!l.brand.matches) {
+      box.append(actionButton(`Update “${l.brand.name}”`, () => brandAction({ brandUpdate: l.brand.id }, `Updated “${l.brand.name}”.`), { small: true, primary: true, icon: "badge" }));
+    }
+  } else {
+    box.append(make("div", "look-brandbox-name is-none", "None"));
+    box.append(make("div", "look-brandbox-state", "Changes apply to this project only."));
+    box.append(actionButton("Save as a brand…", () => openBrandSheet(), { small: true, icon: "badge" }));
+  }
+}
+
+async function brandAction(patch, done) {
+  const result = await window.fabula.setProject(patch);
+  els.lookStatus.textContent = result.ok ? done ?? "" : result.error;
+  if (!result.ok && lookScreen !== "brand") setLookScreen("brand");
+}
+
+function openBrandSheet(rename = null) {
+  els.brand.dataset.rename = rename?.id ?? "";
+  els.brandTitle.textContent = rename ? "Rename the brand" : "Save as a new brand";
+  els.brandLede.textContent = rename
+    ? "Projects that use it keep using it under the new name."
+    : "The look as it is now, kept for every next film. It appears under Your brands, one click to use.";
+  els.brandStatus.textContent = "";
+  els.brandName.value = rename?.name ?? "";
+  els.brand.showModal();
+  els.brandName.focus();
+  els.brandName.select();
+}
+
+// A brand: its look playing, its name, and what can be done with it.
+function brandCard(brand, l) {
+  const inUse = l.brand?.id === brand.id;
+  const card = make("div", `look-card is-brand${inUse ? " is-active" : ""}`);
+  const stage = make("div", "look-card-stage");
+  stage.style.setProperty("--stage-aspect", `${previewStage().width} / ${previewStage().height}`);
+  card.append(stage);
+  addPreview(stage, 6, presetScript(brand.theme));
+  card.append(make("div", "look-card-name", `${esc(brand.name)}${inUse ? ' <span class="look-card-badge">In use</span>' : ""}`));
+  card.append(make("div", "look-card-about", esc(`${brand.theme.preset} · ${brand.theme.titleStyle} titles · ${brand.theme.captionStyle} captions`)));
+  const row = make("div", "look-card-actions");
+  if (brandConfirmDelete === brand.id) {
+    row.append(make("span", "look-card-ask", "Delete this brand?"));
+    row.append(actionButton("Delete", () => { brandConfirmDelete = null; brandAction({ brandDelete: brand.id }, `Deleted “${brand.name}”.`); }, { small: true, icon: "trash" }));
+    row.append(actionButton("Keep", () => { brandConfirmDelete = null; renderLookPage(); }, { small: true }));
+  } else {
+    if (!inUse) row.append(actionButton("Use", () => brandAction({ themeUse: brand.id }, `Using “${brand.name}”.`), { small: true, primary: true, icon: "done" }));
+    else if (!l.brand.matches) row.append(actionButton("Update", () => brandAction({ brandUpdate: brand.id }, `Updated “${brand.name}”.`), { small: true, primary: true, icon: "badge" }));
+    row.append(actionButton("Rename", () => openBrandSheet(brand), { small: true, icon: "pencil" }));
+    row.append(actionButton("Delete", () => { brandConfirmDelete = brand.id; renderLookPage(); }, { small: true, icon: "trash" }));
+  }
+  card.append(row);
+  return card;
+}
+
+// A live picture of the whole look beside the forms that change it.
+function liveCard(host, theme) {
+  host.replaceChildren();
+  const card = make("div", "look-card is-live");
+  const stage = make("div", "look-card-stage");
+  stage.style.setProperty("--stage-aspect", `${previewStage().width} / ${previewStage().height}`);
+  card.append(stage);
+  addPreview(stage, 6, presetScript(theme));
+  card.append(make("div", "look-card-about", "The film's look as it is now."));
+  host.append(card);
+}
+
 function renderLookPage() {
   const l = look();
   if (!l) return;
   const theme = l.theme;
   const config = l.themeConfig;
-  clearPreviews(els.lookPresets, els.lookBrands, els.lookTitles, els.lookCallouts, els.lookCaptions, els.lookTemplates, els.lookTransitions, els.lookPunch);
+  const hosts = [els.lookPresets, els.lookBrands, els.lookTitles, els.lookCallouts, els.lookCaptions, els.lookTemplates, els.lookTransitions, els.lookPunch, els.lookLiveColours, els.lookLiveFootage, els.lookLiveMark];
+  clearPreviews(...hosts);
+  // Only the screen on show plays: the rest are emptied, so nothing paints
+  // a picture nobody can see.
+  for (const host of hosts) host.replaceChildren();
   els.look.classList.toggle("is-tall-film", previewStage().height > previewStage().width);
+  for (const screen of els.look.querySelectorAll(".look-screen")) screen.hidden = screen.dataset.screen !== lookScreen;
+  renderLookNav(l);
+  const at = LOOK_SCREENS.findIndex((screen) => screen.id === lookScreen);
+  const prev = LOOK_SCREENS[at - 1];
+  const next = LOOK_SCREENS[at + 1];
+  els.lookPrev.hidden = !prev;
+  els.lookNext.hidden = !next;
+  if (prev) els.lookPrev.textContent = `← ${prev.label}`;
+  if (next) els.lookNext.textContent = `${next.label} →`;
 
-  // Each preset card plays that preset, not the project's theme: the point
-  // is to show what picking it would do.
-  els.lookPresets.replaceChildren(...l.presets.map((p) => lookCard({
-    id: p.id, title: p.label, about: p.about, active: theme.preset === p.id,
-    script: presetScript(l.presetThemes?.[p.id] ?? theme), loop: 6,
-    onPick: () => window.fabula.setProject({ theme: { preset: p.id } }),
-  })));
-
-  const brands = l.savedThemes.map((s) => lookCard({
-    id: s.id, title: s.name, active: false, action: "Use this brand",
-    about: `${s.theme.preset} · ${s.theme.transition} · ${s.theme.captionStyle} captions`,
-    script: presetScript(s.theme), loop: 6,
-    onPick: () => window.fabula.setProject({ themeUse: s.id }),
-  }));
-  if (brands.length === 0) {
-    const none = document.createElement("p");
-    none.className = "look-none";
-    none.textContent = "No brands saved. Get the look right, then Save as brand — the next film starts from it in one click.";
-    els.lookBrands.replaceChildren(none);
-  } else {
-    els.lookBrands.replaceChildren(...brands);
+  if (lookScreen === "brand") {
+    els.lookBrands.replaceChildren(...l.savedThemes.map((brand) => brandCard(brand, l)));
+    if (l.savedThemes.length === 0) {
+      els.lookBrands.append(make("p", "look-none", "No brands yet. Get the look right, then Save this look as a new brand: the next film starts from it in one click."));
+    }
+    // Each preset card plays that preset, not the project's theme: the point
+    // is to show what picking it would do.
+    els.lookPresets.replaceChildren(...l.presets.map((p) => lookCard({
+      id: p.id, title: p.label, about: p.about, active: theme.preset === p.id, action: theme.preset === p.id ? "The preset now" : "Start from this",
+      script: presetScript(l.presetThemes?.[p.id] ?? theme), loop: 6,
+      onPick: () => window.fabula.setProject({ theme: { preset: p.id } }),
+    })));
+    els.lookReset.hidden = Object.keys(config).filter((key) => key !== "preset").length === 0;
   }
-
+  if (lookScreen === "colours") liveCard(els.lookLiveColours, theme);
+  if (lookScreen === "footage") liveCard(els.lookLiveFootage, theme);
+  if (lookScreen === "mark") liveCard(els.lookLiveMark, theme);
   // The option galleries all play the PROJECT's theme with one token
   // swapped, so a choice is shown in the colours it will actually wear.
-  els.lookTitles.replaceChildren(...l.titleStyles.map((style) => lookCard({
+  if (lookScreen === "titles") els.lookTitles.replaceChildren(...l.titleStyles.map((style) => lookCard({
     id: style, title: style, about: TITLE_ABOUT[style], active: theme.titleStyle === style, loop: 4,
     script: titleScript({ ...theme, titleStyle: style }, style),
     onPick: () => window.fabula.setProject({ theme: { titleStyle: style } }),
   })));
-  els.lookCallouts.replaceChildren(...l.calloutStyles.map((style) => lookCard({
+  if (lookScreen === "callouts") els.lookCallouts.replaceChildren(...l.calloutStyles.map((style) => lookCard({
     id: style, title: style, about: CALLOUT_ABOUT[style], active: theme.calloutStyle === style, loop: 4,
     script: calloutScript({ ...theme, calloutStyle: style }, style),
     onPick: () => window.fabula.setProject({ theme: { calloutStyle: style } }),
   })));
-  els.lookCaptions.replaceChildren(...l.captionStyles.filter((style) => style !== "none").map((style) => lookCard({
+  if (lookScreen === "captions") els.lookCaptions.replaceChildren(...l.captionStyles.filter((style) => style !== "none").map((style) => lookCard({
     id: style, title: style, about: CAPTION_ABOUT[style], active: theme.captionStyle === style, loop: 4,
     script: captionScript(theme, style),
     onPick: () => window.fabula.setProject({ theme: { captionStyle: style } }),
   })));
   // The templates are a reference, not a choice: nothing is picked here.
-  const templates = window.FabulaTemplates ? window.FabulaTemplates.list() : [];
-  els.lookTemplates.replaceChildren(...templates.map((template) => {
-    const script = templateScript(theme, template);
-    // The first sentence of what it is for, without the assistant's field names.
-    const about = String(template.when ?? "").split(/(?<=\.)\s/)[0].replace(/`[^`]*`/g, "").replace(/\s{2,}/g, " ").trim();
-    return lookCard({ id: template.id, title: template.label, about, active: false, loop: 6, script: script ?? undefined, onPick: () => {} });
-  }).filter(Boolean));
-  els.lookTransitions.replaceChildren(...l.transitions.map((value) => lookCard({
+  if (lookScreen === "graphics") {
+    const templates = window.FabulaTemplates ? window.FabulaTemplates.list() : [];
+    els.lookTemplates.replaceChildren(...templates.map((template) => {
+      const script = templateScript(theme, template);
+      // The first sentence of what it is for, without the assistant's field names.
+      const about = String(template.when ?? "").split(/(?<=\.)\s/)[0].replace(/`[^`]*`/g, "").replace(/\s{2,}/g, " ").trim();
+      return lookCard({ id: template.id, title: template.label, about, active: false, loop: 6, script: script ?? undefined, onPick: () => {} });
+    }).filter(Boolean));
+  }
+  if (lookScreen === "transitions") els.lookTransitions.replaceChildren(...l.transitions.map((value) => lookCard({
     id: value, title: value, about: TRANSITION_ABOUT[value], active: theme.transition === value, loop: 5,
     script: transitionScript(theme, value),
     onPick: () => window.fabula.setProject({ theme: { transition: value } }),
   })));
   const zoom = l.punch?.zoom ?? null;
-  els.lookPunch.replaceChildren(...[null, 1.1, 1.15, 1.25].map((value) => lookCard({
-    id: String(value ?? "off"), title: value ? `${Math.round(value * 100)}%` : "off",
+  if (lookScreen === "punch") els.lookPunch.replaceChildren(...[null, 1.1, 1.15, 1.25].map((value) => lookCard({
+    id: String(value ?? "off"), title: value ? `${Math.round(value * 100)}%` : "Off",
     about: PUNCH_ABOUT[value ?? ""], active: (zoom ?? null) === value, loop: 4,
     script: punchScript(theme, value ?? 1),
     onPick: () => window.fabula.setProject({ punch: value }),
@@ -1718,7 +1877,6 @@ function renderLookPage() {
   els.themeLogoCornerWrap.hidden = !theme.logo;
   els.themeLogoCorner.value = theme.logo?.corner ?? "tr";
   if (document.activeElement !== els.themeWatermark) els.themeWatermark.value = theme.watermark ?? "";
-  els.lookReset.hidden = Object.keys(config).filter((key) => key !== "preset").length === 0;
 }
 
 // ---- The Export page (filled in by the render step) ----
@@ -3043,22 +3201,19 @@ els.themeWatermark.addEventListener("keydown", (event) => { if (event.key === "E
 els.lookReset.addEventListener("click", () => window.fabula.setProject({ themeReset: true }));
 // Saving a brand asks for a name in a sheet of its own: Electron has no
 // window.prompt, and a sheet can show what went wrong where it went wrong.
-els.lookSave.addEventListener("click", () => {
-  els.brandStatus.textContent = "";
-  els.brandName.value = look()?.savedThemes[0]?.name ?? "";
-  els.brand.showModal();
-  els.brandName.focus();
-  els.brandName.select();
-});
+els.lookSave.addEventListener("click", () => openBrandSheet());
+els.lookPrev.addEventListener("click", () => { const at = LOOK_SCREENS.findIndex((s) => s.id === lookScreen); if (at > 0) setLookScreen(LOOK_SCREENS[at - 1].id); });
+els.lookNext.addEventListener("click", () => { const at = LOOK_SCREENS.findIndex((s) => s.id === lookScreen); if (at < LOOK_SCREENS.length - 1) setLookScreen(LOOK_SCREENS[at + 1].id); });
 els.brandCancel.addEventListener("click", () => els.brand.close());
 els.brandForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = els.brandName.value.trim();
   if (!name) { els.brandStatus.textContent = "Give the brand a name."; return; }
-  const result = await window.fabula.setProject({ themeSave: name });
+  const renaming = els.brand.dataset.rename;
+  const result = await window.fabula.setProject(renaming ? { brandRename: { id: renaming, name } } : { themeSave: name });
   if (!result.ok) { els.brandStatus.textContent = result.error; return; }
   els.brand.close();
-  els.lookStatus.textContent = `saved as “${name}”`;
+  els.lookStatus.textContent = renaming ? `Renamed to “${name}”.` : `Saved as “${name}”, and this project uses it.`;
 });
 
 els.insertNone.addEventListener("click", async () => {

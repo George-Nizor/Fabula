@@ -162,7 +162,7 @@
 
   <dialog class="sheet" id="brand">
     <form method="dialog" class="sheet-form" id="brand-form">
-      <header><h2>Save as brand</h2><p>The look as it is now, kept for every next film. It appears under Your brands, one click to use.</p></header>
+      <header><h2 id="brand-title">Save as a new brand</h2><p id="brand-lede">The look as it is now, kept for every next film. It appears under Your brands, one click to use.</p></header>
       <label class="field">Name
         <input type="text" id="brand-name" maxlength="60" autocomplete="off" spellcheck="false" placeholder="My channel" />
       </label>
@@ -552,109 +552,147 @@
     </aside>
   </main>
 
-  <section class="page" id="look" hidden>
-    <div class="page-main">
-      <div class="page-head">
-        <h2>Look</h2>
-        <p class="page-lede">Applies to the whole film. Every card below is drawn by the same painter that draws the film, so what you see is what renders. Save the result as a brand to start the next film from it.</p>
+  <section class="page look-page" id="look" hidden>
+    <!-- The Look step: a list of the look's parts on the left, each with what
+         it is set to now, and one screen per part. The brand box says which
+         brand the project uses and whether it still matches. -->
+    <nav class="look-nav" aria-label="Parts of the look">
+      <div class="look-brandbox" id="look-brandbox"></div>
+      <ol class="look-steps" id="look-steps"></ol>
+    </nav>
+    <div class="page-main look-main">
+      <div class="look-screen" data-screen="brand" hidden>
+        <div class="page-head"><h2>Brand</h2><p class="page-lede">A brand is a saved look. Use one for this project, keep it up to date, or start from a preset.</p></div>
+        <div class="look-bar">
+          <button type="button" class="button is-primary is-small" id="look-save" data-icon="badge">Save this look as a new brand…</button>
+          <button type="button" class="button is-small" id="look-reset" data-icon="undo">Reset to the preset</button>
+          <span class="insp-status" id="look-status"></span>
+        </div>
+        <h3 class="look-sub">Your brands</h3>
+        <div class="gallery look-grid" id="look-brands"></div>
+        <h3 class="look-sub">Presets</h3>
+        <div class="gallery look-grid" id="look-presets"></div>
       </div>
-      <div class="rail-label">Your brands</div>
-      <div class="gallery is-brands" id="look-brands"></div>
-      <div class="rail-label">Presets</div>
-      <div class="gallery" id="look-presets"></div>
-      <div class="insp-actions">
-        <button type="button" class="button is-small" id="look-save" data-icon="badge">Save as brand…</button>
-        <button type="button" class="insp-mini" id="look-reset" data-icon="undo">Reset to preset</button>
-        <span class="insp-status" id="look-status"></span>
+
+      <div class="look-screen" data-screen="colours" hidden>
+        <div class="page-head"><h2>Colours and type</h2><p class="page-lede">The accents run through titles, cards and captions. The faces are the film's type.</p></div>
+        <div class="look-split">
+          <div class="look-form">
+            <label class="insp-field">Accent
+              <span class="insp-accent-row"><input type="color" id="theme-accent" value="#d97757" /><span class="insp-swatch-value" id="theme-accent-value">#d97757</span></span>
+            </label>
+            <label class="insp-field">Second accent
+              <span class="insp-accent-row"><input type="color" id="theme-accent2" value="#f28a32" /><span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span></span>
+            </label>
+            <label class="insp-field">Display face<select id="theme-font-display"></select></label>
+            <label class="insp-field">Body face<select id="theme-font-body"></select></label>
+            <label class="insp-field">Serif face<select id="theme-font-serif"></select></label>
+            <label class="insp-field">Title case
+              <select id="theme-title-case"><option value="none">As written</option><option value="upper">UPPER CASE</option></select>
+            </label>
+          </div>
+          <div class="look-live" id="look-live-colours"></div>
+        </div>
       </div>
-      <div class="rail-label">Titles<small>How a title arrives</small></div>
-      <div class="gallery is-options" id="look-titles"></div>
-      <div class="rail-label">Callouts<small>The short note beside the speaker</small></div>
-      <div class="gallery is-options" id="look-callouts"></div>
-      <div class="rail-label">Captions<small>On or off first; the look below applies when they are burned in</small></div>
-      <div class="segmented" id="theme-captions" role="radiogroup" aria-label="Captions">
-        <button type="button" data-value="none">Off</button>
-        <button type="button" data-value="open">Burn in</button>
-        <button type="button" data-value="closed">CC file</button>
-        <button type="button" data-value="both">Both</button>
+
+      <div class="look-screen" data-screen="titles" hidden>
+        <div class="page-head"><h2>Titles</h2><p class="page-lede">How a title arrives. Click one to use it.</p></div>
+        <div class="gallery look-grid is-options" id="look-titles"></div>
       </div>
-      <p class="field-note" id="captions-note"></p>
-      <div class="gallery is-options" id="look-captions"></div>
-      <details class="look-reference">
-        <summary class="rail-label">Graphics the assistant can use<small>Reference: the named cards, each playing its own example in this film's shape and look</small></summary>
-        <div class="gallery is-options is-templates" id="look-templates"></div>
-      </details>
-      <div class="rail-label">Transitions<small>How the picture changes when the layout does</small></div>
-      <div class="gallery is-options" id="look-transitions"></div>
-      <label class="insp-field is-wide">Transition speed
-        <span class="slider-row">
-          <input type="range" id="theme-transition-seconds" min="0.3" max="1.8" step="0.1" />
-          <span class="insp-swatch-value" id="theme-transition-seconds-value"></span>
-        </span>
-      </label>
-      <div class="rail-label">Punch-ins<small>The alternating tighter shot that hides a jump cut</small></div>
-      <div class="gallery is-options" id="look-punch"></div>
-    </div>
-    <aside class="page-side">
-      <div class="rail-label">Colours</div>
-      <label class="insp-field">Accent
-        <span class="insp-accent-row"><input type="color" id="theme-accent" value="#d97757" /><span class="insp-swatch-value" id="theme-accent-value">#d97757</span></span>
-      </label>
-      <label class="insp-field">Second accent
-        <span class="insp-accent-row"><input type="color" id="theme-accent2" value="#f28a32" /><span class="insp-swatch-value" id="theme-accent2-value">#f28a32</span></span>
-      </label>
-      <div class="rail-label">Type</div>
-      <label class="insp-field">Display face
-        <select id="theme-font-display"></select>
-      </label>
-      <label class="insp-field">Body face
-        <select id="theme-font-body"></select>
-      </label>
-      <label class="insp-field">Serif face
-        <select id="theme-font-serif"></select>
-      </label>
-      <label class="insp-field">Title case
-        <select id="theme-title-case"><option value="none">As written</option><option value="upper">UPPER CASE</option></select>
-      </label>
-      <div class="rail-label">Field</div>
-      <label class="insp-field">Corner rounding
-        <span class="slider-row"><input type="range" id="theme-radius" min="0" max="2" step="0.1" /><span class="insp-swatch-value" id="theme-radius-value"></span></span>
-      </label>
-      <label class="insp-field">Accent glow
-        <span class="slider-row"><input type="range" id="theme-glow" min="0" max="0.4" step="0.01" /><span class="insp-swatch-value" id="theme-glow-value"></span></span>
-      </label>
-      <div class="rail-label">Footage</div>
-      <label class="insp-field">Contrast
-        <span class="slider-row"><input type="range" id="grade-contrast" min="0.7" max="1.5" step="0.02" /><span class="insp-swatch-value" id="grade-contrast-value"></span></span>
-      </label>
-      <label class="insp-field">Saturation
-        <span class="slider-row"><input type="range" id="grade-saturation" min="0" max="2" step="0.05" /><span class="insp-swatch-value" id="grade-saturation-value"></span></span>
-      </label>
-      <label class="insp-field">Warmth
-        <span class="slider-row"><input type="range" id="grade-warmth" min="-1" max="1" step="0.05" /><span class="insp-swatch-value" id="grade-warmth-value"></span></span>
-      </label>
-      <label class="insp-field">Vignette
-        <span class="slider-row"><input type="range" id="grade-vignette" min="0" max="1" step="0.05" /><span class="insp-swatch-value" id="grade-vignette-value"></span></span>
-      </label>
-      <details class="insp-details">
-        <summary>Mark and handle</summary>
-        <label class="insp-field">Mark
-          <span class="insp-accent-row">
-            <button type="button" class="insp-mini" id="theme-logo-pick">Choose…</button>
-            <span class="insp-swatch-value" id="theme-logo-name">none</span>
-            <button type="button" class="insp-mini" id="theme-logo-clear" hidden>Remove</button>
+
+      <div class="look-screen" data-screen="callouts" hidden>
+        <div class="page-head"><h2>Callouts</h2><p class="page-lede">The short note beside the speaker. Click one to use it.</p></div>
+        <div class="gallery look-grid is-options" id="look-callouts"></div>
+      </div>
+
+      <div class="look-screen" data-screen="captions" hidden>
+        <div class="page-head"><h2>Captions</h2><p class="page-lede">Whether there are captions, and how they look when they are in the picture.</p></div>
+        <div class="segmented" id="theme-captions" role="radiogroup" aria-label="Captions">
+          <button type="button" data-value="none">Off</button>
+          <button type="button" data-value="open">Burn in</button>
+          <button type="button" data-value="closed">CC file</button>
+          <button type="button" data-value="both">Both</button>
+        </div>
+        <p class="field-note" id="captions-note"></p>
+        <div class="gallery look-grid is-options" id="look-captions"></div>
+      </div>
+
+      <div class="look-screen" data-screen="transitions" hidden>
+        <div class="page-head"><h2>Transitions</h2><p class="page-lede">How the picture changes when the layout does.</p></div>
+        <label class="insp-field look-slider">Speed
+          <span class="slider-row">
+            <input type="range" id="theme-transition-seconds" min="0.3" max="1.8" step="0.1" />
+            <span class="insp-swatch-value" id="theme-transition-seconds-value"></span>
           </span>
         </label>
-        <label class="insp-field" id="theme-logo-corner-wrap" hidden>Corner
-          <select id="theme-logo-corner"><option value="tr">top right</option><option value="tl">top left</option><option value="br">bottom right</option><option value="bl">bottom left</option></select>
-        </label>
-        <label class="insp-field">Handle
-          <input type="text" id="theme-watermark" placeholder="@handle or site" maxlength="40" />
-        </label>
-      </details>
-    </aside>
-  </section>
+        <div class="gallery look-grid is-options" id="look-transitions"></div>
+      </div>
 
+      <div class="look-screen" data-screen="punch" hidden>
+        <div class="page-head"><h2>Punch-ins</h2><p class="page-lede">Every other cut steps in to a tighter shot of the speaker, so a jump cut reads as a change of camera. Each preview shows the wide shot with the tighter frame outlined, then the tighter shot.</p></div>
+        <div class="gallery look-grid is-options" id="look-punch"></div>
+      </div>
+
+      <div class="look-screen" data-screen="footage" hidden>
+        <div class="page-head"><h2>Field and footage</h2><p class="page-lede">The shape of the cards and the grade on the picture.</p></div>
+        <div class="look-split">
+          <div class="look-form">
+            <label class="insp-field">Corner rounding
+              <span class="slider-row"><input type="range" id="theme-radius" min="0" max="2" step="0.1" /><span class="insp-swatch-value" id="theme-radius-value"></span></span>
+            </label>
+            <label class="insp-field">Accent glow
+              <span class="slider-row"><input type="range" id="theme-glow" min="0" max="0.4" step="0.01" /><span class="insp-swatch-value" id="theme-glow-value"></span></span>
+            </label>
+            <label class="insp-field">Contrast
+              <span class="slider-row"><input type="range" id="grade-contrast" min="0.7" max="1.5" step="0.02" /><span class="insp-swatch-value" id="grade-contrast-value"></span></span>
+            </label>
+            <label class="insp-field">Saturation
+              <span class="slider-row"><input type="range" id="grade-saturation" min="0" max="2" step="0.05" /><span class="insp-swatch-value" id="grade-saturation-value"></span></span>
+            </label>
+            <label class="insp-field">Warmth
+              <span class="slider-row"><input type="range" id="grade-warmth" min="-1" max="1" step="0.05" /><span class="insp-swatch-value" id="grade-warmth-value"></span></span>
+            </label>
+            <label class="insp-field">Vignette
+              <span class="slider-row"><input type="range" id="grade-vignette" min="0" max="1" step="0.05" /><span class="insp-swatch-value" id="grade-vignette-value"></span></span>
+            </label>
+          </div>
+          <div class="look-live" id="look-live-footage"></div>
+        </div>
+      </div>
+
+      <div class="look-screen" data-screen="mark" hidden>
+        <div class="page-head"><h2>Mark and handle</h2><p class="page-lede">A logo in a corner and a handle or site. The logo belongs to this project; brands do not carry it.</p></div>
+        <div class="look-split">
+          <div class="look-form">
+            <label class="insp-field">Logo
+              <span class="insp-accent-row">
+                <button type="button" class="insp-mini" id="theme-logo-pick">Choose…</button>
+                <span class="insp-swatch-value" id="theme-logo-name">none</span>
+                <button type="button" class="insp-mini" id="theme-logo-clear" hidden>Remove</button>
+              </span>
+            </label>
+            <label class="insp-field" id="theme-logo-corner-wrap" hidden>Corner
+              <select id="theme-logo-corner"><option value="tr">top right</option><option value="tl">top left</option><option value="br">bottom right</option><option value="bl">bottom left</option></select>
+            </label>
+            <label class="insp-field">Handle
+              <input type="text" id="theme-watermark" placeholder="@handle or site" maxlength="40" />
+            </label>
+          </div>
+          <div class="look-live" id="look-live-mark"></div>
+        </div>
+      </div>
+
+      <div class="look-screen" data-screen="graphics" hidden>
+        <div class="page-head"><h2>Graphics</h2><p class="page-lede">The cards the assistant can use, each playing its own example in this film's look. Nothing to choose here.</p></div>
+        <div class="gallery look-grid is-options is-templates" id="look-templates"></div>
+      </div>
+
+      <div class="look-pager">
+        <button type="button" class="button is-small" id="look-prev"></button>
+        <button type="button" class="button is-primary is-small" id="look-next"></button>
+      </div>
+    </div>
+  </section>
   <section class="page" id="export" hidden>
     <div class="page-main" id="export-main"></div>
   </section>

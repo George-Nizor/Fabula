@@ -1,5 +1,19 @@
 # Fabula — product brief
 
+## The Look step, one part at a time, with brands you can manage (2026-10-13, 0.3.2)
+
+The Look step lists the look's parts on the left (Brand, Colours and type, Titles, Callouts,
+Captions, Transitions, Punch-ins, Field and footage, Mark and handle, Graphics), each with what it
+is set to now, and shows one part at a time with Previous and Next. Every card in a screen is the
+same size, and only the screen on show plays its previews. Forms (colours, footage, mark) sit
+beside a live picture of the film's look; the right-hand panel is gone.
+
+A project remembers its brand (`brand` in compose.json, set by Use, Save as a new brand, or the
+assistant's `set_theme use`/`save_as`). The brand box says whether the project still matches it
+and offers to update the brand with the project's changes. Brands can be used, updated, renamed
+(the id stays, so projects keep their link) and deleted from their cards. Punch-in previews say
+which shot they show and outline the tighter frame on the wide one.
+
 ## Shorts belong to their film (2026-10-13, 0.3.2)
 
 A short cut out of a film (`derivedFrom` in its project.json) is listed under the film, indented

@@ -2706,10 +2706,13 @@ server.registerTool("set_theme", {
   if (theme.logo?.src && !fs.existsSync(path.join(dir, theme.logo.src))) throw new Error(`no such asset ${theme.logo.src}; fetch_image or list_assets first`);
   validateTheme(theme);
   config.theme = theme;
-  writeComposeConfig(dir, config);
   // A saved theme is the look without the project's pictures: a logo lives
   // in one project's assets and would not travel.
   const saved = save_as ? saveTheme(mediaRoot(), save_as, (({ logo, ...rest }) => rest)(theme)) : null;
+  // The window shows which brand a project uses; `use` and `save_as` set it.
+  if (saved) config.brand = saved.id;
+  else if (use) config.brand = use;
+  writeComposeConfig(dir, config);
   return ok({ theme, resolved: resolveTheme(theme), saved: saved ? { id: saved.id, name: saved.name } : undefined });
 });
 

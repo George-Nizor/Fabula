@@ -45,3 +45,47 @@ export function loadTheme(mediaRoot, id) {
   if (!fs.existsSync(file)) throw new Error(`no saved theme "${id}"; list_themes shows what exists`);
   return JSON.parse(fs.readFileSync(file, "utf8")).theme ?? {};
 }
+
+const themeFile = (mediaRoot, id) => path.join(themesDir(mediaRoot), `${slugifyThemeId(id)}.json`);
+
+// A brand's look replaced by the project's, under the same id and name, so
+// every project using it can pick the change up.
+export function updateTheme(mediaRoot, id, theme) {
+  const file = themeFile(mediaRoot, id);
+  if (!fs.existsSync(file)) throw new Error(`no saved theme "${id}"`);
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  const record = { ...saved, theme, savedAt: new Date().toISOString() };
+  fs.writeFileSync(file, JSON.stringify(record, null, 2));
+  return { id: slugifyThemeId(id), ...record };
+}
+
+// A new name for a brand. Its id (the file) stays, so projects that use it
+// keep pointing at it.
+export function renameTheme(mediaRoot, id, name) {
+  const file = themeFile(mediaRoot, id);
+  if (!fs.existsSync(file)) throw new Error(`no saved theme "${id}"`);
+  const clean = String(name ?? "").trim().slice(0, 60);
+  if (!clean) throw new Error("a brand needs a name");
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(file, JSON.stringify({ ...saved, name: clean }, null, 2));
+  return { id: slugifyThemeId(id), name: clean };
+}
+
+export function deleteTheme(mediaRoot, id) {
+  const file = themeFile(mediaRoot, id);
+  if (!fs.existsSync(file)) throw new Error(`no saved theme "${id}"`);
+  fs.rmSync(file);
+}
+
+// Whether a project's look is still exactly its brand's: the theme as
+// written (preset and overrides), the project's own logo aside.
+export function sameLook(a, b) {
+  const plain = (theme) => {
+    const { logo, ...rest } = theme ?? {};
+    const sort = (value) => Array.isArray(value) ? value.map(sort)
+      : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, sort(value[k])]))
+      : value;
+    return JSON.stringify(sort(rest));
+  };
+  return plain(a) === plain(b);
+}

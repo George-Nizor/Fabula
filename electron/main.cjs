@@ -285,6 +285,8 @@ function lookFromFiles(dir) {
     const theme = core.themes.resolveTheme(config.theme ?? null);
     if (theme.logo) theme.logoUrl = pathToFileURL(path.join(dir, theme.logo.src)).href;
     const presets = core.themes.describePresets();
+    const saved = core.themeStore.listSavedThemes(mediaRoot());
+    const brand = config.brand ? saved.find((s) => s.id === config.brand) ?? null : null;
     // Each preset resolved in full, so a preset card can be previewed by the
     // real painter rather than by a drawing of what it is supposed to be.
     const presetThemes = Object.fromEntries(Object.keys(core.themes.PRESETS).map((id) => [id, core.themes.resolveTheme({ preset: id })]));
@@ -303,7 +305,9 @@ function lookFromFiles(dir) {
       imageMotions: [...core.compose.IMAGE_MOTIONS],
       graphicKinds: [...core.compose.GRAPHIC_KINDS],
       fonts: core.themes.VENDORED_FONTS,
-      savedThemes: core.themeStore.listSavedThemes(mediaRoot()).map((s) => ({ id: s.id, name: s.name, theme: core.themes.resolveTheme(s.theme) })),
+      savedThemes: saved.map((s) => ({ id: s.id, name: s.name, theme: core.themes.resolveTheme(s.theme), savedAt: s.savedAt })),
+      // The brand this project uses, and whether its look still is that brand.
+      brand: brand ? { id: brand.id, name: brand.name, matches: core.themeStore.sameLook(config.theme, brand.theme) } : null,
       captionMode: core.compose.captionMode(config.captions),
       punch: config.punch ?? null,
     };
@@ -1520,11 +1524,30 @@ app.whenReady().then(() => {
     editCompose(event, (config) => {
       if ("accent" in patch) patch = { ...patch, theme: { ...(patch.theme ?? {}), accent: patch.accent || null } };
       if (patch.themeReset) config.theme = config.theme?.preset ? { preset: config.theme.preset } : {};
-      if (patch.themeUse) config.theme = { ...core.themeStore.loadTheme(mediaRoot(), patch.themeUse) };
+      // Brands: a project remembers which one it uses (config.brand), so the
+      // Look page can say when the project has moved away from it and offer
+      // to carry the change back. A brand never holds the project's logo.
+      const store = core.themeStore;
+      if (patch.themeUse) {
+        const logo = config.theme?.logo;
+        config.theme = { ...store.loadTheme(mediaRoot(), patch.themeUse), ...(logo ? { logo } : {}) };
+        config.brand = patch.themeUse;
+      }
       if (patch.themeSave) {
         const { logo, ...look } = config.theme ?? {};
-        core.themeStore.saveTheme(mediaRoot(), patch.themeSave, look);
+        config.brand = store.saveTheme(mediaRoot(), patch.themeSave, look).id;
       }
+      if (patch.brandUpdate) {
+        const { logo, ...look } = config.theme ?? {};
+        store.updateTheme(mediaRoot(), patch.brandUpdate, look);
+        config.brand = patch.brandUpdate;
+      }
+      if (patch.brandRename) store.renameTheme(mediaRoot(), patch.brandRename.id, patch.brandRename.name);
+      if (patch.brandDelete) {
+        store.deleteTheme(mediaRoot(), patch.brandDelete);
+        if (config.brand === patch.brandDelete) delete config.brand;
+      }
+      if (patch.brandDetach) delete config.brand;
       if (patch.theme && typeof patch.theme === "object") {
         const theme = { ...(config.theme ?? {}) };
         for (const [key, value] of Object.entries(patch.theme)) {
