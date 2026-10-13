@@ -23,7 +23,7 @@ The window follows the system's dark or light; the control at the top right pins
 
 ## Run it
 
-Fabula 0.3.1. **Fabula is a Windows app that needs WSL.** Its window runs on Windows; its
+Fabula 0.3.2. **Fabula is a Windows app that needs WSL.** Its window runs on Windows; its
 transcription (WhisperX on CUDA), its renders (ffmpeg, a headless Electron) and its assistant's
 sessions are Linux programs, and WSL is where they run. macOS is not supported, and on Linux Fabula
 runs only from a source checkout, for development: there is no Linux release.
