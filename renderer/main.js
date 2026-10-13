@@ -1905,8 +1905,8 @@ const KIND_LABELS = { film: "film", draft: "draft", clean: "clean cut", preview:
 const CAPTION_FILES = {
   none: "No captions.",
   open: "Captions burned into the picture. The Look step sets the style.",
-  closed: "Captions written beside the film as final.srt and final.vtt.",
-  both: "Captions burned in, and written as final.srt and final.vtt.",
+  closed: "Captions written beside the film in final/, as .srt and .vtt.",
+  both: "Captions burned in, and written beside the film in final/ as .srt and .vtt.",
 };
 let exportFlash = null; // { text, isError } from the last action on the page
 let justMadeShort = null; // the short made a moment ago, marked in the Shorts card

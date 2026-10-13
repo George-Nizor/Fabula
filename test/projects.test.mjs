@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listProjects, describeProject, PROJECT_NAME_RE, writeProjectTitle, slugify, cleanTitle, wslJob } from "../scripts/project-state.mjs";
+import { listProjects, describeProject, PROJECT_NAME_RE, writeProjectTitle, slugify, cleanTitle, wslJob, deliverFilm, deliveryName, outputs } from "../scripts/project-state.mjs";
 
 function mediaRoot(layout) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-projects-"));
@@ -167,4 +167,29 @@ test("the sound summary reads loudness, range, true peak and the floor out of ff
   const stats = "[Parsed_astats_0 @ 0x1] RMS level dB: -18.3\n[Parsed_astats_0 @ 0x1] Noise floor dB: -62.9\n";
   assert.deepEqual(parseSoundSummary(ebur, stats), { integrated: -14.3, range: 6.1, truePeak: -0.8, noiseFloor: -62.9 });
   assert.deepEqual(parseSoundSummary("", ""), { integrated: null, range: null, truePeak: null, noiseFloor: null });
+});
+
+test("a rendered film is delivered to final/ under the project's name, linked not copied", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-deliver-"));
+  try {
+    fs.mkdirSync(path.join(dir, "out"));
+    fs.writeFileSync(path.join(dir, "project.json"), JSON.stringify({ title: 'Launch: day "one"?' }));
+    fs.writeFileSync(path.join(dir, "out", "final.mp4"), "film");
+    fs.writeFileSync(path.join(dir, "out", "final.srt"), "srt");
+    assert.equal(deliveryName(dir), "Launch day one");
+    const shipped = deliverFilm(dir);
+    assert.equal(path.basename(shipped.path), "Launch day one.mp4");
+    assert.equal(fs.statSync(shipped.path).ino, fs.statSync(path.join(dir, "out", "final.mp4")).ino, "a hard link: the film takes its space once");
+    assert.ok(fs.existsSync(path.join(dir, "final", "Launch day one.srt")));
+    const listed = outputs(dir);
+    assert.ok(listed.some((o) => o.kind === "film" && o.delivered));
+    assert.ok(!listed.some((o) => o.name === "final.mp4"), "the working copy is not listed twice");
+    // Renamed: the next delivery replaces the old name, and nothing else in final/ is touched.
+    fs.writeFileSync(path.join(dir, "final", "my notes.txt"), "mine");
+    fs.writeFileSync(path.join(dir, "project.json"), JSON.stringify({ title: "Launch", derivedFrom: "the-film" }));
+    deliverFilm(dir);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "final")).filter((n) => !n.startsWith(".")).sort(), ["Launch (short).mp4", "Launch (short).srt", "my notes.txt"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

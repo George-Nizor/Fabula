@@ -605,6 +605,13 @@ async function main() {
     }
   }
   console.log(`[${new Date().toISOString()}] wrote ${outPath} (${(fs.statSync(outPath).size / 1e6).toFixed(1)} MB) in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  // The film, delivered under the project's name in final/ beside out/.
+  if (wholeFilm) {
+    try {
+      const shipped = projectState.deliverFilm(projectDir);
+      if (shipped) console.log(`[${new Date().toISOString()}] delivered ${path.relative(projectDir, shipped.path)}`);
+    } catch (error) { console.log(`[${new Date().toISOString()}] not delivered to final/: ${error.message}`); }
+  }
   pipeline.clearProgress(projectDir);
   app.quit();
 }

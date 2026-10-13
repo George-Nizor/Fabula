@@ -294,10 +294,87 @@ export function staleness(dir, { dims = null } = {}) {
 // The deliverables in out/: the film, preview spans, the caption files, and
 // the clean cut. Intermediates (the screen track, chunks, maps, logs) are
 // not deliverables and stay out of the list.
+// ---- The delivered film ----
+//
+// out/ is Fabula's workshop: the clean cut, chunk caches, drafts, logs, and
+// out/final.mp4, which every freshness check and review tool reads. What the
+// person publishes is delivered beside it, in final/, under the project's
+// name: "<title>.mp4" with its captions and credits, and "<title> (short).mp4"
+// for a short cut out of a film. The film is a hard link to out/final.mp4, so
+// a long film takes its space once; the render replaces out/final.mp4 by
+// renaming, which leaves the delivered file whole until the next delivery.
+// Captions and credits are small and written in place, so they are copied.
+export const DELIVERY_DIR = "final";
+const DELIVERY_RECORD = ".fabula-delivery.json";
+
+export function deliveryName(dir) {
+  const meta = readProjectMeta(dir);
+  const title = typeof meta.title === "string" && meta.title.trim() ? meta.title.trim() : path.basename(dir);
+  const plain = title
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/, "")
+    .slice(0, 120)
+    .trim() || path.basename(dir);
+  return typeof meta.derivedFrom === "string" ? `${plain} (short)` : plain;
+}
+
+export function deliverFilm(dir) {
+  const out = path.join(dir, "out");
+  const film = path.join(out, "final.mp4");
+  if (!fs.existsSync(film)) return null;
+  const target = path.join(dir, DELIVERY_DIR);
+  fs.mkdirSync(target, { recursive: true });
+  const name = deliveryName(dir);
+  // What the last delivery wrote, so a renamed project does not leave its
+  // old film behind; nothing else in final/ is ever touched.
+  const recordFile = path.join(target, DELIVERY_RECORD);
+  let previous = [];
+  try { previous = JSON.parse(fs.readFileSync(recordFile, "utf8")).files ?? []; } catch { previous = []; }
+  for (const leaf of previous) fs.rmSync(path.join(target, path.basename(leaf)), { force: true });
+  const files = [];
+  const filmTarget = path.join(target, `${name}.mp4`);
+  fs.rmSync(filmTarget, { force: true });
+  try { fs.linkSync(film, filmTarget); } catch { fs.copyFileSync(film, filmTarget); }
+  files.push(path.basename(filmTarget));
+  for (const [from, leaf] of [["final.srt", `${name}.srt`], ["final.vtt", `${name}.vtt`], ["credits.md", `${name} credits.md`]]) {
+    if (!fs.existsSync(path.join(out, from))) continue;
+    fs.copyFileSync(path.join(out, from), path.join(target, leaf));
+    files.push(leaf);
+  }
+  fs.writeFileSync(recordFile, JSON.stringify({ name, files, deliveredAt: new Date().toISOString() }, null, 2));
+  return { name, path: filmTarget, files };
+}
+
+function delivered(dir) {
+  try {
+    const record = JSON.parse(fs.readFileSync(path.join(dir, DELIVERY_DIR, DELIVERY_RECORD), "utf8"));
+    return (record.files ?? []).map((leaf) => path.join(dir, DELIVERY_DIR, path.basename(leaf))).filter((file) => fs.existsSync(file));
+  } catch {
+    return [];
+  }
+}
+
 export function outputs(dir) {
   const outDir = path.join(dir, "out");
-  if (!fs.existsSync(outDir)) return [];
-  return fs.readdirSync(outDir)
+  // The delivered film and its files stand in for out/'s working copies.
+  const shipped = delivered(dir).map((file) => {
+    const stat = fs.statSync(file);
+    const name = path.basename(file);
+    return {
+      name,
+      path: file,
+      bytes: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+      kind: name.endsWith(".mp4") ? "film" : name.endsWith(" credits.md") ? "credits" : "captions",
+      delivered: true,
+    };
+  });
+  const hidden = shipped.length ? new Set(["final.mp4", "final.srt", "final.vtt", "credits.md"]) : new Set();
+  if (!fs.existsSync(outDir)) return shipped;
+  return shipped.concat(fs.readdirSync(outDir)
+    .filter((name) => !hidden.has(name))
     .filter((name) => /^(final|draft|clean|preview-\d+-\d+|captions-[a-z]{2,3}(-[A-Za-z0-9]{2,8})?)\.(mp4|srt|vtt)$/.test(name) || /^(thumb[a-z0-9._-]*\.png|chapters\.txt|credits\.md|description\.md)$/i.test(name))
     .map((name) => {
       const file = path.join(outDir, name);
@@ -311,7 +388,7 @@ export function outputs(dir) {
           : name.endsWith(".png") ? "thumbnail" : name === "chapters.txt" ? "chapters" : name === "credits.md" ? "credits" : name === "description.md" ? "description" : "captions",
       };
     })
-    .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
+    .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt)));
 }
 
 // ---- Jobs ----
