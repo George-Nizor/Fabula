@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, clipboard } = require("electron");
 
 // The bridge grows named operations only, mirroring the suite's preload
 // discipline: no generic invoke pass-through, no node objects across the line.
@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld("fabula", {
   keepWords: (wordIds) => ipcRenderer.invoke("fabula:keep-words", wordIds),
   moveCut: (index, bounds) => ipcRenderer.invoke("fabula:move-cut", index, bounds),
   waveform: () => ipcRenderer.invoke("fabula:waveform"),
+  cancelMaking: () => ipcRenderer.invoke("fabula:cancel-making"),
+  // Plain text only, for the assistant's terminal: a sign-in link copied out,
+  // a sign-in code pasted in.
+  readClipboard: () => clipboard.readText(),
+  writeClipboard: (text) => { if (typeof text === "string" && text.length <= 1 << 20) clipboard.writeText(text); },
   sendMessage: (message) => ipcRenderer.invoke("fabula:message", message),
   updateScene: (index, patch) => ipcRenderer.invoke("fabula:update-scene", index, patch),
   duplicateScene: (index) => ipcRenderer.invoke("fabula:duplicate-scene", index),

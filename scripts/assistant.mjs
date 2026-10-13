@@ -131,11 +131,14 @@ export function buildLaunch(options, root = ROOT, node = process.execPath) {
   return { command: provider, args, cwd: root, persona };
 }
 
+// With nothing chosen yet: Claude Code on Opus at medium effort.
+export const DEFAULT_CLAUDE = Object.freeze({ model: "opus", effort: "medium" });
+
 export function readPreferences(file = PREFS) {
   let data;
   try { data = JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (error) {
-    if (error.code === "ENOENT") return { provider: "claude", persona: DEFAULT_PERSONA, profiles: {} };
+    if (error.code === "ENOENT") return { provider: "claude", persona: DEFAULT_PERSONA, profiles: { claude: { ...DEFAULT_CLAUDE } } };
     throw new Error(`Cannot read assistant preferences at ${file}: ${error.message}`);
   }
   if (!data || !Object.hasOwn(EFFORTS, data.provider) || !data.profiles || typeof data.profiles !== "object") {

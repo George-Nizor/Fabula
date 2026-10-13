@@ -25,7 +25,7 @@ const els = {
   dirStatus: $("dir-status"), dirCancel: $("dir-cancel"), dirStart: $("dir-start"),
   inspMaking: $("insp-making"), makingTitle: $("making-title"), makingLatitude: $("making-latitude"), makingClock: $("making-clock"), makingPhases: $("making-phases"),
   makingTreatment: $("making-treatment"), makingLogline: $("making-logline"), makingShape: $("making-shape"), makingSignature: $("making-signature"),
-  makingDraft: $("making-draft"), makingWatch: $("making-watch"), makingRender: $("making-render"), makingDraftNote: $("making-draft-note"), makingLog: $("making-log"), makingDismiss: $("making-dismiss"),
+  makingDraft: $("making-draft"), makingWatch: $("making-watch"), makingRender: $("making-render"), makingDraftNote: $("making-draft-note"), makingLog: $("making-log"), makingDismiss: $("making-dismiss"), makingCancel: $("making-cancel"),
   makingWaiting: $("making-waiting"), makingWaitingText: $("making-waiting-text"), makingWaitingAct: $("making-waiting-act"),
   stageSwitch: $("stage-switch"), switchLive: $("switch-live"), switchDraft: $("switch-draft"), draftPlayer: $("draft-player"),
   brand: $("brand"), brandForm: $("brand-form"), brandName: $("brand-name"), brandStatus: $("brand-status"), brandCancel: $("brand-cancel"),
@@ -3538,6 +3538,39 @@ function ensureTerminal() {
   term.loadAddon(fit);
   term.open(els.assistantTerm);
   term.onData((data) => { if (assistantRunning) window.fabula.assistantInput(data); });
+  // Copy and paste as a terminal on Windows does them. In a bare xterm Ctrl+C
+  // is always an interrupt and Ctrl+V a raw ^V, so a sign-in code could not
+  // be pasted in and copying the sign-in link stopped the CLI. Ctrl+C copies
+  // when text is selected and interrupts when not; Ctrl+V, Ctrl+Shift+V and
+  // a right-click paste; Ctrl+Shift+C and a right-click on a selection copy.
+  const copySelection = () => {
+    const text = term.getSelection();
+    if (!text) return false;
+    window.fabula.writeClipboard(text);
+    term.clearSelection();
+    return true;
+  };
+  const pasteClipboard = () => {
+    const text = window.fabula.readClipboard();
+    if (text && assistantRunning) term.paste(text);
+  };
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown" || !(event.ctrlKey || event.metaKey) || event.altKey) return true;
+    const key = event.key.toLowerCase();
+    if (key === "c" && (event.shiftKey || term.hasSelection())) { event.preventDefault(); copySelection(); return false; }
+    if (key === "v") { event.preventDefault(); pasteClipboard(); return false; }
+    return true;
+  });
+  els.assistantTerm.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (!copySelection()) pasteClipboard();
+    term.focus();
+  });
+  // Anywhere in the pane is the terminal: a click on its margin still types into it.
+  els.assistantPane.addEventListener("mousedown", (event) => {
+    if (event.target instanceof HTMLElement && event.target.closest("button, select, input, a")) return;
+    requestAnimationFrame(() => term.focus());
+  });
   window.fabula.onAssistantData((data) => term.write(data));
   window.fabula.onAssistantExit((code) => {
     assistantRunning = false;
@@ -3935,6 +3968,12 @@ els.makingWaitingAct.addEventListener("click", () => {
   else showAssistantPane(true);
 });
 els.makingDismiss.addEventListener("click", () => { makingDismissed = state?.making?.direction?.startedAt ?? null; render(); });
+// A run whose assistant is gone, or will not get going, is ended here; the
+// brief is kept, so Make it into a video starts again from it.
+els.makingCancel.addEventListener("click", async () => {
+  const result = await window.fabula.cancelMaking();
+  if (!result.ok) els.makingWaitingText.textContent = result.error;
+});
 els.makingSignature.addEventListener("click", () => {
   const at = Number(els.makingSignature.dataset.at);
   if (!Number.isFinite(at) || !compose()) return;

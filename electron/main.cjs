@@ -750,7 +750,9 @@ function assistantOptions() {
   const prefs = readJson(path.join(REPO, ".assistant-preferences.json"));
   return {
     provider: prefs?.provider === "claude" ? "claude" : prefs?.provider === "codex" ? "codex" : "claude",
-    profiles: prefs?.profiles && typeof prefs.profiles === "object" ? prefs.profiles : {},
+    // The last choice per CLI, and Claude Code on Opus at medium effort
+    // before anything has been chosen (scripts/assistant.mjs DEFAULT_CLAUDE).
+    profiles: { claude: { model: "opus", effort: "medium" }, ...(prefs?.profiles && typeof prefs.profiles === "object" ? prefs.profiles : {}) },
     // Who the session works as: a film editor, or the short-form farmer.
     personas: core?.personas ? core.personas.describePersonas() : [],
     persona: core?.personas && core.personas.PERSONA_IDS.includes(prefs?.persona) ? prefs.persona : "editor",
@@ -933,7 +935,7 @@ async function snapshotWindow(window) {
     }
     // A script of steps, when one is given: FABULA_SNAPSHOT_SCRIPT names a
     // JSON list of { size: [w, h], run: js, wait: ms, shot: name, print:
-    // label, key: "Tab", shift, media: [{ name, value }], mouse: js }; each key is optional and they apply in
+    // label, key: "Tab" or a letter, shift, ctrl, media: [{ name, value }], mouse: js }; each key is optional and they apply in
     // that order (media straight after size). It is how
     // any view of the window is photographed without a new env var per view.
     if (process.env.FABULA_SNAPSHOT_SCRIPT) {
@@ -947,9 +949,14 @@ async function snapshotWindow(window) {
           if (step.print) console.log(JSON.stringify({ step: step.print, answer }));
         }
         // A key, pressed as a keyboard would (focus rings only show for keyboard focus).
+        // A letter goes as its key code (KeyV, 86), so Ctrl+V reaches the page as a real chord.
         if (step.key) {
+          const letter = /^[a-z]$/i.test(step.key) ? step.key.toUpperCase() : null;
+          const code = letter ? `Key${letter}` : step.key;
+          const vk = step.key === "Tab" ? 9 : letter ? letter.charCodeAt(0) : 0;
+          const modifiers = (step.ctrl ? 2 : 0) | (step.shift ? 8 : 0);
           for (const type of ["keyDown", "keyUp"]) {
-            await contents.debugger.sendCommand("Input.dispatchKeyEvent", { type, key: step.key, code: step.key, windowsVirtualKeyCode: step.key === "Tab" ? 9 : 0, modifiers: step.shift ? 8 : 0 });
+            await contents.debugger.sendCommand("Input.dispatchKeyEvent", { type, key: step.key, code, windowsVirtualKeyCode: vk, modifiers });
           }
         }
         // Real mouse input: a script that returns [{ type, x, y }] in page
@@ -1602,6 +1609,22 @@ app.whenReady().then(() => {
       : startRender("refresh");
     event.sender.send("fabula:state", readState());
     return { ok: true, direction: core.direction.describeDirection(direction), render, motion: motionFilm };
+  });
+
+  // Ending a run that is not going anywhere: the brief stays, without the
+  // start that makes it a run in progress, and the log says it was ended.
+  ipcMain.handle("fabula:cancel-making", (event) => {
+    const dir = projectDir();
+    const file = dir && path.join(dir, "direction.json");
+    const direction = file && readJson(file);
+    if (!direction?.startedAt) return { ok: false, error: "No film is being made." };
+    const { startedAt, ...brief } = direction;
+    writeJsonAtomic(file, brief);
+    try {
+      fs.appendFileSync(path.join(dir, "activity.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), tool: "make_video", mark: "cancel", startedAt })}\n`);
+    } catch { /* the log is a record, not the state */ }
+    event.sender.send("fabula:state", readState());
+    return { ok: true };
   });
 
   // The Export page: renders start here with the server's own job specs;
