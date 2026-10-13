@@ -75,7 +75,7 @@ test("a window starts a job in WSL with its arguments as they are, logging from 
   // -e, not --: through `--` the distribution's shell expanded "$PATH" before the login shell ran.
   assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "-e", "bash", "-lc"]);
   assert.equal(args.length, 6);
-  assert.match(args[5], /^cd '\/w\/Fabula' && export PATH='\/w\/Fabula\/bin':"\$PATH" && 'node' 'scripts\/job.mjs' 'first' '\/w\/media\/it'\\''s'/);
+  assert.match(args[5], /^cd '\/w\/Fabula' && export PATH='\/w\/Fabula\/bin':"\$PATH" && \$\(systemd-run [^)]*MemoryMax=75%[^)]*\) 'node' 'scripts\/job.mjs' 'first' '\/w\/media\/it'\\''s'/, "a runaway job is capped, not WSL");
   assert.ok(args[5].endsWith(` >> '/w/media/it'\\''s/out/first_pass.log' 2>&1`));
 });
 

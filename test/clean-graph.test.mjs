@@ -45,7 +45,8 @@ test("the graph has one branch per distinct rect, an enable per switch, one sele
   assert.ok(graph.includes(`atrim=start=${spans[0].audioStart.toFixed(6)}:end=${spans[0].audioEnd.toFixed(6)}`));
   assert.ok(graph.includes("concat=n=4:v=0:a=1[a]"));
   assert.ok(graph.includes("[f2]crop=2342:1440:0:0,scale=1756:1080:force_original_aspect_ratio=decrease"));
-  assert.ok(graph.includes("[sbase][s0]overlay=0:0:enable='between(n,444,548)'"));
+  assert.ok(graph.includes("[s0]drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0e12:t=fill:enable='not(between(n,444,548))'[sb0]"), "the plate is painted where there is no screen");
+  assert.ok(!graph.includes("color=c="), "no color source runs beside the decoder");
 });
 
 test("a plain take is one branch and no split", () => {

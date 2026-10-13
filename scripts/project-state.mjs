@@ -375,11 +375,20 @@ export function launchJob(dir, spec, runner = {}) {
 // An installed engine (scripts/setup-engine.sh) keeps the Node it runs with in <root>/bin, so the
 // job does not depend on what the login shell's PATH holds; a checkout has no bin/ and the PATH
 // is as it was.
-export function shellLine(spec, { root, node = "node" }) {
+// A job that runs away with memory inside WSL takes the whole distribution
+// down with it, and everything running there: the window loses its engine
+// and the person has to `wsl --shutdown`. Where the distribution runs
+// systemd, each job gets a scope capped at three quarters of WSL's memory,
+// so a runaway is stopped and reported as a failed job instead. Without
+// systemd the job runs as before.
+export const JOB_MEMORY_CAP = "75%";
+export const MEMORY_CAP_PREFIX = `$(systemd-run --user --scope -q true 2>/dev/null && echo systemd-run --user --scope -q -p MemoryMax=${JOB_MEMORY_CAP} -p MemorySwapMax=0 --)`;
+
+export function shellLine(spec, { root, node = "node", memoryCap = false }) {
   const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
   const command = spec.program === "electron" ? path.posix.join(root, "node_modules", "electron", "dist", "electron") : node;
   const env = Object.entries(spec.env ?? {}).map(([key, value]) => `${key}=${quote(value)}`).join(" ");
-  return `cd ${quote(root)} && export PATH=${quote(path.posix.join(root, "bin"))}:"$PATH" && ${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
+  return `cd ${quote(root)} && export PATH=${quote(path.posix.join(root, "bin"))}:"$PATH" && ${memoryCap ? `${MEMORY_CAP_PREFIX} ` : ""}${env ? `env ${env} ` : ""}${quote(command)} ${spec.args.map(quote).join(" ")}`;
 }
 
 // The wsl.exe command a Windows window starts a job with. -e runs the login shell with the line
@@ -390,7 +399,7 @@ export function shellLine(spec, { root, node = "node" }) {
 export function wslJob(spec, { root, distro, dir }) {
   const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
   const log = path.posix.join(dir, "out", `${spec.stage}.log`);
-  return { command: "wsl.exe", args: ["-d", distro, "-e", "bash", "-lc", `${shellLine(spec, { root })} >> ${quote(log)} 2>&1`] };
+  return { command: "wsl.exe", args: ["-d", distro, "-e", "bash", "-lc", `${shellLine(spec, { root, memoryCap: true })} >> ${quote(log)} 2>&1`] };
 }
 
 // ---- Projects, plural ----

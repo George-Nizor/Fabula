@@ -107,19 +107,34 @@ export function cleanGraph({ spans, fps, headSize, screenSize, rawDuration }) {
   });
   lines.push(`${spans.map((_, i) => `[a${i}]`).join("")}concat=n=${spans.length}:v=0:a=1[a]`);
 
-  if (screenSize) {
-    lines.push(`color=c=0x0b0e12:s=${screenSize.width}x${screenSize.height}:r=${fps}:d=${(rawDuration + 1).toFixed(3)},setsar=1[sbase]`);
-    let sbase = "sbase";
+  // The screen track: the first screen rect, filled with the dark plate
+  // wherever the framing has no screen, and any other rect laid over it on
+  // its own frames. Every input comes from the one split, so the branches
+  // move frame for frame. The plate used to be a color source overlaid
+  // underneath; a source that never waits let ffmpeg run it ahead of the
+  // camera branch and queue every decoded frame before the first kept one,
+  // so a short from eight minutes into a 3440×1440 take filled WSL's memory
+  // in under a minute and took the distribution down.
+  if (screenSize && screens.length > 0) {
+    const anyScreen = ranges(screens.flatMap((group) => group.spans).sort((a, b) => a.firstFrame - b.firstFrame));
     screens.forEach((group, i) => {
       const k = heads.length + i;
       lines.push(
         `[f${k}]${crop(group.rect)},scale=${screenSize.width}:${screenSize.height}:force_original_aspect_ratio=decrease:flags=bicubic,` +
         `pad=${screenSize.width}:${screenSize.height}:-1:-1:color=0x0b0e12,setsar=1[s${i}]`,
       );
-      lines.push(`[${sbase}][s${i}]overlay=0:0:enable='${ranges(group.spans)}'[sb${i}]`);
-      sbase = `sb${i}`;
+    });
+    lines.push(`[s0]drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0e12:t=fill:enable='not(${anyScreen})'[sb0]`);
+    let sbase = "sb0";
+    screens.slice(1).forEach((group, i) => {
+      const k = i + 1;
+      lines.push(`[${sbase}][s${k}]overlay=0:0:enable='${ranges(group.spans)}'[sb${k}]`);
+      sbase = `sb${k}`;
     });
     lines.push(`[${sbase}]select='${keep}',setpts=N/(${fps}*TB)[s]`);
+  } else if (screenSize) {
+    // A screen track with no screen anywhere: the plate alone, nothing to wait on.
+    lines.push(`color=c=0x0b0e12:s=${screenSize.width}x${screenSize.height}:r=${fps}:d=${(rawDuration + 1).toFixed(3)},setsar=1,select='${keep}',setpts=N/(${fps}*TB)[s]`);
   }
   return { graph: lines.join(";\n") + "\n", heads: heads.length, screens: screens.length };
 }
