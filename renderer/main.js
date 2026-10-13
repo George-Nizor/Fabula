@@ -608,7 +608,7 @@ els.transcript.addEventListener("pointerdown", (event) => {
 // finds it again or lets it go.
 
 const SKIP_LOOKAHEAD_SECONDS = 0.04;
-const EDGE_GRAB_PX = 8;
+const EDGE_GRAB_PX = 12;
 let selectedCut = null; // { index, start, end }
 
 function currentCut() {
@@ -708,21 +708,44 @@ function renderDeck() {
 // as the saved edge would.
 let edgeDrag = null;
 let swallowLaneClick = false;
+// The edge under the pointer, found from where the edges are drawn rather
+// than which element the pointer is over: a band EDGE_GRAB_PX wide on both
+// sides of an edge grabs it, inside the block or out. The open cut's edges
+// always grab, and win a tie; other cuts' edges grab once the timeline is in
+// close (under 30 s on show), where a drag cannot be mistaken for a click.
+const EDGE_ANY_CUT_SECONDS = 30;
 function edgeUnder(event) {
-  if (mode !== "cut") return null;
-  const block = event.target instanceof HTMLElement ? event.target.closest(".tl-block.is-cutblock") : null;
-  if (!block) return null;
-  const box = block.getBoundingClientRect();
-  const toStart = Math.abs(event.clientX - box.left);
-  const toEnd = Math.abs(event.clientX - box.right);
-  if (Math.min(toStart, toEnd) > EDGE_GRAB_PX) return null;
-  return { block, index: Number(block.dataset.cutIndex), edge: toStart <= toEnd ? "start" : "end" };
+  if (mode !== "cut" || !review()) return null;
+  const box = laneBox();
+  if (box.width <= 0 || event.clientY < box.top || event.clientY > box.bottom) return null;
+  const v = view();
+  const visible = visibleSeconds();
+  const x = (t) => box.left + ((t - v.start) / visible) * box.width;
+  const open = selectedCutIndex();
+  let best = null;
+  review().cuts.forEach((cut, index) => {
+    if (index !== open && visible > EDGE_ANY_CUT_SECONDS) return;
+    for (const edge of ["start", "end"]) {
+      const distance = Math.abs(event.clientX - x(cut[edge]));
+      if (distance > EDGE_GRAB_PX) continue;
+      // Nearer wins; at the same distance the open cut does, and between
+      // two cuts that touch, the one the pointer is inside.
+      const inside = event.clientX >= x(cut.start) && event.clientX <= x(cut.end);
+      const rank = distance - (index === open ? 100 : 0) - (inside ? 0.5 : 0);
+      if (!best || rank < best.rank) best = { index, edge, rank };
+    }
+  });
+  return best && { index: best.index, edge: best.edge };
 }
-els.laneCuts.addEventListener("pointermove", (event) => {
+const setEdgeHover = (on) => document.body.classList.toggle("is-edge-hover", on);
+els.laneCuts.parentElement.addEventListener("pointermove", (event) => {
   if (edgeDrag) return;
-  els.laneCuts.parentElement.classList.toggle("is-edge", Boolean(edgeUnder(event)));
+  setEdgeHover(Boolean(edgeUnder(event)));
 });
-els.laneCuts.addEventListener("pointerdown", (event) => {
+els.laneCuts.parentElement.addEventListener("pointerleave", () => { if (!edgeDrag) setEdgeHover(false); });
+// Capture phase on the lane: the drag starts before the timeline's scrub or
+// a block's click can claim the press.
+els.laneCuts.parentElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   const hit = edgeUnder(event);
   if (!hit) return;
@@ -742,7 +765,7 @@ els.laneCuts.addEventListener("pointerdown", (event) => {
   };
   els.laneCuts.setPointerCapture(event.pointerId);
   document.body.classList.add("is-dragging-edge");
-});
+}, { capture: true });
 els.laneCuts.addEventListener("pointermove", (event) => {
   if (!edgeDrag || event.pointerId !== edgeDrag.pointerId) return;
   const t = Math.min(Math.max(timeAtPointer(event.clientX), edgeDrag.lower), edgeDrag.upper);
@@ -757,6 +780,7 @@ const endEdgeDrag = async (event) => {
   const drag = edgeDrag;
   edgeDrag = null;
   document.body.classList.remove("is-dragging-edge");
+  setEdgeHover(false);
   // The click this release makes is the drag's, not a pick of the block; if
   // the pointer left the lane no click comes, so the flag goes after a turn.
   swallowLaneClick = true;
@@ -2516,11 +2540,17 @@ els.transcript.addEventListener("click", (event) => {
     return;
   }
   if (target.dataset.start !== undefined) {
-    // A word is picked as well as played: X (or the inspector) cuts it, and
-    // shift-click reaches from the last word picked to this one.
-    if (mode === "cut") pickWord(wordIndexAt(target), event.shiftKey);
-    seek(Number(target.dataset.start));
-    if (!event.shiftKey) els.video.play();
+    // In the Cut step a click selects the word and moves the playhead to it
+    // without playing, so several words can be picked in a row in quiet; X
+    // cuts them, shift-click reaches from the last word picked to this one.
+    // In the other steps a click plays from the word.
+    if (mode === "cut") {
+      pickWord(wordIndexAt(target), event.shiftKey);
+      seek(Number(target.dataset.start));
+    } else {
+      seek(Number(target.dataset.start));
+      els.video.play();
+    }
   }
 });
 

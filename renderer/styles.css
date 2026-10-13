@@ -1452,16 +1452,22 @@ body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 .tl-block.is-cutblock.is-selected::after {
   content: "";
   position: absolute;
-  top: 20%;
-  bottom: 20%;
-  width: 4px;
-  border-radius: 2px;
+  top: 12%;
+  bottom: 12%;
+  width: 8px;
+  border-radius: 4px;
   background: var(--ink);
+  box-shadow: 0 0 0 2px var(--paper);
   pointer-events: none;
 }
-.tl-block.is-cutblock.is-selected::before { left: -2px; }
-.tl-block.is-cutblock.is-selected::after { right: -2px; }
-.tl-lane.is-edge, body.is-dragging-edge .tl-lane { cursor: ew-resize; }
+.tl-block.is-cutblock.is-selected::before { left: -4px; }
+.tl-block.is-cutblock.is-selected::after { right: -4px; }
+/* Over a draggable edge, and all through a drag, the pointer is a resize
+   arrow, whatever it is over: a block's own pointer cursor would hide it. */
+body.is-edge-hover #track-cuts .tl-lane,
+body.is-edge-hover #track-cuts .tl-block,
+body.is-dragging-edge,
+body.is-dragging-edge * { cursor: ew-resize; }
 
 /* ---- The Cut step: everything on the left ----
    The inspector steps aside (it returns while a video is being made); the
