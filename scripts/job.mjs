@@ -30,6 +30,9 @@ import {
   measureLoudness,
   scanFraming,
   computeReview,
+  loudnessEnvelope,
+  writeWaveform,
+  WAVEFORM_FILE,
   transcribe,
   renderClean,
   cleanPlan,
@@ -171,11 +174,17 @@ const steps = {
       else say("framing left as the whole frame for now: framing-scan.json has the runs and framing/ the frames; the assistant sets the framing after looking at them when it composes");
     }
     const reviewFile = path.join(dir, "review.json");
-    if (fs.existsSync(reviewFile)) say("review.json exists; keeping the person's cut toggles");
+    if (fs.existsSync(reviewFile)) {
+      say("review.json exists; keeping the person's cut toggles");
+      if (!fs.existsSync(path.join(dir, WAVEFORM_FILE))) {
+        const envelope = loudnessEnvelope(video.path, probeDuration(video.path));
+        if (envelope) writeWaveform(dir, envelope);
+      }
+    }
     else {
       report("Proposing cuts");
       const transcript = readJson(transcriptFile);
-      const review = computeReview(transcript, video.path, probeDuration(video.path), { minGapSeconds: 0.8 });
+      const review = computeReview(transcript, video.path, probeDuration(video.path), { minGapSeconds: 0.8, dir });
       // The cuts an editor makes from reading, as proposals beside the
       // pauses and fillers: the preamble, a false start, a stutter, a retake.
       // The person toggles them in the Cut step like the rest.

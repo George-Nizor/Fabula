@@ -6,10 +6,14 @@ WhisperX aligns "um" and "uh" late, often 100–300 ms inside the sound, so a fi
 word's timestamps left its loudest part in. The cut pass now reads the recording's loudness every
 10 ms and moves each filler cut's edges out to where the sound starts and stops, never into the
 neighbouring words (`fillerSoundSpan` in `core/cut-engine.mjs`). Pauses are unchanged. Found on the
-first real project: all 30 filler cuts were late. In the Cut step, clicking a word picks it and X cuts it
-(shift-click takes more; the hint sits above the transcript, where the clicking is). Clicking struck
-text opens its cut: the timeline closes in to a few seconds around it, and its edges drag, stopping
-at neighbouring cuts; `move_cut` is the same on the belt. Checked in the real window with real
+first real project: all 30 filler cuts were late. The Cut step keeps everything on the left: a control panel above the
+transcript (what is selected, then Cut/Restore `X`, Preview `P`, Clear `Esc`, Previous/Next cut
+`[` `]`, each button wearing its key), the step's totals and Make it into a video below it; the
+inspector steps aside until a video is being made. Clicking a word selects it, shift-click a range.
+Clicking struck text opens its cut: the timeline closes in to a few seconds around it, over the
+recording's waveform (`waveform.json`, written by the cut pass), and its edges drag, stopping at
+neighbouring cuts; `move_cut` is the same on the belt. The transcript breaks into paragraphs at
+the speaker's pauses, each opening on its time. Checked in the real window with real
 mouse input (the snapshot script's new `mouse` step). The preview now skips a cut 40 ms early,
 because a jump made after entering the cut let its first instant be heard.
 

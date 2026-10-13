@@ -143,8 +143,9 @@ camera inset never is, because only a look at the frames tells one from a plain 
 propose cuts at a 0.8 s minimum pause. The
 person reviews the cuts in the Cut step: struck words and pauses toggle, dragging across
 words cuts them by hand, and dragging across struck words keeps just those (`keep_words` is
-the same gesture on the belt). Clicking a word picks it and X cuts it (shift-click takes more). Clicking struck text opens
-its cut: the timeline closes in around it and its edges drag in time (`move_cut` is the same on
+the same gesture on the belt). Clicking a word selects it and X cuts it (shift-click takes a range); the controls sit above
+the transcript. Clicking struck text opens its cut: the timeline closes in around it, over the
+recording's waveform, and its edges drag in time (`move_cut` is the same on
 the belt), for the sliver of a filler or a clipped word the aligner's timestamps leave at an
 edge. Filler cuts are already placed where the sound is, from the recording's
 loudness, rather than where WhisperX aligned the word, which is usually late for an "um". **Approve the cut and compose** in the Cut inspector starts the

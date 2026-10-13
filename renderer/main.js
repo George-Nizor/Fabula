@@ -31,10 +31,9 @@ const els = {
   brand: $("brand"), brandForm: $("brand-form"), brandName: $("brand-name"), brandStatus: $("brand-status"), brandCancel: $("brand-cancel"),
   inspHeading: $("insp-heading"), inspHeadingWrap: $("insp-heading-wrap"),
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
-  inspCut: $("insp-cut"), cutSummary: $("cut-summary"), cutText: $("cut-text"), cutBounds: $("cut-bounds"), cutStatus: $("cut-status"),
-  cutHint: $("cut-hint"),
-  cutHear: $("cut-hear"), cutToggle: $("cut-toggle"), cutClose: $("cut-close"),
-  inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selKeep: $("sel-keep"), selClear: $("sel-clear"),
+  deck: $("deck"), deckKind: $("deck-kind"), deckTime: $("deck-time"), deckWords: $("deck-words"), deckTip: $("deck-tip"),
+  deckCut: $("deck-cut"), deckCutLabel: $("deck-cut-label"), deckPlay: $("deck-play"), deckClear: $("deck-clear"), deckPrev: $("deck-prev"), deckNext: $("deck-next"),
+  cutFoot: $("cut-foot"), cutStats: $("cut-stats"), keysWrap: $("insp-keys-wrap"), waveCuts: $("wave-cuts"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
   goHome: $("go-home"),
@@ -341,6 +340,7 @@ function applyView() {
     if (inner.style.left !== left) inner.style.left = left;
   }
   renderRuler(total, v.start, visible);
+  if (mode === "cut") drawWaveform();
   els.zoomLevel.textContent = v.zoom <= 1.001 ? "all" : fmt(visible, false);
   els.zoomOut.disabled = v.zoom <= 1.001;
   els.zoomIn.disabled = v.zoom >= Math.max(total / MIN_VISIBLE_SECONDS, 1) - 0.001;
@@ -488,8 +488,21 @@ function renderCutTranscript() {
     }
   };
 
+  // Paragraphs where the speaker paused: a long breath, or a sentence's end
+  // and a short one. Each opens on its time, which jumps there.
+  const paragraph = (at) => {
+    const head = document.createElement("span");
+    head.className = "para-time";
+    head.textContent = fmt(at, false);
+    head.dataset.start = String(at);
+    els.transcript.append(head, " ");
+  };
+  let previous = null;
   for (const word of r.words) {
     emitChipsBefore(word.start);
+    const gap = previous ? word.start - previous.end : Infinity;
+    if (!previous || gap >= 1.2 || (gap >= 0.6 && /[.?!]["”’]?$/.test(previous.text))) paragraph(word.start);
+    previous = word;
     const span = document.createElement("span");
     const cutIndex = wordCut.get(word.id);
     if (cutIndex !== undefined) {
@@ -509,6 +522,7 @@ function renderCutTranscript() {
   emitChipsBefore(Infinity);
   if (selection && selection.to >= wordSpans.length) selection = null;
   paintSelection();
+  renderDeck();
   runFind({ keep: true });
 }
 
@@ -532,24 +546,10 @@ function paintSelection() {
 // A word is struck when an enabled cut covers it.
 const wordStruck = (word) => enabledCuts().some((cut) => word.start >= cut.start - EPSILON && word.end <= cut.end + EPSILON);
 
-function renderSelection() {
-  const words = mode === "cut" ? selectedWords() : [];
-  els.inspSelection.hidden = words.length === 0;
-  if (words.length === 0) return;
-  const seconds = words.at(-1).end - words[0].start;
-  els.selSummary.textContent = `${words.length} word${words.length === 1 ? "" : "s"} · ${seconds.toFixed(1)} s`;
-  els.selText.textContent = `“${words.map((word) => word.text).join(" ")}”`;
-  // Words already struck can be kept back; words still in can be cut. A
-  // selection across both offers both.
-  const struck = words.filter(wordStruck).length;
-  els.selKeep.hidden = struck === 0;
-  els.selCut.hidden = struck === words.length;
-}
-
 function clearSelection() {
   selection = null;
   paintSelection();
-  renderSelection();
+  renderDeck();
 }
 
 function pickWord(index, extend) {
@@ -558,8 +558,7 @@ function pickWord(index, extend) {
   selection = { from: Math.min(anchor, index), to: Math.max(anchor, index), anchor };
   selectedCut = null;
   paintSelection();
-  renderSelection();
-  renderCutInspector();
+  renderDeck();
   renderCutTimeline();
 }
 
@@ -591,27 +590,13 @@ els.transcript.addEventListener("pointerdown", (event) => {
     // The click that follows this pointerup is the drag's, not a word pick;
     // if the pointer was released off the transcript no click comes at all,
     // so the flag is dropped once the event queue has had its turn.
-    if (dragging) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); selectedCut = null; renderSelection(); renderCutInspector(); }
+    if (dragging) { suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); selectedCut = null; renderDeck(); }
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
 });
 
-els.selCut.addEventListener("click", async () => {
-  const words = selectedWords();
-  if (words.length === 0) return;
-  const result = await window.fabula.addCut(words.map((word) => word.id));
-  if (result.ok) clearSelection();
-  else els.selSummary.textContent = result.error;
-});
-els.selKeep.addEventListener("click", async () => {
-  const words = selectedWords();
-  if (words.length === 0) return;
-  const result = await window.fabula.keepWords(words.map((word) => word.id));
-  if (result.ok) clearSelection();
-  else els.selSummary.textContent = result.error;
-});
-els.selClear.addEventListener("click", clearSelection);
+
 
 // ---- Moving a cut ----
 //
@@ -654,9 +639,9 @@ function frameCut(cut) {
 function selectCut(index) {
   const cut = review()?.cuts?.[index];
   selectedCut = cut ? { index, start: cut.start, end: cut.end } : null;
-  if (selectedCut) { selection = null; paintSelection(); renderSelection(); frameCut(cut); }
-  els.cutStatus.textContent = "Drag its edges on the timeline.";
-  renderCutInspector();
+  if (selectedCut) { selection = null; paintSelection(); frameCut(cut); }
+  deckNote = "";
+  renderDeck();
   renderCutTimeline();
 }
 
@@ -667,17 +652,54 @@ const fmtEdge = (t) => {
   return `${m}:${((hundredths - m * 6000) / 100).toFixed(2).padStart(5, "0")}`;
 };
 
-function renderCutInspector() {
-  const cut = mode === "cut" ? currentCut() : null;
-  els.inspCut.hidden = !cut;
-  if (!cut) return;
-  selectedCut.start = cut.start;
-  selectedCut.end = cut.end;
-  els.cutSummary.textContent = `${[...new Set(cut.sources.map((s) => s.reason))].join(" + ")}${cut.enabled ? "" : " · kept"}`;
-  const inside = (review()?.words ?? []).filter((word) => word.end > cut.start + EPSILON && word.start < cut.end - EPSILON);
-  els.cutText.textContent = inside.length ? `“${inside.map((word) => word.text).join(" ")}”` : "A pause.";
-  els.cutBounds.textContent = `${fmtEdge(cut.start)} – ${fmtEdge(cut.end)} · ${(cut.end - cut.start).toFixed(2)} s`;
-  setLabel(els.cutToggle, cut.enabled ? "Keep the footage" : "Cut it again", cut.enabled ? "undo" : "scissors");
+// What a cut is, in a word or two.
+function cutKind(cut) {
+  const sources = cut.sources ?? [cut];
+  const filler = sources.find((source) => source.reason === "filler");
+  if (filler) return `Filler${filler.detail ? ` “${filler.detail}”` : ""}`;
+  if (sources.some((source) => source.reason === "manual")) return "Your cut";
+  const other = sources.find((source) => source.reason !== "silence");
+  if (!other) return "Pause";
+  const name = other.reason.replace(/[-_]/g, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// The Cut step's control panel: what is selected, and the buttons that act on
+// it, each with its key. A word selection and an open cut never coexist.
+let deckNote = "";
+function renderDeck() {
+  els.deck.hidden = mode !== "cut";
+  if (mode !== "cut") return;
+  const words = selectedWords();
+  const cut = words.length ? null : currentCut();
+  const index = cut ? selectedCut.index : -1;
+  if (words.length) {
+    const struck = words.filter(wordStruck).length;
+    els.deckKind.textContent = `${words.length} word${words.length === 1 ? "" : "s"} selected`;
+    els.deckTime.textContent = `${fmtEdge(words[0].start)} – ${fmtEdge(words.at(-1).end)}`;
+    els.deckWords.textContent = `“${words.map((word) => word.text).join(" ")}”`;
+    els.deckCutLabel.textContent = struck === words.length ? "Restore" : "Cut";
+  } else if (cut) {
+    selectedCut.start = cut.start;
+    selectedCut.end = cut.end;
+    const inside = (review()?.words ?? []).filter((word) => word.end > cut.start + EPSILON && word.start < cut.end - EPSILON);
+    els.deckKind.textContent = `${cutKind(cut)}${cut.enabled ? "" : " · restored"}`;
+    els.deckTime.textContent = `${fmtEdge(cut.start)} – ${fmtEdge(cut.end)} · ${(cut.end - cut.start).toFixed(2)} s`;
+    els.deckWords.textContent = inside.length ? `“${inside.map((word) => word.text).join(" ")}”` : "Silence";
+    els.deckCutLabel.textContent = cut.enabled ? "Restore" : "Cut again";
+  } else {
+    els.deckKind.textContent = "Nothing selected";
+    els.deckTime.textContent = "";
+    els.deckWords.textContent = "Click a word, or struck text to adjust its cut.";
+    els.deckCutLabel.textContent = "Cut";
+  }
+  const any = words.length > 0 || Boolean(cut);
+  els.deckCut.disabled = !any;
+  els.deckPlay.disabled = !any;
+  els.deckClear.disabled = !any;
+  els.deckTip.textContent = deckNote || (cut ? "Drag the cut's edges on the timeline below." : "");
+  els.deckTip.hidden = !els.deckTip.textContent;
+  for (const el of els.transcript.querySelectorAll("[data-cut-index]")) el.classList.toggle("is-open", Number(el.dataset.cutIndex) === index);
 }
 
 // Drag a cut's edge on the timeline. Over a block's end the pointer becomes a
@@ -708,7 +730,7 @@ els.laneCuts.addEventListener("pointerdown", (event) => {
   const cut = cuts[hit.index];
   event.preventDefault();
   event.stopPropagation();
-  if (selectedCutIndex() !== hit.index) { selectedCut = { index: hit.index, start: cut.start, end: cut.end }; renderCutInspector(); }
+  if (selectedCutIndex() !== hit.index) { selection = null; paintSelection(); selectedCut = { index: hit.index, start: cut.start, end: cut.end }; deckNote = ""; renderDeck(); }
   transport().pause();
   edgeDrag = {
     ...hit,
@@ -727,7 +749,7 @@ els.laneCuts.addEventListener("pointermove", (event) => {
   edgeDrag[edgeDrag.edge] = t;
   const block = els.laneCuts.querySelector(`[data-cut-index="${edgeDrag.index}"]`);
   if (block) place(block, edgeDrag.start, edgeDrag.end, totalSeconds(), 0.15);
-  els.cutBounds.textContent = `${fmtEdge(edgeDrag.start)} – ${fmtEdge(edgeDrag.end)} · ${(edgeDrag.end - edgeDrag.start).toFixed(2)} s`;
+  els.deckTime.textContent = `${fmtEdge(edgeDrag.start)} – ${fmtEdge(edgeDrag.end)} · ${(edgeDrag.end - edgeDrag.start).toFixed(2)} s`;
   seek(t, { follow: false });
 });
 const endEdgeDrag = async (event) => {
@@ -740,24 +762,54 @@ const endEdgeDrag = async (event) => {
   swallowLaneClick = true;
   setTimeout(() => { swallowLaneClick = false; }, 0);
   const result = await window.fabula.moveCut(drag.index, { [drag.edge]: drag[drag.edge] });
-  els.cutStatus.textContent = result.ok ? "Saved. Hear it to check." : result.error;
+  deckNote = result.ok ? "Saved. Press P to preview." : result.error;
   if (result.ok) { selectedCut.start = result.cut.start; selectedCut.end = result.cut.end; }
+  renderDeck();
 };
 els.laneCuts.addEventListener("pointerup", endEdgeDrag);
 els.laneCuts.addEventListener("pointercancel", endEdgeDrag);
-// Two seconds of run-up, then across the cut as the edit plays it.
-els.cutHear.addEventListener("click", () => {
-  const cut = currentCut();
-  if (!cut) return;
-  els.skipcuts.checked = true;
-  seek(Math.max(cut.start - 2, 0));
-  els.video.play();
-});
-els.cutToggle.addEventListener("click", () => {
+// X: cut the selected words, or restore them if they are all struck; with a
+// cut open instead, flip it.
+async function deckAct() {
+  const words = selectedWords();
+  if (words.length) {
+    const ids = words.map((word) => word.id);
+    const result = words.every(wordStruck) ? await window.fabula.keepWords(ids) : await window.fabula.addCut(ids);
+    if (result.ok) clearSelection();
+    else { deckNote = result.error; renderDeck(); }
+    return;
+  }
   const cut = currentCut();
   if (cut) window.fabula.setCut(selectedCut.index, !cut.enabled);
-});
-els.cutClose.addEventListener("click", () => { selectedCut = null; renderCutInspector(); renderCutTimeline(); });
+}
+// P: two seconds of run-up, then across the edit as it will play.
+function deckPreview() {
+  const words = selectedWords();
+  const from = words.length ? words[0].start : currentCut()?.start;
+  if (from === undefined) return;
+  els.skipcuts.checked = true;
+  seek(Math.max(from - 2, 0));
+  els.video.play();
+}
+function deckClear() {
+  selection = null;
+  selectedCut = null;
+  deckNote = "";
+  paintSelection();
+  renderDeck();
+  renderCutTimeline();
+}
+function stepCut(direction) {
+  const cut = nearestCut(direction);
+  if (!cut) return;
+  seek(Math.max(cut.start - 0.6, 0));
+  selectCut(review().cuts.indexOf(cut));
+}
+els.deckCut.addEventListener("click", deckAct);
+els.deckPlay.addEventListener("click", deckPreview);
+els.deckClear.addEventListener("click", deckClear);
+els.deckPrev.addEventListener("click", () => stepCut(-1));
+els.deckNext.addEventListener("click", () => stepCut(1));
 els.emptyFirstPass.addEventListener("click", async () => {
   const result = await window.fabula.render("first", {});
   if (!result.ok) els.emptyHint.textContent = result.error;
@@ -957,6 +1009,62 @@ function renderCutTimeline() {
   });
   renderMinimap();
   applyView();
+  loadWaveform();
+}
+
+// The recording's loudness under the cuts, so an edge is dragged to where a
+// sound starts. The cut pass writes it (waveform.json, one dB value per 10
+// ms); the canvas covers the lane's visible width and is redrawn for the
+// window of time on show whenever the view moves.
+let wave = null; // { project, at, hop, floor, db }
+let waveLoading = false;
+async function loadWaveform() {
+  const project = state?.project ?? null;
+  const at = state?.waveformAt ?? null;
+  if (waveLoading || (wave && wave.project === project && wave.at === at)) return;
+  waveLoading = true;
+  try {
+    const body = at ? await window.fabula.waveform() : null;
+    const bytes = body ? atob(body.db) : "";
+    const db = new Int8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i += 1) db[i] = bytes.charCodeAt(i);
+    wave = { project, at, hop: body?.hop ?? 0.01, floor: body?.floor ?? -70, db };
+  } catch {
+    wave = { project, at, hop: 0.01, floor: -70, db: new Int8Array(0) };
+  } finally {
+    waveLoading = false;
+  }
+  drawWaveform();
+}
+
+function drawWaveform() {
+  const canvas = els.waveCuts;
+  const lane = canvas.parentElement;
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.round(lane.clientWidth * ratio);
+  const height = Math.round(lane.clientHeight * ratio);
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+  if (mode !== "cut" || !wave?.db.length || !review() || width === 0) return;
+  const total = totalSeconds();
+  const v = view();
+  const visible = total / v.zoom;
+  // Speech sits at -30..0 dB and a quiet room at -50 and below: drawn on a
+  // -55..-5 dB scale, eased, a pause reads as flat and a word as full.
+  const quiet = -55;
+  const loud = -5;
+  ctx.fillStyle = getComputedStyle(canvas).color;
+  for (let x = 0; x < width; x += 1) {
+    const from = Math.floor((v.start + (x / width) * visible) / wave.hop);
+    const to = Math.max(Math.floor((v.start + ((x + 1) / width) * visible) / wave.hop), from + 1);
+    let peak = -128;
+    for (let i = Math.max(from, 0); i < Math.min(to, wave.db.length); i += 1) if (wave.db[i] > peak) peak = wave.db[i];
+    const level = Math.min(Math.max((peak - quiet) / (loud - quiet), 0), 1) ** 1.5;
+    const bar = Math.max(level * height * 0.92, level > 0 ? ratio : 0);
+    ctx.fillRect(x, (height - bar) / 2, 1, bar);
+  }
 }
 
 // Scenes: one lane for where the head sits, one for the screen track where
@@ -1101,6 +1209,18 @@ const hasScenes = () => (compose()?.scenes ?? []).length > 0;
 // A make run is under way: the brief has a start and the draft has not landed.
 const makingNow = () => Boolean(state?.making?.run && !state.making.run.done);
 
+// Elements that live in the inspector but sit under the transcript in the
+// Cut step; each goes back where it came from on the way out.
+const dockHomes = new Map();
+function dockInRail(on) {
+  for (const el of [els.inspApprove, els.keysWrap]) {
+    if (!dockHomes.has(el)) dockHomes.set(el, { parent: el.parentElement, next: el.nextElementSibling });
+    const home = dockHomes.get(el);
+    if (on && el.parentElement !== els.cutFoot) els.cutFoot.append(el);
+    else if (!on && el.parentElement !== home.parent) home.parent.insertBefore(el, home.next);
+  }
+}
+
 function renderProjectPanel() {
   const r = review();
   els.inspTitle.textContent = state?.title ?? state?.project ?? "";
@@ -1116,9 +1236,15 @@ function renderProjectPanel() {
     els.approveAlt.hidden = !call.alt;
   }
   renderMaking();
+  // The Cut step keeps everything on the left: the controls above the words,
+  // the step's totals and its next step below them. The inspector comes back
+  // while a video is being made, to show the making.
+  const cutStep = mode === "cut" && !makingNow();
+  document.body.classList.toggle("is-cutstep", cutStep);
+  dockInRail(cutStep);
+  els.cutFoot.hidden = !cutStep;
   if (mode === "cut") {
     els.inspCutSummary.hidden = false;
-    els.cutHint.hidden = false;
     els.inspKeysCut.hidden = false;
     els.inspKeysScenes.hidden = true;
     els.approveCut.disabled = Boolean(state?.progress && !(typeof state.progress.detail === "string" && state.progress.detail.startsWith("failed:")));
@@ -1129,11 +1255,10 @@ function renderProjectPanel() {
     els.sumFraming.textContent = describeFraming(r.framing);
     els.sumClean.textContent = { none: "not rendered", stale: "out of date", current: "up to date" }[cleanState(state?.export)];
     els.inspEmpty.textContent = "";
-    renderSelection();
-    renderCutInspector();
+    els.cutStats.textContent = `${r.cuts.length} cuts${kept ? ` (${kept} restored)` : ""} · ${fmt(removedSeconds(), false)} removed · clean cut ${els.sumClean.textContent}`;
+    renderDeck();
   } else {
-    els.inspCut.hidden = true;
-    els.cutHint.hidden = true;
+    els.deck.hidden = true;
     els.inspCutSummary.hidden = true;
     els.inspKeysCut.hidden = true;
     els.inspKeysScenes.hidden = mode !== "scenes";
@@ -2881,8 +3006,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     setZoom(view().zoom * (event.key === "-" ? 0.5 : 2), els.video.currentTime);
   } else if ((event.key === "[" || event.key === "]") && mode === "cut") {
-    const cut = nearestCut(event.key === "]" ? 1 : -1);
-    if (cut) { seek(Math.max(cut.start - 0.6, 0)); selectCut(review().cuts.indexOf(cut)); }
+    stepCut(event.key === "]" ? 1 : -1);
   } else if ((event.key === "[" || event.key === "]") && mode === "scenes" && compose()) {
     // Scene to scene from the keyboard: the next card or title after the
     // playhead (or before it), opened in the inspector.
@@ -2893,15 +3017,13 @@ document.addEventListener("keydown", (event) => {
       : [...cards].reverse().find(({ scene }) => scene.start < now - 0.05);
     if (hit) { event.preventDefault(); openInspector(hit.index); }
   } else if ((event.key === "x" || event.key === "X" || event.key === "Delete" || event.key === "Backspace") && mode === "cut" && (selection || currentCut())) {
-    // Cut what is picked, or keep it if it is all struck already; with a cut
-    // open instead, flip it.
     event.preventDefault();
-    if (selection) (els.selCut.hidden ? els.selKeep : els.selCut).click();
-    else els.cutToggle.click();
-  } else if (event.key === "Escape" && selection) {
-    clearSelection();
-  } else if (event.key === "Escape" && mode === "cut" && currentCut()) {
-    els.cutClose.click();
+    deckAct();
+  } else if ((event.key === "p" || event.key === "P") && mode === "cut" && (selection || currentCut())) {
+    event.preventDefault();
+    deckPreview();
+  } else if (event.key === "Escape" && mode === "cut" && (selection || currentCut())) {
+    deckClear();
   } else if (event.key === "Escape" && (selectedScene !== null || selectedInsert !== null)) {
     closeInspector();
   }
@@ -3871,7 +3993,7 @@ window.fabula.onState((next) => {
   if (projectChanged) {
     // A tall film leaves the width beside the stage empty: the script
     // opens into it by default.
-    selectedScene = null; selectedInsert = null; userChoseTab = false; scriptOpen = previewStage().height > previewStage().width;
+    selectedScene = null; selectedInsert = null; selection = null; selectedCut = null; userChoseTab = false; scriptOpen = previewStage().height > previewStage().width;
     clearTimeout(removed?.timer); removed = null;
     // A shortlist belongs to the film it was read from.
     clipResult = null; clipError = null; clipFinding = null; clipBusy = null;

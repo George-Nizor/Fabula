@@ -69,6 +69,19 @@ export function loudnessEnvelope(file, duration) {
   return { hop: ENVELOPE_HOP_SECONDS, db, floor: sorted.length ? sorted[Math.floor(sorted.length * 0.1)] : -90 };
 }
 
+// The Cut step draws the recording's loudness under its cuts, so an edge is
+// dragged to where a sound starts rather than by ear. One signed byte per
+// 10 ms (dB, -100..0), base64 in waveform.json: about 80 KB for ten minutes.
+export const WAVEFORM_FILE = "waveform.json";
+
+export function writeWaveform(dir, envelope) {
+  const bytes = Int8Array.from(envelope.db, (db) => Math.max(-100, Math.min(0, Math.round(db))));
+  const body = { hop: envelope.hop, floor: Math.round(envelope.floor), db: Buffer.from(bytes.buffer).toString("base64") };
+  const file = path.join(dir, WAVEFORM_FILE);
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(body));
+  fs.renameSync(`${file}.tmp`, file);
+}
+
 // Integrated loudness of a file's first audio stream, in LUFS (EBU R128),
 // or null when it has no audio. A whole film takes a few seconds.
 export function measureLoudness(file) {
@@ -235,6 +248,7 @@ export function transcribe(videoPath, outPath, options = {}) {
 export function computeReview(transcript, videoPath, duration, options = {}) {
   const words = flattenWords(transcript);
   const envelope = options.envelope !== undefined ? options.envelope : loudnessEnvelope(videoPath, duration);
+  if (envelope && options.dir) writeWaveform(options.dir, envelope);
   const gapOptions = {
     mediaDurationSeconds: duration,
     minGapSeconds: options.minGapSeconds,

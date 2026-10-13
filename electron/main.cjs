@@ -654,6 +654,11 @@ function readState() {
     const draft = path.join(dir, "out", "draft.mp4");
     state.draft = fs.existsSync(draft) ? { url: pathToFileURL(draft).href, at: new Date(fs.statSync(draft).mtimeMs).toISOString() } : null;
   }
+  // The cut pass's waveform: its time stamp in the state, the bytes on request.
+  {
+    const wave = path.join(dir, "waveform.json");
+    state.waveformAt = fs.existsSync(wave) ? new Date(fs.statSync(wave).mtimeMs).toISOString() : null;
+  }
   // Staged but not yet transcribed: the window shows what to ask for.
   if (!state.review && stagedVideoPath(dir)) state.pending = { project: path.basename(dir), title: state.title, videoName: path.basename(stagedVideoPath(dir)) };
   return state;
@@ -785,7 +790,7 @@ function stateStamp() {
   const progress = core?.pipeline.readProgress(dir);
   const alive = progress?.pid && progress.platform === process.platform ? `job:${core.pipeline.pidAlive(progress.pid)}|` : "";
   return alive + [
-    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json",
+    "review.json", "compose.json", "clean.json", "framing.json", "progress.json", "source.json", "inbox.json", "waveform.json",
     "project.json", // the title and the shape; both change from the assistant's side too
     // Make it into a video: the brief, the treatment, the assistant's log,
     // the motion documents (a write renames into the folder) and the draft.
@@ -1228,7 +1233,11 @@ app.whenReady().then(() => {
       return { ok: false, error: error.message };
     }
   });
-  // A cut's edges moved by hand from the inspector, in seconds.
+  ipcMain.handle("fabula:waveform", () => {
+    const dir = projectDir();
+    return (dir && readJson(path.join(dir, "waveform.json"))) || null;
+  });
+  // A cut's edges dragged on the timeline, in seconds.
   ipcMain.handle("fabula:move-cut", (event, index, bounds) => {
     const dir = projectDir();
     const file = dir && path.join(dir, "review.json");

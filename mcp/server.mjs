@@ -707,6 +707,7 @@ server.registerTool("cut_pass", {
   if (!fs.existsSync(paths.transcript)) throw new Error("no transcript; call transcribe first");
   const transcript = readJson(paths.transcript);
   const review = computeReview(transcript, paths.video, probeDuration(paths.video), {
+    dir,
     minGapSeconds: min_gap_seconds,
     keepBreathSeconds: keep_breath_seconds,
   });

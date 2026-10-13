@@ -297,8 +297,28 @@
           <span class="rail-find-count" id="find-count"></span>
         </span>
       </div>
-      <p class="rail-hint" id="cut-hint" hidden>Click a word and press <kbd>X</kbd> to cut it · shift-click to take more · click struck text to adjust its cut on the timeline</p>
+      <!-- The Cut step's controls, beside the words they act on. -->
+      <section class="deck" id="deck" hidden>
+        <div class="deck-now">
+          <b id="deck-kind"></b>
+          <span id="deck-time"></span>
+        </div>
+        <p class="deck-words" id="deck-words"></p>
+        <div class="deck-row">
+          <button type="button" class="deck-btn is-primary" id="deck-cut"><span id="deck-cut-label">Cut</span><kbd>X</kbd></button>
+          <button type="button" class="deck-btn" id="deck-play">Preview<kbd>P</kbd></button>
+          <button type="button" class="deck-btn" id="deck-clear">Clear<kbd>Esc</kbd></button>
+        </div>
+        <div class="deck-row">
+          <button type="button" class="deck-btn" id="deck-prev"><kbd>[</kbd>Previous cut</button>
+          <button type="button" class="deck-btn" id="deck-next">Next cut<kbd>]</kbd></button>
+        </div>
+        <p class="deck-tip" id="deck-tip"></p>
+      </section>
       <article class="transcript" id="transcript"></article>
+      <div class="cut-foot" id="cut-foot" hidden>
+        <p class="cut-stats" id="cut-stats"></p>
+      </div>
       <div class="rail-foot" id="controls-hint"></div>
     </aside>
     <section class="stagewell">
@@ -365,32 +385,12 @@
           <div class="insp-kv"><span>Framing</span><b id="sum-framing"></b></div>
           <div class="insp-kv"><span>Clean cut</span><b id="sum-clean"></b></div>
         </div>
-        <div class="insp-section" id="insp-selection" hidden>
-          <div class="insp-kv"><span>Selected</span><b id="sel-summary"></b></div>
-          <p class="insp-selected" id="sel-text"></p>
-          <div class="insp-actions">
-            <button type="button" class="insp-mini is-strong" id="sel-cut" data-icon="scissors">Cut selection</button>
-            <button type="button" class="insp-mini is-strong" id="sel-keep" data-icon="done" hidden>Keep selection</button>
-            <button type="button" class="insp-mini" id="sel-clear">Clear</button>
-          </div>
-        </div>
-        <div class="insp-section" id="insp-cut" hidden>
-          <div class="insp-kv"><span>Cut</span><b id="cut-summary"></b></div>
-          <p class="insp-selected" id="cut-text"></p>
-          <div class="insp-kv"><span>Time</span><b id="cut-bounds"></b></div>
-          <p class="insp-status" id="cut-status"></p>
-          <div class="insp-actions">
-            <button type="button" class="insp-mini is-strong" id="cut-hear" data-icon="play">Hear it</button>
-            <button type="button" class="insp-mini" id="cut-toggle"></button>
-            <button type="button" class="insp-mini" id="cut-close">Close</button>
-          </div>
-        </div>
         <p class="insp-placeholder" id="insp-empty"></p>
         <div class="insp-actions insp-undo" id="insp-undo-wrap" hidden>
           <span class="insp-status" id="insp-undo-text"></span>
           <button type="button" class="insp-mini" id="insp-undo" data-icon="undo">Undo</button>
         </div>
-        <details class="insp-details insp-keys-wrap">
+        <details class="insp-details insp-keys-wrap" id="insp-keys-wrap">
         <summary>Keys</summary>
         <div class="insp-keys">
           <span><kbd>space</kbd> play</span>
@@ -400,7 +400,7 @@
           <span><kbd>ctrl</kbd> + wheel zoom the timeline</span>
           <span><kbd>ctrl</kbd><kbd>F</kbd> find in the transcript</span>
           <span><kbd>ctrl</kbd><kbd>1</kbd>…<kbd>4</kbd> the steps</span>
-          <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut, opened · <kbd>X</kbd> cut the picked words, or flip the open cut · <kbd>shift</kbd>-click pick more</span>
+          <span id="insp-keys-cut"><kbd>shift</kbd>-click select a range</span>
           <span id="insp-keys-scenes" hidden><kbd>[</kbd><kbd>]</kbd> previous · next scene</span>
         </div>
         </details>
@@ -673,7 +673,7 @@
     <div class="timeline" id="timeline">
       <div class="tl-track tl-track-map"><span class="tl-label"></span><div class="tl-minimap" id="tl-minimap" title="The whole film. Drag the window to pan, click to go there."><div class="tl-map-inner" id="map-inner"></div><div class="tl-map-view" id="map-view"></div><div class="tl-map-head" id="map-head"></div></div></div>
       <div class="tl-track tl-track-ruler"><span class="tl-label"></span><div class="tl-ruler"><div class="tl-inner" id="lane-ruler"></div></div></div>
-      <div class="tl-track" id="track-cuts"><span class="tl-label">cuts</span><div class="tl-lane"><div class="tl-inner" id="lane-cuts"></div></div></div>
+      <div class="tl-track" id="track-cuts"><span class="tl-label">cuts</span><div class="tl-lane"><canvas class="tl-wave" id="wave-cuts" aria-hidden="true"></canvas><div class="tl-inner" id="lane-cuts"></div></div></div>
       <div class="tl-track" id="track-layout" hidden><span class="tl-label">layout</span><div class="tl-lane"><div class="tl-inner" id="lane-layout"></div></div></div>
       <div class="tl-track" id="track-screen" hidden><span class="tl-label">screen</span><div class="tl-lane is-quiet"><div class="tl-inner" id="lane-screen"></div></div></div>
       <div class="tl-track" id="track-scenes" hidden><span class="tl-label">scenes</span><div class="tl-lane"><div class="tl-inner" id="lane-scenes"></div></div></div>

@@ -1463,8 +1463,91 @@ body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 .tl-block.is-cutblock.is-selected::after { right: -2px; }
 .tl-lane.is-edge, body.is-dragging-edge .tl-lane { cursor: ew-resize; }
 
-.rail-hint { margin: 0; padding: 2px 14px 8px; font-size: var(--t-xs); line-height: 1.4; color: var(--dim); }
-.rail-hint kbd { font-size: inherit; }
+/* ---- The Cut step: everything on the left ----
+   The inspector steps aside (it returns while a video is being made); the
+   rail widens and carries the controls above the words and the totals and
+   the next step below them. */
+body.is-cutstep .inspector,
+body.is-cutstep #toggle-insp { display: none; }
+body.is-cutstep .rail { width: 380px; flex-basis: 380px; }
+
+.deck {
+  margin: 4px 14px 8px;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.deck-now { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: var(--t-sm); }
+.deck-now b { color: var(--ink); font-weight: 700; }
+.deck-now span { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.deck-words {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-soft);
+  line-height: 1.4;
+  max-height: 2.8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.deck-row { display: flex; gap: 6px; }
+.deck-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--outline);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.deck-btn kbd { margin: 0; }
+.deck-btn:not(:disabled):hover { background: var(--card-hover); }
+.deck-btn:disabled { opacity: 0.45; cursor: default; }
+.deck-btn.is-primary { background: var(--cut); border-color: var(--cut); color: var(--paper); }
+.deck-btn.is-primary kbd { background: transparent; color: inherit; border-color: currentColor; }
+.deck-btn.is-primary:not(:disabled):hover { background: var(--cut); filter: brightness(1.08); }
+.deck-tip { margin: 0; font-size: var(--t-xs); color: var(--dim); }
+
+.cut-foot { padding: 10px 14px 12px; border-top: 2px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.cut-foot .insp-section { padding: 0; border-bottom: 0; }
+.cut-stats { margin: 0; font-size: var(--t-xs); color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* A paragraph opens on its time; the open cut's words are outlined. */
+.para-time {
+  display: block;
+  margin-top: 0.7em;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  color: var(--dim);
+  cursor: pointer;
+  width: max-content;
+}
+.para-time:first-child { margin-top: 0; }
+.para-time:hover { color: var(--accent-text); }
+.word.is-open, .gap.is-open { outline: 2px solid var(--ink); outline-offset: 1px; }
+.word:hover { background: var(--accent-tint); }
+
+/* The waveform under the cuts: the lane is taller in the Cut step, and the
+   cuts sit over the sound translucent, so its shape shows through. */
+#track-cuts .tl-lane { height: calc(2.8rem * var(--lane-scale, 1)); }
+.tl-wave { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--ink-soft); opacity: 0.55; pointer-events: none; }
+#lane-cuts .tl-block.is-cutblock:not(.is-kept) { background: color-mix(in srgb, var(--cut) 50%, transparent); }
 
 .tl-block.is-screenblock {
   border-radius: 4px;
