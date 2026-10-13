@@ -15,6 +15,8 @@
 #   tools/wsl-libs/  the Chromium libraries headless Electron needs and the distribution lacks,
 #                    unpacked from their .debs (apt-get download needs no root)
 #   venv-whisperx/   WhisperX on CUDA: several GB, installed once and shared by every version
+#   venv-face/       the thumbnail kit's face analyser (MediaPipe on the CPU, about 470 MB, shared;
+#                    scripts/setup-face.sh). Optional: a failure here is reported and setup goes on
 #   node/            Node 22, only when the distribution has no Node 22 or newer
 #   projects/        where the projects live, unless fabula.settings.json names another folder
 #
@@ -26,7 +28,8 @@
 # Prints "STEP <n> <total> <what>" as each step starts and "READY <FABULA_HOME>" at the end: the
 # window's setup screen reads those lines. Every step is skipped when its result is already there,
 # so running it again finishes an interrupted setup, and a new version reuses the shared tools.
-# FABULA_SKIP_WHISPERX=1 leaves WhisperX out (a test of everything else).
+# FABULA_SKIP_WHISPERX=1 leaves WhisperX out (a test of everything else); FABULA_SKIP_FACE=1 the
+# face analyser.
 set -euo pipefail
 
 VERSION=""
@@ -57,7 +60,8 @@ HOME_DIR="${FABULA_HOME:-$HOME/.local/share/fabula}"
 VERSION_DIR="$HOME_DIR/versions/$VERSION"
 TOOLS="$HOME_DIR/tools"
 VENV="$HOME_DIR/venv-whisperx"
-TOTAL=8
+FACE_VENV="$HOME_DIR/venv-face"
+TOTAL=9
 step() { echo "STEP $1 $TOTAL $2"; }
 mkdir -p "$HOME_DIR/versions" "$TOOLS" "$HOME_DIR/projects" "$HOME_DIR/downloads"
 
@@ -120,9 +124,10 @@ link_shared() {
   if [ -e "$link" ] && [ ! -L "$link" ]; then rm -rf "$link"; fi
   ln -sfn "$target" "$link"
 }
-mkdir -p "$VENV"
+mkdir -p "$VENV" "$FACE_VENV"
 link_shared "$VERSION_DIR/tools" "$TOOLS"
 link_shared "$VERSION_DIR/.venv-whisperx" "$VENV"
+link_shared "$VERSION_DIR/.venv-face" "$FACE_VENV"
 
 # ---- 4. ffmpeg ---------------------------------------------------------------------------
 step 4 "Installing ffmpeg"
@@ -272,8 +277,19 @@ if torch.cuda.is_available():
 PY
 fi
 
-# ---- 7. Settings and projects ------------------------------------------------------------
-step 7 "Carrying your settings forward"
+# ---- 7. The face analyser -----------------------------------------------------------------
+# What the thumbnail kit ranks face frames with. Optional: without it the kit still picks frames by
+# sharpness and time and says why, so a failure here is reported and the setup goes on.
+step 7 "Installing the face analyser (about 470 MB, once)"
+if [ "${FABULA_SKIP_FACE:-}" = "1" ]; then
+  echo "skipped (FABULA_SKIP_FACE=1)"
+else
+  FABULA_UV="${UV:-$( [ -x "$HOME_DIR/uv/uv" ] && echo "$HOME_DIR/uv/uv" || true)}" bash "$VERSION_DIR/scripts/setup-face.sh" "$FACE_VENV" \
+    || echo "the face analyser was not installed; the thumbnail kit will choose frames without it"
+fi
+
+# ---- 8. Settings and projects ------------------------------------------------------------
+step 8 "Carrying your settings forward"
 settings="$VERSION_DIR/fabula.settings.json"
 if [ ! -f "$settings" ]; then
   # The newest other version's settings, so a projects folder or music folder chosen in the
@@ -293,8 +309,8 @@ fi
 # never media/ inside a version that the next update replaces (scripts/settings.cjs).
 printf '%s\n' "$HOME_DIR" > "$VERSION_DIR/.engine-home"
 
-# ---- 8. Check and mark ready -------------------------------------------------------------
-step 8 "Checking the engine"
+# ---- 9. Check and mark ready -------------------------------------------------------------
+step 9 "Checking the engine"
 LD_LIBRARY_PATH="$LIB_PATH" "$ELECTRON_BIN" --version >/dev/null 2>&1 || { echo "headless Electron does not start" >&2; exit 1; }
 "$TOOLS/ffmpeg/ffprobe" -version >/dev/null
 printf '%s\n' "$VERSION" > "$VERSION_DIR/.engine-ready"

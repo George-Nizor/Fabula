@@ -2017,6 +2017,39 @@ body.is-panning .tl-map-view { cursor: grabbing; }
 
 .export-kind.is-film { background: var(--accent-tint-strong); border-color: var(--accent-text); color: var(--ink); }
 
+/* ---- The thumbnail kit: the frames it picked, small, with their tags ---- */
+
+.kit-frames {
+  list-style: none;
+  margin: 10px 0 2px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+.kit-frame { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kit-frame img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 2px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+}
+.kit-frame.is-screen img { object-fit: contain; }
+.kit-frame-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: var(--t-sm); color: var(--dim); }
+.kit-time { font-variant-numeric: tabular-nums; margin-right: 2px; }
+.kit-tag {
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--card-hover);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.kit-frame.is-face .kit-time + .kit-tag { background: var(--accent-tint-strong); border-color: var(--accent-text); color: var(--ink); }
+
 /* ---- Shorts: the moments in a film that could be their own ---- */
 
 .clips { list-style: none; margin: 12px 0 8px; padding: 0; display: grid; gap: 10px; }

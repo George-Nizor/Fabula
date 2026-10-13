@@ -22,6 +22,13 @@ const stamp = (seconds) => {
 
 const MARKS = new Set(["section", "cover", "headline"]);
 
+// The film's own title, when the plan opens on a title card: the 0:00 chapter
+// is that, not the project's working name.
+export function openingTitle(scenes) {
+  const first = scenes.find((scene) => scene.type === "title" && scene.start <= 1.0 && typeof scene.text === "string" && scene.text.trim());
+  return first ? first.text.trim() : null;
+}
+
 // Chapters from the plan: the scenes that mark a change of subject, in time
 // order, titled by what they say. A template's params carry the title.
 export function chaptersFromScenes(resolvedScenes) {

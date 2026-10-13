@@ -1900,7 +1900,7 @@ const fmtWhen = (iso) => {
   const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return d.toDateString() === new Date().toDateString() ? `today ${time}` : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 };
-const STAGE_NAMES = { first_pass: "The first pass", render_clean: "The clean cut", render_final: "The film", transcribe: "The transcript", retranscribe: "The clean transcript", refresh_clean: "The clean cut", framing: "The framing scan" };
+const STAGE_NAMES = { first_pass: "The first pass", render_clean: "The clean cut", render_final: "The film", transcribe: "The transcript", retranscribe: "The clean transcript", refresh_clean: "The clean cut", framing: "The framing scan", thumbnail_kit: "The thumbnail kit" };
 const KIND_LABELS = { film: "film", draft: "draft", clean: "clean cut", preview: "preview", captions: "captions", thumbnail: "thumbnail", chapters: "chapters", credits: "credits", description: "description" };
 const CAPTION_FILES = {
   none: "No captions.",
@@ -2060,6 +2060,9 @@ function renderExportPage() {
   clean.append(make("p", "field-note", "Needed only after the cuts or the framing change."));
   left.append(clean);
 
+  // The thumbnail kit, for Imago or any designer.
+  left.append(kitCard(e, busy));
+
   // Files.
   const files = make("section", "export-card");
   files.append(make("h3", "", `${icon("folder", 30)}Files`));
@@ -2132,6 +2135,59 @@ function exportSettingsRow() {
   row.append(pick("Quality", QUALITY_CHOICES.map((q) => ({ value: q.id, label: q.label })), now.quality, (v) => saveExportSettings({ quality: v })));
   row.append(make("span", "field-note", esc(QUALITY_CHOICES.find((q) => q.id === now.quality)?.about ?? "")));
   return row;
+}
+
+// ---- The thumbnail kit ----
+//
+// The film's best face frames, its screens, the pictures its scenes show and the speaker's hook
+// lines, in one folder a thumbnail designer (Imago) works from. Made as a background job; the
+// card shows the frames it picked, with their tags, so the person can see what went in.
+function kitCard(e, busy) {
+  const card = make("section", "export-card");
+  card.append(make("h3", "", `${icon("camera", 30)}Thumbnail kit`));
+  const kit = e.kit;
+  const making = e.running?.stage === "thumbnail_kit";
+  if (making) {
+    card.append(make("p", "export-status", esc(e.running.detail && e.running.detail !== "starting" ? e.running.detail : "Looking through the film…")));
+  } else if (kit) {
+    const c = kit.counts;
+    const parts = [`${c.faces} face frame${c.faces === 1 ? "" : "s"}`, `${c.screens} screen${c.screens === 1 ? "" : "s"}`, `${c.pictures} picture${c.pictures === 1 ? "" : "s"}`, `${c.hooks} hook line${c.hooks === 1 ? "" : "s"}`];
+    card.append(make("p", "export-status", `Made ${esc(fmtWhen(kit.createdAt))} · ${esc(parts.join(", "))}.`));
+  } else if (!e.canMakeKit) {
+    card.append(make("p", "export-status", "Needs the clean cut and its transcript: the kit takes only what the film shows."));
+  } else {
+    card.append(make("p", "export-status", "The film's best face frames, its screens, the pictures it shows and its hook lines, in one folder to design thumbnails and vertical covers from."));
+  }
+  // Faces ranked or not: said plainly, with the fix, because unranked frames are only sharp.
+  const unranked = kit && kit.faceRanked === false;
+  if (unranked) {
+    card.append(make("p", "export-flash is-error", esc(`Face ranking was unavailable (${kit.faceAnalysis?.reason ?? "no face analyser"}), so these frames were chosen by sharpness and time only. ${kit.faceAnalysis?.hint ?? e.faceSetup?.hint ?? ""}`)));
+  } else if (!kit && e.faceSetup && !e.faceSetup.ready) {
+    card.append(make("p", "field-note", esc(`Face ranking is not set up here: frames will be chosen by sharpness and time only. ${e.faceSetup.hint}`)));
+  }
+  const row = make("div", "export-actions");
+  row.append(actionButton(making ? "Making…" : kit ? "Remake" : "Make kit", () => startRender("kit"), {
+    primary: !kit, disabled: busy || !e.canMakeKit, icon: making ? "hourglass" : "camera",
+    title: "Reads the film where it is shown, picks the frames, and writes out/thumbnail-kit/ (about half a minute)",
+  }));
+  if (kit) row.append(actionButton("Open folder", () => window.fabula.openOutput(kit.folder), { icon: "folder" }));
+  card.append(row);
+  if (!kit?.frames?.length) return card;
+  const grid = make("ul", "kit-frames");
+  for (const frame of kit.frames) {
+    const item = make("li", `kit-frame is-${frame.kind}`);
+    const img = document.createElement("img");
+    img.src = frame.url;
+    img.alt = frame.words ? `“${frame.words}”` : frame.kind === "screen" ? "A screen frame" : "A face frame";
+    img.loading = "lazy";
+    img.title = frame.words ?? "";
+    item.append(img);
+    const tags = frame.kind === "screen" ? ["screen"] : frame.tags;
+    item.append(make("div", "kit-frame-meta", `<span class="kit-time">${fmt(frame.atSeconds, false)}</span>${tags.map((tag) => `<span class="kit-tag">${esc(tag)}</span>`).join("")}`));
+    grid.append(item);
+  }
+  card.append(grid);
+  return card;
 }
 
 // ---- Shorts ----

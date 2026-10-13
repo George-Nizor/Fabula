@@ -517,6 +517,26 @@ something; put the words on the side the face is not. The line is a promise the 
 Two to four `variants` render side by side into `out/thumbnail-variants.png` at the size a feed
 shows them, which is the size to choose at; the one whose words are read without trying wins.
 
+`thumbnail_kit` writes `out/thumbnail-kit/`: the film's best real material for a thumbnail and a
+vertical cover, in the format Imago imports (schema v1, `Instrumenta/docs/suite/thumbnail-uplift.md`).
+It holds up to 12 face frames from the head camera at the recording's own resolution, uncropped,
+best first and spread over the film (at least 8 s apart when they look alike, as close as 2 s when
+one is clearly different: another tag, or a gesture such as finger guns or hands up), each with its tags (`smile`, `laugh`, `surprise`, `intense`,
+`speaking`, `pointing`, `neutral`), its face box, its signals (eyes open, smile, mouth open, brows
+raised, yaw and pitch, sharpness, exposure, face height) and the words being said; up to 6
+distinct screen frames; up to 12 pictures the scenes show, with their credits; up to 6 hook lines
+in the speaker's own words (`promise`, `claim`, `number`, `question`, `quote`, from the same
+reading as `read_story`); the chapters `export_chapters` would write; and the look's colours and
+fonts. Every frame comes from what the cut film shows, never from footage the cut removed. A local
+face model ranks the faces (MediaPipe's Face and Hand Landmarkers, on the CPU): eyes open and on
+the lens, an expression, no hand over the face, sharp and lit. It is a background job of about
+twenty seconds for a ten-minute film, the same one the Export step's Thumbnail kit card starts;
+it returns when done or as still running (then `wait_render`), and `read_only: true` describes the
+kit already written. Look at the frames before you name any. When face ranking was unavailable
+the result says so, with the fix: the frames were chosen by sharpness, light and time alone, so
+tell the person. `render_thumbnail` is a different thing and is unchanged: one composed frame with
+words on it.
+
 `get_captions` lists the film's caption phrases with their timings, and `export_captions`
 takes one line per phrase in another language — translated by you, in order — and writes
 `out/captions-<language>.srt` and `.vtt` with the film's own timings, for the platform's
@@ -634,7 +654,9 @@ two transcriptions and the clean render, `scripts/export-compose.cjs` for the fi
 that started them. Project state lives in `media/<project>/review.json` (cuts) and
 `compose.json` (scenes, theme, punch-ins); the window polls both at 500ms, so whatever writes
 those files is live in the UI. Tools install to `tools/` and `.venv-whisperx/`
-via `npm run setup:tools`, both gitignored, no sudo. On Windows the app runs from an Electron
+via `npm run setup:tools`, both gitignored, no sudo, and so does `.venv-face`, the thumbnail kit's
+face analyser (`scripts/setup-face.sh`: MediaPipe with its models pinned by SHA-256, about 470 MB);
+`scripts/thumbnail-kit.mjs` makes the kit and `core/thumbnail-kit.mjs` holds its every choice. On Windows the app runs from an Electron
 runtime at `%LOCALAPPDATA%\Fabula\electron-win` pointed at this repo's UNC path — Chromium cannot
 spawn children from `\\wsl.localhost`; under WSLg it needs `--no-sandbox --no-zygote` on the CLI.
 

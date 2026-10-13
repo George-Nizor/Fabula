@@ -1,5 +1,59 @@
 # Fabula — product brief
 
+## The thumbnail kit (2026-10-13, after 0.3.2)
+
+Piece A of the suite's thumbnail work (`Instrumenta/docs/suite/thumbnail-uplift.md`): Fabula hands
+a thumbnail designer the film's best real material as a folder, `out/thumbnail-kit/`, schema v1.
+Imago imports it; neither side reads the other's project. Made by the Export step's Thumbnail kit
+card and the assistant's `thumbnail_kit`, as a background job (`scripts/job.mjs thumbnail_kit`).
+
+How the frames are chosen (`core/thumbnail-kit.mjs`, all of it tested without a model or a video;
+the I/O is `scripts/thumbnail-kit.mjs`). One ffmpeg pass decodes only the keyframes of the
+recording's span, keeps those inside the clean map's kept pieces (never within 50 ms of a cut), and
+crops the head and screen regions out of each. A face model reads every head crop: MediaPipe's Face
+Landmarker for the 52 blendshapes and the head's pose, and its Hand Landmarker for a finger
+pointing or a hand over the face. Around the 24 most promising moments a second pass reads eight
+frames a second for ±0.6 s, inside the same piece. The score is expression and quality (sharpness
+as the Laplacian's variance on the face at 128 px, light, real face pixels) multiplied by contact
+(eyes open, head and eyes toward the lens): the film's biggest laugh with the head turned away loses
+to a good smile down the lens. A hand over the face costs a third. Picks are spread over the tags
+and the film: at least 8 s apart when they look alike (the same gesture, and the same main tag or
+nearly the same readings), as close as 2 s when one is clearly different, so the finger guns 3.6 s
+after the opening smile are not thrown away for being near it. Each pick is taken again at the
+recording's resolution, read again, and written as a quality-95 JPEG; one that turns out to be a
+blink is replaced. Screens are deduplicated
+by a difference hash and by their histogram (a page scrolled is the same page). Hooks come from
+`read_story`'s reading, cut to a clause when long and never rewritten.
+
+Decided by measurement, on the first real film (a 10-minute 3440×1440 OBS recording, a 7.5-minute
+cut, the camera both full frame and as a corner inset):
+
+- **MediaPipe 1.1.0 over an ONNX route.** It gives eye openness, expression and pose from one
+  Apache-2.0 model at 7–8 ms a frame on a 960×540 crop (hands add 12 ms, only on frames with a
+  face). No permissive ONNX model gives eye openness and expression together; running MediaPipe's
+  own TFLite models by hand under onnxruntime or LiteRT would save about 300 MB of disk for a
+  reimplemented pipeline. The venv is about 470 MB: `--no-deps` with pinned versions
+  (`scripts/face-requirements.txt`) and OpenCV headless, because MediaPipe's own dependencies pull
+  in OpenCV contrib (which links libGL) and sounddevice (PortAudio). `libmediapipe.so` links
+  libGLESv2, which a WSL distribution lacks; `scripts/setup-face.sh` unpacks it from its .deb
+  without root, the way `setup-engine.sh` fetches Chromium's libraries.
+- **Timings:** 18–21 s end to end on this machine (coarse pass 9–10 s, most of it reading the
+  recording from a Windows drive; fine pass 5–7 s; final frames 3 s), against a budget of 60 s.
+- **What the scores learned from the real frames.** Contact multiplies rather than adds (a turned
+  head scored well additively); a real smile narrows the eyes, which the model reads as half
+  closed and looking away, so the more the face smiles the more is forgiven; a finger touching
+  the face is not pointing (the first pointing rule fired on fingers at the nose and chin); the
+  focus measure's midpoint moved from 60 to 250 because every face in a well-lit room scored
+  above 0.8. Yaw's sign was checked against frames: positive when the face turns toward the
+  frame's right edge.
+- **Without the face model** the kit is still made, chosen by sharpness, light, the camera
+  region's resolution and time, with no face signals or tags claimed, and the card and the tool
+  say why and how to fix it.
+
+Unfinished: `pointing` misses a finger pointed straight at the lens (foreshortened, it does not
+look extended); a film whose opening promises nothing gets no `promise` hook rather than an
+invented one.
+
 ## The Look step, one part at a time, with brands you can manage (2026-10-13, 0.3.2)
 
 The Look step lists the look's parts on the left (Brand, Colours and type, Titles, Callouts,

@@ -63,8 +63,9 @@ Promise.all([
   import(pathToFileURL(path.join(__dirname, "..", "core", "templates.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "core", "direction.mjs")).href),
   import(pathToFileURL(path.join(__dirname, "..", "core", "making.mjs")).href),
-]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making]) => {
-  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making };
+  import(pathToFileURL(path.join(__dirname, "..", "scripts", "thumbnail-kit.mjs")).href),
+]).then(([shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making, thumbnailKit]) => {
+  core = { shot, cut, compose, stage, themes, reanchor, formats, pipeline, inbox, themeStore, projectState, shorts, personas, templates, direction, making, thumbnailKit };
 })
   .catch((error) => console.error("core engines failed to load:", error));
 
@@ -316,6 +317,30 @@ function lookFromFiles(dir) {
   }
 }
 
+// The thumbnail kit as the Export step shows it: what is in it, its frames as pictures the page
+// can load (the kit's time in the URL, so a remade kit is not served from the cache), and
+// whether faces were ranked. Re-read only when kit.json or its report changes.
+function readKit(dir) {
+  return memoized("kit", dir, [path.join("out", "thumbnail-kit", "kit.json"), path.join("out", "thumbnail-kit.report.json")], () => {
+    try {
+      return core.thumbnailKit.readThumbnailKit(dir, { url: (file, stamp) => `${pathToFileURL(file).href}?v=${encodeURIComponent(stamp ?? "")}` });
+    } catch {
+      return null;
+    }
+  });
+}
+
+// Whether this install can rank faces for the kit, checked where the pipeline lives.
+let faceSetupMemo = null;
+function faceSetup() {
+  if (!core) return null;
+  if (faceSetupMemo && Date.now() - faceSetupMemo.at < 30000) return faceSetupMemo.value;
+  let value = null;
+  try { const a = core.thumbnailKit.faceAnalyser(REPO, { posixRoot: toPosixPath(REPO) ?? REPO }); value = { ready: a.ready, hint: a.hint }; } catch { value = null; }
+  faceSetupMemo = { at: Date.now(), value };
+  return value;
+}
+
 // The Export page's reading: the deliverables in out/, what is out of date
 // and why, the job in flight or the last failure, and whether the film can
 // be rendered from here at all.
@@ -335,6 +360,7 @@ function readExport(dir) {
       scenes: (config.scenes ?? []).length > 0,
       final: fs.existsSync(paths.final),
       previousTranscript: fs.existsSync(paths.previousCleanTranscript),
+      cleanMap: fs.existsSync(paths.cleanMap),
     };
     return {
       outputs: ps.outputs(dir),
@@ -346,6 +372,10 @@ function readExport(dir) {
       have,
       canRenderFinal: have.clean && have.cleanTranscript && have.scenes,
       canRefreshClean: have.review,
+      // What the kit job itself needs: the map of the cut and its transcript (it checks they agree).
+      canMakeKit: have.cleanMap && fs.existsSync(paths.cleanTranscript),
+      kit: readKit(dir),
+      faceSetup: faceSetup(),
       bridge: process.platform === "win32" ? (WSL_DISTRO ? `WSL (${WSL_DISTRO})` : null) : "local",
     };
   } catch {
@@ -417,6 +447,7 @@ function startRender(kind, options = {}) {
       }
     }
     if (kind === "refresh" && !fs.existsSync(paths.review)) throw new Error("Nothing to cut yet: no review.");
+    if (kind === "kit" && (!fs.existsSync(paths.cleanMap) || !fs.existsSync(paths.cleanTranscript))) throw new Error("The kit is made from the film as cut: refresh the clean cut first.");
     if (kind === "first" && !paths.video) throw new Error("This project has no recording.");
     // A draft is the whole film at half size in a fraction of the time;
     // it lands beside the film as draft.mp4 and never replaces it.

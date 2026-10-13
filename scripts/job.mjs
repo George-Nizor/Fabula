@@ -10,6 +10,7 @@
 //   node scripts/job.mjs refresh_clean media/<project>   (render_clean, then retranscribe; each skipped when current)
 //   node scripts/job.mjs first_pass    media/<project>   (transcribe, scan the framing, propose cuts; each skipped when done)
 //   node scripts/job.mjs motion_film   media/<project>   (a motion film's stand-in recording, its words and its clean cut)
+//   node scripts/job.mjs thumbnail_kit media/<project>   (out/thumbnail-kit/: the frames, pictures and story for a thumbnail)
 //
 // Exit 0 on success with progress.json cleared, 1 on failure with the note
 // left in progress.json and the error on stderr (captured to out/<stage>.log).
@@ -22,6 +23,7 @@ import { normalizeCuts } from "../core/cut-engine.mjs";
 import { ceilingOf } from "../core/formats.mjs";
 import { spawnSync } from "node:child_process";
 import { readProjectMeta } from "./project-state.mjs";
+import { makeThumbnailKit } from "./thumbnail-kit.mjs";
 import {
   REPO_ROOT,
   FFMPEG,
@@ -45,7 +47,7 @@ import {
 
 const [stage, dirArg] = process.argv.slice(2);
 if (!stage || !dirArg) {
-  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe|refresh_clean|first_pass|motion_film> <project-dir>");
+  console.error("usage: node scripts/job.mjs <render_clean|transcribe|retranscribe|refresh_clean|first_pass|motion_film|thumbnail_kit> <project-dir>");
   process.exit(2);
 }
 const dir = path.resolve(REPO_ROOT, dirArg);
@@ -270,6 +272,15 @@ const steps = {
     if (cleanTranscriptCurrent(path.join(dir, "clean.json"), cleanFile, current)) say("clean.json already describes this clean cut");
     else await steps.retranscribe(report);
   },
+
+  // The thumbnail kit: the film's best face frames, its screens, the pictures its scenes show and
+  // its story, for a thumbnail designer (scripts/thumbnail-kit.mjs). Reads the recording, writes
+  // only out/thumbnail-kit/ and the report beside it.
+  async thumbnail_kit(report) {
+    const made = await makeThumbnailKit(dir, { onProgress: report, log: say });
+    const { counts, faceAnalysis, timings } = made.report;
+    say(`thumbnail kit: ${counts.faces} face frames, ${counts.screens} screen frames, ${counts.pictures} pictures, ${counts.hooks} hooks; ${faceAnalysis.used ? faceAnalysis.engine : `face ranking unavailable (${faceAnalysis.reason})`}; ${JSON.stringify(timings)}`);
+  },
 };
 
 const labels = {
@@ -279,6 +290,7 @@ const labels = {
   retranscribe: "Transcribing the clean cut",
   refresh_clean: "Refreshing the clean cut",
   motion_film: "Making the motion film's clock",
+  thumbnail_kit: "Making the thumbnail kit",
 };
 
 const step = steps[stage];

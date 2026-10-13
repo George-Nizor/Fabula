@@ -61,7 +61,7 @@ import { readStory, editorialCuts } from "../core/story-engine.mjs";
 import { describePacing } from "../core/pacing.mjs";
 import { PERSONAS, PERSONA_IDS, CRAFT_DOCS, validatePersona, describePersonas } from "../core/personas.mjs";
 import { validateAudio, describeAudio, bedSpans, assetAudioPath, effectSounds, swellWindows, AUDIO_EXTENSIONS, MUSIC_DEFAULTS } from "../core/audio-engine.mjs";
-import { chapterList } from "../core/chapters.mjs";
+import { chapterList, openingTitle } from "../core/chapters.mjs";
 import { hostPath } from "../scripts/host-path.mjs";
 import { draftScenes } from "../core/draft-engine.mjs";
 import { normalizeCuts, flattenWords, keepWords, setCutBounds, totalCutSeconds } from "../core/cut-engine.mjs";
@@ -81,6 +81,7 @@ import { INVARIANTS } from "../core/assistant-brief.mjs";
 import { validateDirection, directionBrief, describeDirection, directionRefusal, rulesFor, LATITUDE_IDS, LATITUDES } from "../core/direction.mjs";
 import { validateMotionDoc, describeMotion, motionLibsOf, MOTION_LIBS, MOTION_NAME_RE, MOTION_LIB_NAME_RE } from "../core/motion.mjs";
 import { validateTreatment, describeTreatment } from "../core/treatment.mjs";
+import { readThumbnailKit, faceAnalyser } from "../scripts/thumbnail-kit.mjs";
 
 // media/ beside the checkout, or the folder fabula.settings.json names; read
 // per call so a change made in the window applies to the next tool call.
@@ -399,11 +400,35 @@ function describeFinished(dir, stage) {
     const transcript = fs.existsSync(file) ? readJson(file) : null;
     return { stage, transcript: file, words: transcript ? flattenWords(transcript).length : null, log: logTail(log) };
   }
+  if (stage === "thumbnail_kit") return { stage, ...describeKit(dir), log: logTail(log) };
   if (stage === "motion_film") {
     const words = fs.existsSync(paths.cleanTranscript) ? flattenWords(readJson(paths.cleanTranscript)).length : null;
     return { stage, seconds: fs.existsSync(paths.clean) ? Number(probeDuration(paths.clean).toFixed(2)) : null, words, clean: cleanSummary(dir), log: logTail(log) };
   }
   return { stage, log: logTail(log) };
+}
+
+// The thumbnail kit as the assistant reads it: where every frame is, what it shows and how it was
+// ranked, the hooks and the pictures, and, when faces were not ranked, why and how to fix that.
+function describeKit(dir) {
+  const kit = readThumbnailKit(dir);
+  if (!kit) return { kit: null };
+  const unranked = kit.faceRanked === false;
+  return {
+    kit: kit.folder,
+    createdAt: kit.createdAt,
+    counts: kit.counts,
+    faceRanking: unranked
+      ? { used: false, reason: kit.faceAnalysis?.reason ?? "the face analyser was not used", fix: kit.faceAnalysis?.hint ?? faceAnalyser().hint }
+      : { used: true, by: kit.faceAnalysis?.engine ?? "MediaPipe" },
+    frames: kit.frames.map(({ path: file, kind, atSeconds, tags, score, words }) => ({ path: file, kind, atSeconds, ...(kind === "face" ? { tags, score } : {}), words })),
+    hooks: kit.hooks,
+    pictures: kit.pictures,
+    seconds: kit.timings?.total ?? null,
+    hint: unranked
+      ? "Face ranking was unavailable, so the face frames were chosen by sharpness, light and time only: look at them before trusting any. Say so to the person, with the fix."
+      : "Look at the frames before you describe them. kit.json in the folder is the whole kit (schema: Instrumenta/docs/suite/thumbnail-uplift.md); Imago imports the folder as it is.",
+  };
 }
 
 // A motion film's narration, copied into the project so the film does not
@@ -1712,13 +1737,6 @@ server.registerTool("read_story", {
 // which is also what makes them safe against the person's own edits in the
 // window between turns.
 
-// The film's own title, when the plan opens on a title card: the 0:00 chapter
-// is that, not the project's working name.
-function openingTitle(scenes) {
-  const first = scenes.find((scene) => scene.type === "title" && scene.start <= 1.0 && typeof scene.text === "string" && scene.text.trim());
-  return first ? first.text.trim() : null;
-}
-
 // The film's length as the render measures it — the clean cut's, when it
 // exists — so every read of a plan settles the layout timeline the way the
 // export and the window will. The last word's end is the length before the
@@ -2570,6 +2588,27 @@ server.registerTool("render_thumbnail", {
   const scaled = tiles.map((_, i) => `[${i}:v]scale=${projectFormatSafe() === "vertical" ? 270 : 480}:-2[t${i}]`).join(";");
   execFileSync(FFMPEG, ["-y", "-v", "error", ...inputs, "-filter_complex", `${scaled};${tiles.map((_, i) => `[t${i}]`).join("")}hstack=inputs=${tiles.length}:shortest=1`, out]);
   return ok({ file: out, variants: tiles, hint: "each is shown at the size a feed shows it; the one whose words you read first without trying is the one. render_thumbnail with that line alone writes out/thumbnail.png" });
+});
+
+server.registerTool("thumbnail_kit", {
+  description:
+    "The thumbnail kit: the film's best real material for a thumbnail or a vertical cover, written to out/thumbnail-kit/ for Imago (or any designer) to work from. Up to 12 face frames from the head camera at the recording's own resolution, uncropped, ranked by a local face model (eyes open and on the lens, expression, sharpness, light) with tags (smile, laugh, surprise, intense, speaking, pointing, neutral), at least 8 s apart when they look alike and as close as 2 s when one is clearly different (another tag, or a gesture such as finger guns or hands up); up to 6 distinct screen frames; up to 12 pictures the scenes show, with their credits; up to 6 hook lines in the speaker's own words; the chapters; the look's colours and fonts. Only material the cut film shows, never cut-out footage. A background job of about half a minute (the window's Export step has the same button): returns when done or, past wait_seconds, as still running (then wait_render). read_only: true describes the kit already written without making it again. render_thumbnail is a different thing: one composed frame with words on it.",
+  inputSchema: {
+    read_only: z.boolean().optional().describe("Describe the kit already in out/thumbnail-kit/ without making it again"),
+    wait_seconds: waitSchema,
+  },
+}, async ({ read_only, wait_seconds }) => {
+  const dir = currentProjectDir();
+  if (read_only) {
+    const described = describeKit(dir);
+    if (!described.kit) throw new Error("no thumbnail kit yet; call thumbnail_kit without read_only to make one");
+    return ok(described);
+  }
+  const paths = projectPaths(dir);
+  if (!fs.existsSync(paths.cleanMap)) throw new Error("no clean cut yet: the kit takes only what the film shows, so render_clean (and retranscribe_clean) first");
+  if (!fs.existsSync(paths.cleanTranscript)) throw new Error("no clean transcript yet: retranscribe_clean first");
+  launchJob(dir, jobSpec("kit", dir), RUNNER);
+  return settle(dir, wait_seconds, () => describeFinished(dir, "thumbnail_kit"));
 });
 
 server.registerTool("preview_sheet", {

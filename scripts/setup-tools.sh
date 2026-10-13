@@ -4,6 +4,9 @@
 #                          NVIDIA machine, h264_nvenc — WSL exposes the encoder
 #                          library, so the 4080 encodes both renders)
 #   .venv-whisperx/        WhisperX on CUDA (several GB of torch wheels)
+#   .venv-face/            the thumbnail kit's face analyser: MediaPipe's Face and Hand Landmarkers
+#                          on the CPU, about 470 MB (scripts/setup-face.sh). Optional: without it
+#                          the kit still picks frames, by sharpness and time
 # Idempotent: existing installs are left alone, except an older ffmpeg without
 # NVENC support, which is replaced. Re-run after deleting a folder to reinstall.
 set -euo pipefail
@@ -51,5 +54,9 @@ if torch.cuda.is_available():
     print(f"device: {torch.cuda.get_device_name(0)}")
 PY
 fi
+
+echo "== Face analyser (thumbnail kit) =="
+# Its own folder, never WhisperX's. A failure here costs the kit its face ranking, not the tools.
+bash scripts/setup-face.sh .venv-face || echo "face analyser not installed; the thumbnail kit will choose frames without it (run bash scripts/setup-face.sh .venv-face to try again)"
 
 echo "== done =="

@@ -23,7 +23,7 @@ import {
 // The floor ffmpeg measures for silence sits near -70 LUFS.
 export const SILENT_LUFS = -60;
 
-export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean", "motion_film"];
+export const JOB_STAGES = ["first_pass", "render_clean", "render_final", "transcribe", "retranscribe", "refresh_clean", "motion_film", "thumbnail_kit"];
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
@@ -409,6 +409,7 @@ export function jobSpec(kind, dir, options = {}) {
   if (kind === "refresh") return { stage: "refresh_clean", label: "Refreshing the clean cut", program: "node", args: [job, "refresh_clean", dir] };
   if (kind === "first") return { stage: "first_pass", label: "The first pass", program: "node", args: [job, "first_pass", dir] };
   if (kind === "motion") return { stage: "motion_film", label: "Making the motion film's clock", program: "node", args: [job, "motion_film", dir] };
+  if (kind === "kit") return { stage: "thumbnail_kit", label: "Making the thumbnail kit", program: "node", args: [job, "thumbnail_kit", dir] };
   if (kind === "final") {
     const args = ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", join(root, "scripts", "export-compose.cjs")];
     if (options.from !== undefined || options.to !== undefined) {

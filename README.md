@@ -34,7 +34,7 @@ assistant.
 ```bash
 npm install
 npm test              # node --test test/*.test.mjs; pure node, no media tools needed
-npm run setup:tools   # static ffmpeg and a WhisperX venv under tools/, no sudo
+npm run setup:tools   # static ffmpeg, a WhisperX venv and the thumbnail kit's face analyser, no sudo
 npm start             # Electron window
 ```
 
@@ -135,7 +135,8 @@ The top bar has four numbered steps (Ctrl+1 to 4):
 - **Scenes**: the film on the 1080p stage. Click a timeline block for its text, style, fields and
   word span, or duplicate or remove it. Drop a picture or clip onto the stage to place it beside
   the head at the playhead. The box at the foot of the inspector tells the assistant what to change.
-- **Export**: render buttons, progress, what is out of date and why, and every file the renders wrote.
+- **Export**: render buttons, progress, what is out of date and why, the thumbnail kit, and every
+  file the renders wrote.
 
 The timeline is a window over the film: ctrl + wheel zooms, a plain wheel pans, the minimap shows
 the whole film, and J/K/L, comma and period, Home and End work as in any editor.
@@ -149,8 +150,8 @@ visual grammar and reference styles described as methods), `read_story` to mark 
 before composing, 27 named graphic templates filled in from fields, B-roll you have (`import_clip`),
 a pacing and variety read on every plan write, and `preview_sheet`, which tiles the film into one
 picture before it renders. It also handles a grade and voice clean-up (`set_theme`, `set_audio`), a
-music bed ducked from the transcript, captions, thumbnails (`render_thumbnail`), chapters
-(`export_chapters`) and image credits.
+music bed ducked from the transcript, captions, thumbnails (`render_thumbnail`), the thumbnail kit
+(`thumbnail_kit`), chapters (`export_chapters`) and image credits.
 
 Captions have four modes: burned in, closed (an SRT and VTT beside every render), both, or none
 (`set_captions`).
@@ -169,6 +170,27 @@ only overlays that change are captured, and each chunk under `out/chunks/` is re
 something inside it changes. Both encode on the GPU when there is an NVIDIA card (NVENC works from
 WSL with the ffmpeg build `npm run setup:tools` installs). They run as background jobs with progress
 in the masthead, started from the Export step or by the assistant with the same arguments.
+
+### The thumbnail kit
+
+**Make kit** on the Export step's Thumbnail kit card (or the assistant's `thumbnail_kit`) writes
+`out/thumbnail-kit/`: the film's best real material for a thumbnail or a vertical cover, for
+Imago or any designer. It holds up to twelve face frames from the head camera at the recording's
+own resolution, uncropped, up to six distinct screen frames, the pictures the scenes show with
+their credits, up to six hook lines in the speaker's own words, the chapters, and the look's
+colours and fonts, described in `kit.json` (schema v1, defined in Instrumenta's
+`docs/suite/thumbnail-uplift.md`). Frames come only from what the cut film shows. The card shows
+the frames it picked with their tags, and **Open folder** opens the kit.
+
+A local face model ranks the faces: MediaPipe's Face and Hand Landmarkers on the CPU, in their own
+venv (`.venv-face`, about 470 MB, installed by `npm run setup:tools`; models pinned by SHA-256). It
+prefers eyes open and on the lens, an expression, no hand over the face, sharpness and light, and
+spreads the picks across the tags (`smile`, `laugh`, `surprise`, `intense`, `speaking`, `pointing`,
+`neutral`) and across the film: frames that look alike at least eight seconds apart, a clearly
+different one (another tag, or a gesture such as finger guns or hands up) as close as two. Without it the kit is still made, with frames chosen
+by sharpness, light and time, and the card says why and how to set it up. A ten-minute 1440p
+recording takes about twenty seconds. A short's kit says `vertical`; the frames are still the
+camera's own, and the designer crops.
 
 ## Tall films and shorts
 
@@ -215,8 +237,8 @@ it up to date. The release is Electron's Windows runtime with a bootstrap as its
 (`release/windows/`); the editor itself runs in WSL. The first time a version starts, the bootstrap
 sets up Fabula's engine in the default WSL distribution (`scripts/setup-engine.sh`, no sudo): the
 version's code under `~/.local/share/fabula/versions/`, Node when the distribution has no Node 22,
-ffmpeg, the Chromium libraries renders need, and WhisperX on CUDA. That is about 7 GB once, and an
-update reuses it. The first setup asks where the projects go: a folder on Windows
+ffmpeg, the Chromium libraries renders need, WhisperX on CUDA, and the thumbnail kit's face
+analyser. That is about 7.5 GB once, and an update reuses it. The first setup asks where the projects go: a folder on Windows
 (`Videos\Fabula` suggested; shown in Explorer, removals go to the Recycle Bin, renders a little
 slower) or `~/.local/share/fabula/projects` inside WSL (fastest, but only reached through
 `\\wsl.localhost`). **Change…** moves them later. You need WSL with a Linux distribution, and

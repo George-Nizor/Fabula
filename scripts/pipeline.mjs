@@ -332,7 +332,11 @@ export function reportProgress(dir, stage, label, detail = "", extra = {}) {
   // a time remaining from it rather than showing the job's own log line.
   if (Number.isFinite(extra.fraction)) record.fraction = Math.min(Math.max(extra.fraction, 0), 1);
   if (pid) { record.pid = pid; record.platform = platform ?? process.platform; }
-  fs.writeFileSync(file, JSON.stringify(record, null, 2));
+  // Beside and renamed: a reader polling while a job reports often would otherwise catch the file
+  // half written, read no job at all, and call it done.
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(record, null, 2));
+  fs.renameSync(temp, file);
 }
 
 export function clearProgress(dir) {
@@ -344,7 +348,7 @@ export function clearProgress(dir) {
 export async function withProgress(dir, stage, label, step) {
   reportProgress(dir, stage, label, "", { pid: process.pid });
   try {
-    const result = await step((detail) => reportProgress(dir, stage, label, detail));
+    const result = await step((detail, extra) => reportProgress(dir, stage, label, detail, extra));
     clearProgress(dir);
     return result;
   } catch (error) {

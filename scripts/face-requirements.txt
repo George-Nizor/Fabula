@@ -1,0 +1,21 @@
+# The face analyser's venv (scripts/setup-face.sh), installed with --no-deps so this list is the
+# whole of it. MediaPipe asks for opencv-contrib-python and sounddevice; the analyser needs neither
+# (contrib links libGL, sounddevice wants PortAudio, both absent from a WSL distribution), so the
+# headless OpenCV stands in and sounddevice is left out. matplotlib is only here because MediaPipe's
+# vision package imports its drawing helpers when it loads.
+mediapipe==1.1.0
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
+absl-py==2.5.1
+flatbuffers==25.12.19
+certifi==2026.7.22
+matplotlib==3.11.2
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.66.1
+kiwisolver==1.5.1
+packaging==26.3
+pillow==12.3.0
+pyparsing==3.3.3
+python-dateutil==2.9.0.post0
+six==1.17.0
