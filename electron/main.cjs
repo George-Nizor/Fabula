@@ -755,7 +755,10 @@ function codexModels() {
 }
 
 function assistantOptions() {
-  const prefs = readJson(path.join(REPO, ".assistant-preferences.json"));
+  // The engine's home when installed (it survives updates), else beside the
+  // checkout; the session writes it from the WSL side, this side only reads.
+  const kept = settings.assistantPreferencesFile();
+  const prefs = readJson(kept === settings.CHECKOUT_PREFERENCES ? kept : toLocalPath(kept)) ?? readJson(settings.CHECKOUT_PREFERENCES);
   return {
     provider: prefs?.provider === "claude" ? "claude" : prefs?.provider === "codex" ? "codex" : "claude",
     // The last choice per CLI, and Claude Code on Opus at medium effort

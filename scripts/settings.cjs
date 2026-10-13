@@ -90,4 +90,14 @@ function writeMusicRoot(value, file = SETTINGS_FILE) {
   return settings.musicRoot ?? null;
 }
 
-module.exports = { SETTINGS_FILE, readSettings, validateProjectsRoot, configuredProjectsRoot, engineProjectsRoot, writeProjectsRoot, configuredMusicRoot, writeMusicRoot };
+// The person's assistant choice (CLI, model, effort, persona). An installed
+// engine keeps it in its home, beside the projects, so an update (a new
+// versions/<v> folder) does not forget it; a checkout keeps it beside the
+// code. As the pipeline sees it (POSIX for an engine).
+const CHECKOUT_PREFERENCES = path.join(__dirname, "..", ".assistant-preferences.json");
+function assistantPreferencesFile(file = ENGINE_HOME_FILE) {
+  const projects = engineProjectsRoot(file);
+  return projects ? path.posix.join(path.posix.dirname(projects), "assistant-preferences.json") : CHECKOUT_PREFERENCES;
+}
+
+module.exports = { SETTINGS_FILE, CHECKOUT_PREFERENCES, assistantPreferencesFile, readSettings, validateProjectsRoot, configuredProjectsRoot, engineProjectsRoot, writeProjectsRoot, configuredMusicRoot, writeMusicRoot };

@@ -5,11 +5,19 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
+import { createRequire } from "node:module";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
 import { PERSONAS, PERSONA_IDS, DEFAULT_PERSONA, validatePersona } from "../core/personas.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PREFS = path.join(ROOT, ".assistant-preferences.json");
+// Where the choice is kept (scripts/settings.cjs): the engine's home when
+// installed, so updates keep it; beside the code in a checkout. A choice an
+// older version kept beside its code is read once and carried over.
+const settings = createRequire(import.meta.url)("./settings.cjs");
+const PREFS = settings.assistantPreferencesFile();
+if (PREFS !== settings.CHECKOUT_PREFERENCES && !fs.existsSync(PREFS) && fs.existsSync(settings.CHECKOUT_PREFERENCES)) {
+  try { fs.copyFileSync(settings.CHECKOUT_PREFERENCES, PREFS); fs.chmodSync(PREFS, 0o600); } catch { /* the defaults apply */ }
+}
 export const EFFORTS = {
   codex: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
   claude: ["low", "medium", "high", "xhigh", "max"],
