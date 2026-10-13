@@ -413,6 +413,24 @@ function setProgressIcon(name) {
   if (name === "failed") playOnce(holder, 600);
 }
 
+// A job's progress in words a person reads at a glance: how far, and how
+// long is left once there is enough of a run to say. The job's own log line
+// stays on the tooltip, for whoever is chasing a problem.
+function jobRemaining(p) {
+  const f = p?.fraction;
+  if (!Number.isFinite(f) || f < 0.04 || !p.startedAt) return "";
+  const elapsed = (Date.now() - Date.parse(p.startedAt)) / 1000;
+  const left = (elapsed / f) * (1 - f);
+  if (!Number.isFinite(left) || left < 0) return "";
+  if (left < 45) return "under a minute left";
+  return `about ${Math.round(left / 60)} min left`;
+}
+function jobSummary(p) {
+  if (!Number.isFinite(p?.fraction)) return "";
+  const remaining = jobRemaining(p);
+  return `${Math.round(p.fraction * 100)}%${remaining ? ` · ${remaining}` : ""}`;
+}
+
 function renderProgress() {
   const p = state?.progress;
   const run = p ? null : makingRun();
@@ -429,12 +447,12 @@ function renderProgress() {
     return;
   }
   if (!p) return;
-  els.progress.title = "The Export step has the jobs and their logs";
   const failed = typeof p.detail === "string" && p.detail.startsWith("failed:");
+  els.progress.title = failed ? "The Export step has the log" : `${p.detail ?? ""}\nThe Export step has the jobs and their logs`.trim();
   els.progress.classList.toggle("is-failed", failed);
   setProgressIcon(failed ? "failed" : "hourglass");
   els.progressLabel.textContent = failed ? `${p.label} failed` : p.label;
-  els.progressDetail.textContent = failed ? p.detail.slice(8) : (p.detail ?? "");
+  els.progressDetail.textContent = failed ? p.detail.slice(8) : jobSummary(p);
   els.progressDetail.hidden = !els.progressDetail.textContent;
   els.progressClock.hidden = failed;
 }
@@ -1736,6 +1754,9 @@ async function reanchorScenes() {
 }
 
 function renderExportPage() {
+  // The page is rebuilt on every push (once a second while a job runs); a
+  // dropdown open under the pointer would close under it.
+  if (document.activeElement instanceof HTMLSelectElement && els.exportMain.contains(document.activeElement)) return;
   const e = state?.export;
   els.exportMain.replaceChildren();
   els.exportMain.append(make("div", "page-head", "<h2>Export</h2><p class=\"page-lede\">The film re-renders only the parts that changed.</p>"));
@@ -1746,8 +1767,23 @@ function renderExportPage() {
   if (e.running) {
     const card = make("div", "export-card is-busy");
     card.append(make("div", "export-card-head", `<span class="export-spinner">${icon("hourglass", 24)}</span><b>${esc(e.running.label)}</b><span class="export-clock" id="export-clock"></span>`));
-    card.append(make("p", "export-detail", esc(e.running.detail ?? "")));
-    card.append(make("p", "field-note", `Logging to out/${esc(e.running.stage)}.log. It keeps running if this window closes.`));
+    const f = e.running.fraction;
+    if (Number.isFinite(f)) {
+      const bar = make("div", "export-bar");
+      bar.append(make("span"));
+      bar.firstChild.style.width = `${Math.max(f * 100, 1)}%`;
+      bar.title = e.running.detail ?? "";
+      card.append(bar);
+      const eta = make("p", "export-eta", esc(jobSummary(e.running)));
+      eta.id = "export-eta";
+      card.append(eta);
+    } else {
+      card.append(make("p", "export-eta", "Working…"));
+    }
+    const foot = make("div", "export-actions is-quiet");
+    foot.append(make("span", "field-note", "Keeps going if you close the window."));
+    if (e.running.log) foot.append(actionButton("Show log", () => window.fabula.reveal(e.running.log), { small: true, icon: "page" }));
+    card.append(foot);
     els.exportMain.append(card);
   } else if (e.lastFailure) {
     const card = make("div", "export-card is-failed");
@@ -1760,42 +1796,53 @@ function renderExportPage() {
   }
   if (exportFlash) els.exportMain.append(make("p", `export-flash${exportFlash.isError ? " is-error" : ""}`, esc(exportFlash.text)));
 
+  // Two columns on a wide window: the film and its clean cut, then the
+  // files and the shorts.
+  const grid = make("div", "export-grid");
+  const left = make("div", "export-col");
+  const right = make("div", "export-col");
+  grid.append(left, right);
+  els.exportMain.append(grid);
+
   // The film.
   const film = make("section", "export-card");
   film.append(make("h3", "", `${icon("reel", 30)}Film`));
   const final = e.outputs.find((o) => o.kind === "film");
   let status;
-  if (final && stale["final.mp4"]) status = `Rendered ${fmtWhen(final.modifiedAt)}, ${fmtBytes(final.bytes)}. Out of date: ${stale["final.mp4"].because}.`;
-  else if (final) status = `Rendered ${fmtWhen(final.modifiedAt)}, ${fmtBytes(final.bytes)}. Up to date.`;
+  if (final && stale["final.mp4"]) status = `Rendered ${fmtWhen(final.modifiedAt)} · ${fmtBytes(final.bytes)} · out of date: ${stale["final.mp4"].because}.`;
+  else if (final) status = `Rendered ${fmtWhen(final.modifiedAt)} · ${fmtBytes(final.bytes)} · up to date`;
   else if (!e.have.clean) status = "Needs the clean cut first.";
   else if (!e.have.cleanTranscript) status = "Needs the clean cut's transcript; refresh the clean cut below.";
   else if (!e.have.scenes) status = "No scenes yet. The assistant plans them.";
   else status = "Not rendered yet.";
   film.append(make("p", `export-status${final && stale["final.mp4"] ? " is-stale" : ""}`, esc(status)));
+  film.append(exportSettingsRow());
   const filmRow = make("div", "export-actions");
   // What the person most likely wants is the primary: watching a film that
   // is current, rendering one that is not.
   const current = final && !stale["final.mp4"];
+  const settings = exportSettings();
+  const renderFilm = (fresh) => startRender("final", { size: settings.size, quality: settings.quality, ...(fresh ? { fresh: true } : {}) });
   if (current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { primary: true, icon: "play" }));
-  filmRow.append(actionButton(final ? "Render the film again" : "Render the film", () => startRender("final"), { primary: !current, small: Boolean(current), disabled: busy || !e.canRenderFinal, icon: "reel" }));
+  filmRow.append(actionButton(final ? "Render again" : "Render the film", () => renderFilm(false), { primary: !current, disabled: busy || !e.canRenderFinal, icon: "reel" }));
   if (final) {
-    if (!current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { small: true, icon: "play" }));
-    filmRow.append(actionButton("Render from scratch", () => startRender("final", { fresh: true }), { small: true, disabled: busy, title: "Ignore the cached chunks and render every one again", icon: "refresh" }));
-    filmRow.append(actionButton("Show in folder", () => window.fabula.reveal(final.path), { small: true, icon: "folder" }));
+    if (!current) filmRow.append(actionButton("Play", () => window.fabula.openOutput(final.path), { icon: "play" }));
+    filmRow.append(actionButton("Show in folder", () => window.fabula.reveal(final.path), { icon: "folder" }));
+    filmRow.append(actionButton("From scratch", () => renderFilm(true), { small: true, disabled: busy, title: "Ignore the cached chunks and render every one again", icon: "refresh" }));
   }
   film.append(filmRow);
-  // A draft: the whole film at half size, for looking at the cut and the
-  // cards before the real render; it never replaces the film.
+  // A draft: the whole film at half size, for checking the cut and the cards
+  // before the real render; it never replaces the film.
   const draft = e.outputs.find((o) => o.kind === "draft");
-  const draftRow = make("div", "export-actions");
-  draftRow.append(actionButton(draft ? "Render a draft again" : "Render a draft", () => startRender("final", { draft: true }), { small: true, disabled: busy || !e.canRenderFinal, title: "The whole film at half size, in a fraction of the time, as draft.mp4", icon: "reel" }));
-  if (draft) {
-    draftRow.append(actionButton("Play the draft", () => window.fabula.openOutput(draft.path), { small: true, icon: "play" }));
-    draftRow.append(make("span", "field-note", `Draft from ${esc(fmtWhen(draft.modifiedAt))}, ${esc(fmtBytes(draft.bytes))}.`));
-  }
-  film.append(draftRow);
+  const draftBox = make("div", "export-sub");
+  draftBox.append(make("div", "export-sub-text", `<b>Draft</b><span>${draft ? `Half size · ${esc(fmtWhen(draft.modifiedAt))} · ${esc(fmtBytes(draft.bytes))}` : "Half size, quick to check before the real render"}</span>`));
+  const draftRow = make("div", "export-sub-actions");
+  if (draft) draftRow.append(actionButton("Play", () => window.fabula.openOutput(draft.path), { small: true, icon: "play" }));
+  draftRow.append(actionButton(draft ? "Render again" : "Render a draft", () => startRender("final", { draft: true }), { small: true, disabled: busy || !e.canRenderFinal, icon: "reel" }));
+  draftBox.append(draftRow);
+  film.append(draftBox);
   film.append(make("p", "field-note", esc(CAPTION_FILES[e.captionMode] ?? "")));
-  els.exportMain.append(film);
+  left.append(film);
 
   // The clean cut.
   const clean = make("section", "export-card");
@@ -1822,10 +1869,7 @@ function renderExportPage() {
   }
   clean.append(cleanRow);
   clean.append(make("p", "field-note", "Needed only after the cuts or the framing change."));
-  els.exportMain.append(clean);
-
-  // Shorts cut out of this film.
-  els.exportMain.append(shortsCard(e, busy));
+  left.append(clean);
 
   // Files.
   const files = make("section", "export-card");
@@ -1847,7 +1891,58 @@ function renderExportPage() {
     }
     files.append(table);
   }
-  els.exportMain.append(files);
+  right.append(files);
+
+  // Shorts cut out of this film.
+  right.append(shortsCard(e, busy));
+}
+
+// The film's size and quality, remembered in this window between renders.
+const QUALITY_CHOICES = [
+  { id: "high", label: "High", about: "the largest file" },
+  { id: "balanced", label: "Balanced", about: "about half the size" },
+  { id: "small", label: "Smaller file", about: "about a quarter of the size" },
+];
+function exportSizes() {
+  const stage = state?.format?.stage ?? { width: 1920, height: 1080 };
+  const short = Math.min(stage.width, stage.height);
+  const at = (side) => {
+    const k = side / short;
+    return { size: side, label: `${Math.round(stage.width * k / 2) * 2}×${Math.round(stage.height * k / 2) * 2}` };
+  };
+  return [short, 720, 540].filter((side, i, all) => side <= short && all.indexOf(side) === i).map(at);
+}
+function exportSettings() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("fabula.export") ?? "{}") ?? {}; } catch { saved = {}; }
+  const sizes = exportSizes();
+  return {
+    size: sizes.some((s) => s.size === saved.size) ? saved.size : sizes[0].size,
+    quality: QUALITY_CHOICES.some((q) => q.id === saved.quality) ? saved.quality : "high",
+  };
+}
+function saveExportSettings(next) {
+  try { localStorage.setItem("fabula.export", JSON.stringify({ ...exportSettings(), ...next })); } catch { /* kept for this render only */ }
+  renderExportPage();
+}
+function exportSettingsRow() {
+  const now = exportSettings();
+  const row = make("div", "export-settings");
+  const pick = (label, options, value, onChange) => {
+    const field = make("label", "export-field");
+    field.append(make("span", "", esc(label)));
+    const select = document.createElement("select");
+    for (const option of options) select.append(new Option(option.label, String(option.value)));
+    select.value = String(value);
+    select.addEventListener("change", () => { select.blur(); onChange(select.value); });
+    field.append(select);
+    return field;
+  };
+  const sizes = exportSizes();
+  row.append(pick("Resolution", sizes.map((s, i) => ({ value: s.size, label: i === 0 ? `${s.label} (full)` : s.label })), now.size, (v) => saveExportSettings({ size: Number(v) })));
+  row.append(pick("Quality", QUALITY_CHOICES.map((q) => ({ value: q.id, label: q.label })), now.quality, (v) => saveExportSettings({ quality: v })));
+  row.append(make("span", "field-note", esc(QUALITY_CHOICES.find((q) => q.id === now.quality)?.about ?? "")));
+  return row;
 }
 
 // ---- Shorts ----
@@ -3089,6 +3184,13 @@ function tick() {
   if (mode === "export" && state?.export?.running?.startedAt) {
     const clock = $("export-clock");
     if (clock) clock.textContent = fmt((Date.now() - Date.parse(state.export.running.startedAt)) / 1000, false);
+    const eta = $("export-eta");
+    const text = jobSummary(state.export.running);
+    if (eta && text && eta.textContent !== text) eta.textContent = text;
+  }
+  if (since && !els.progress.hidden && !els.progress.classList.contains("is-making") && Number.isFinite(state?.progress?.fraction)) {
+    const text = jobSummary(state.progress);
+    if (els.progressDetail.textContent !== text) els.progressDetail.textContent = text;
   }
   if (!state || els.player.hidden || !onStage()) return;
   const stamp = performance.now();

@@ -119,9 +119,10 @@ function glowImage(file, size, accent, strength) {
 
 // Everything logged is also the window's progress line.
 let label = "Rendering the film";
+let fraction = 0; // how far through, for the window's bar
 function say(text) {
   console.log(`[${new Date().toISOString()}] ${text}`);
-  pipeline.reportProgress(projectDir, STAGE, label, text, { pid: process.pid });
+  pipeline.reportProgress(projectDir, STAGE, label, text, { pid: process.pid, fraction });
 }
 
 async function main() {
@@ -153,16 +154,24 @@ async function main() {
   // whole thing in a fraction of the time. Everything downstream reads the
   // stage's size, so scaling that one object scales the capture windows,
   // the head's rectangles, the glow and the masks together.
-  const scale = Math.min(Math.max(Number(flag("scale") ?? 1), 0.25), 1);
-  const draft = scale < 1;
+  const draft = Math.min(Math.max(Number(flag("scale") ?? 1), 0.25), 1) < 1;
   // The canvas is the project's delivery format, so the capture windows, the
   // field plate, the glow and every rectangle follow from one number.
   const meta = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8")); } catch { return {}; }
   })();
   const fullStage = formats.stageOf(meta);
-  const stage = draft ? { width: Math.round(fullStage.width * scale / 2) * 2, height: Math.round(fullStage.height * scale / 2) * 2 } : fullStage;
-  if (draft) say(`draft at ${Math.round(scale * 100)}%: ${stage.width}×${stage.height}`);
+  // The film's size, from the Export page: --size=720 asks for a short side
+  // of 720 px (1280×720 for a wide film, 720×1280 for a tall one). Never
+  // larger than the stage: the picture is composed at the stage's pixels.
+  const shortSide = Math.min(fullStage.width, fullStage.height);
+  const scale = draft
+    ? Math.min(Math.max(Number(flag("scale")), 0.25), 1)
+    : Math.min(Math.max(Number(flag("size") ?? shortSide), 240) / shortSide, 1);
+  const stage = scale < 1 ? { width: Math.round(fullStage.width * scale / 2) * 2, height: Math.round(fullStage.height * scale / 2) * 2 } : fullStage;
+  if (scale < 1) say(`${draft ? "draft" : "film"} at ${stage.width}×${stage.height}`);
+  const quality = draft ? "high" : flag("quality") ?? "high";
+  if (!pipeline.FILM_QUALITIES.includes(quality)) throw new Error(`--quality must be one of ${pipeline.FILM_QUALITIES.join(", ")}`);
   const scenes = engine.resolveScenes(templates.refreshTemplates(composeFile.scenes ?? [], { format: formats.resolveFormat(meta).id }), words, { durationSeconds: duration });
   const assetUrl = (src) => pathToFileURL(path.join(projectDir, src)).href;
   const projectState = await import(pathToFileURL(path.join(REPO_ROOT, "scripts", "project-state.mjs")).href);
@@ -210,7 +219,7 @@ async function main() {
   }
   const clipFiles = [...new Set(scenes.filter((s) => s.graphic?.kind === "clip").map((s) => s.graphic.src))];
   const media = { clean: stamp(cleanVideo), screen: hasScreen ? stamp(screenVideo) : null, clips: Object.fromEntries(clipFiles.map((src) => [src, stamp(path.join(projectDir, src))])) };
-  const encoder = pipeline.videoEncoderArgs(draft ? "draft" : "film", FPS);
+  const encoder = pipeline.videoEncoderArgs(draft ? "draft" : "film", FPS, { quality });
   // The painter's own files are part of every chunk's identity: a change to
   // a stylesheet or the overlay script is a new picture, and a cached chunk
   // from the old one must never be stitched in.
@@ -370,6 +379,10 @@ async function main() {
     const captureSlots = pool(windows);
     const encodeSlots = pool(Array.from({ length: PARALLEL_ENCODES }, (_, i) => i));
     let encoded = 0;
+    let filmed = 0;
+    // A chunk is filmed, then encoded: the two halves of the bar, with the
+    // stitch and the sound after them.
+    const advance = () => { fraction = todo.length ? 0.95 * (filmed + encoded) / (2 * todo.length) : 0.95; };
     let liveEncodes = 0;
     let failure = null;
 
@@ -446,6 +459,8 @@ async function main() {
         for (const error of errors) motionProblems.add(`${src}: ${error}`);
       }
       const captured = states.under.length + states.over.length;
+      filmed += 1;
+      advance();
       say(`${tag}: ${captured} states captured in ${((Date.now() - captureStart) / 1000).toFixed(1)}s (under ${states.under.length}, over ${states.over.length}, screens ${screens.length}); ${encoded} of ${todo.length} encoded`);
       return screens;
     };
@@ -486,6 +501,7 @@ async function main() {
       fs.renameSync(path.join(work, "chunk.mp4"), chunk.cached);
       if (!keepWork) fs.rmSync(work, { recursive: true, force: true });
       encoded += 1;
+      advance();
       say(`${tag} encoded in ${((Date.now() - encodeStart) / 1000).toFixed(1)}s; ${encoded} of ${todo.length} encoded`);
     };
 
@@ -524,6 +540,7 @@ async function main() {
   if (motionProblems.size) say(`WARNING: motion scenes reported errors while they were filmed — ${[...motionProblems].slice(0, 6).join("; ")}${motionProblems.size > 6 ? ` (and ${motionProblems.size - 6} more)` : ""}. preview_motion shows each scene with its errors.`);
 
   // The stitch: every chunk copied in order, the clean cut's audio alongside.
+  fraction = 0.96;
   say(`stitching ${chunks.length} chunks`);
   const list = ["ffconcat version 1.0", ...chunks.map((chunk) => `file '${chunk.cached}'`)];
   const listFile = path.join(cacheDir, `stitch-${sha1(list.join("\n"))}.txt`);

@@ -340,6 +340,11 @@ export function jobSpec(kind, dir, options = {}) {
     }
     if (options.fresh) args.push("--fresh");
     if (options.draft) args.push(`--scale=${options.draft === true ? 0.5 : options.draft}`);
+    else {
+      // The film's size (its short side, in pixels) and quality, as chosen on the Export page.
+      if (Number.isInteger(options.size)) args.push(`--size=${options.size}`);
+      if (typeof options.quality === "string") args.push(`--quality=${options.quality}`);
+    }
     args.push(dir);
     return {
       stage: "render_final",

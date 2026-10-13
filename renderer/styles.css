@@ -1890,9 +1890,58 @@ body.is-panning .tl-map-view { cursor: grabbing; }
   border-radius: 12px;
   padding: 16px 20px 16px;
   margin-top: 18px;
-  max-width: 780px;
+  max-width: 1880px;
   box-shadow: var(--obj-shadow);
 }
+
+/* Two columns once there is room for them: the film and its clean cut on
+   the left, the files and the shorts on the right. */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: 18px;
+  max-width: 1880px;
+  margin-top: 18px;
+  align-items: start;
+}
+.export-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.export-col .export-card { margin-top: 0; }
+
+/* A running job: a bar, how far and how long is left. */
+.export-bar { height: 10px; margin: 12px 0 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.export-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.6s ease; }
+.export-eta { margin: 0; font-size: var(--t-md); color: var(--ink); font-variant-numeric: tabular-nums; }
+.export-actions.is-quiet { margin: 10px 0 0; justify-content: space-between; }
+
+/* The film's size and quality, above its buttons. */
+.export-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; margin: 4px 0 6px; }
+.export-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-sm); color: var(--dim); }
+.export-field select {
+  font: inherit;
+  font-size: var(--t-base);
+  color: var(--ink);
+  background: var(--field);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-width: 12em;
+}
+.export-settings .field-note { padding-bottom: 8px; }
+
+/* The draft, a quiet row of its own under the film's buttons. */
+.export-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 8px;
+  padding: 10px 12px;
+  border: 2px solid var(--line-soft);
+  border-radius: 10px;
+}
+.export-sub-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--t-base); }
+.export-sub-text span { color: var(--dim); font-size: var(--t-sm); }
+.export-sub-actions { display: flex; gap: 0.6rem; flex: none; }
 
 .export-card h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-family: var(--display); font-weight: 650; font-size: var(--t-xl); line-height: 1.2; }
 .export-card.is-busy { background: var(--accent-wash); box-shadow: 3px 4px 0 var(--accent-deep); }

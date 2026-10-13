@@ -335,7 +335,7 @@ function readExport(dir) {
     return {
       outputs: ps.outputs(dir),
       stale: ps.staleness(dir),
-      running,
+      running: running ? { ...running, log: path.join(dir, "out", `${running.stage}.log`) } : null,
       lastFailure: failed ? { stage: progress.stage, error: progress.detail.slice(8), log: path.join(dir, "out", `${progress.stage}.log`) } : null,
       clean: ps.cleanSummary(dir),
       captionMode: core.compose.captionMode(config.captions),
@@ -417,6 +417,9 @@ function startRender(kind, options = {}) {
     // A draft is the whole film at half size in a fraction of the time;
     // it lands beside the film as draft.mp4 and never replaces it.
     const allowed = { fresh: Boolean(options.fresh), draft: options.draft === true };
+    // The film's size and quality, from the Export page's choices only.
+    if ([2160, 1440, 1080, 720, 540].includes(options.size)) allowed.size = options.size;
+    if (["high", "balanced", "small"].includes(options.quality)) allowed.quality = options.quality;
     if (process.platform === "win32") {
       const root = toPosixPath(REPO);
       const posixDir = toPosixPath(dir);

@@ -180,23 +180,35 @@ export function encoderCapabilities() {
 // The video encoder for a role: `head` and `screen` are the clean cut's two
 // tracks (an intermediate that is decoded again and again, so smallish and
 // quick), `film` is the delivered picture. One GOP length for all of them.
-export function videoEncoderArgs(role, gop = CLEAN_GOP) {
+// The film's quality, as the Export page offers it: High is the film as it
+// has always been rendered; Balanced and Smaller trade detail for size.
+export const FILM_QUALITIES = ["high", "balanced", "small"];
+
+export function videoEncoderArgs(role, gop = CLEAN_GOP, { quality: tier = "high" } = {}) {
   const common = ["-pix_fmt", "yuv420p", "-g", String(gop)];
   if (encoderCapabilities().nvenc) {
+    const film = {
+      high: ["-preset", "p6", "-tune", "hq", "-cq", "19", "-temporal-aq", "1"],
+      balanced: ["-preset", "p6", "-tune", "hq", "-cq", "24", "-temporal-aq", "1"],
+      small: ["-preset", "p6", "-tune", "hq", "-cq", "29", "-temporal-aq", "1"],
+    }[tier] ?? null;
+    if (!film) throw new Error(`unknown film quality ${tier}; one of ${FILM_QUALITIES.join(", ")}`);
     const quality = {
       head: ["-preset", "p5", "-tune", "hq", "-cq", "21"],
       screen: ["-preset", "p4", "-tune", "hq", "-cq", "23"],
-      film: ["-preset", "p6", "-tune", "hq", "-cq", "19", "-temporal-aq", "1"],
+      film,
       // A draft is looked at once and thrown away: the fastest preset, a
       // coarse quantiser.
       draft: ["-preset", "p1", "-cq", "30"],
     }[role];
     return ["-c:v", "h264_nvenc", ...quality, "-rc", "vbr", "-b:v", "0", "-bf", "2", "-spatial-aq", "1", "-profile:v", "high", ...common];
   }
+  const film = { high: ["-preset", "medium", "-crf", "18"], balanced: ["-preset", "medium", "-crf", "22"], small: ["-preset", "medium", "-crf", "27"] }[tier];
+  if (!film) throw new Error(`unknown film quality ${tier}; one of ${FILM_QUALITIES.join(", ")}`);
   const quality = {
     head: ["-preset", "medium", "-crf", "18"],
     screen: ["-preset", "veryfast", "-crf", "20"],
-    film: ["-preset", "medium", "-crf", "18"],
+    film,
     draft: ["-preset", "ultrafast", "-crf", "28"],
   }[role];
   return ["-c:v", "libx264", ...quality, "-keyint_min", String(gop), ...common];
@@ -316,6 +328,9 @@ export function reportProgress(dir, stage, label, detail = "", extra = {}) {
     }
   }
   const record = { stage, label, detail, startedAt, updatedAt: new Date().toISOString() };
+  // How far through, 0..1, when the job can tell: the window draws a bar and
+  // a time remaining from it rather than showing the job's own log line.
+  if (Number.isFinite(extra.fraction)) record.fraction = Math.min(Math.max(extra.fraction, 0), 1);
   if (pid) { record.pid = pid; record.platform = platform ?? process.platform; }
   fs.writeFileSync(file, JSON.stringify(record, null, 2));
 }
@@ -399,6 +414,9 @@ export function startJob(dir, stage, label, command, args, options = {}) {
   delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(command, args, {
     detached: true,
+    // A detached process gets a console of its own on Windows, and wsl.exe
+    // showed it as an empty terminal for the length of every render.
+    windowsHide: true,
     stdio: ["ignore", log, log],
     cwd: "cwd" in options ? options.cwd : REPO_ROOT,
     env,
