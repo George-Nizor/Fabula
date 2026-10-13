@@ -290,36 +290,42 @@
 
   <main class="workspace" id="player" hidden>
     <aside class="rail">
-      <div class="rail-head">
-        <span class="rail-label">Transcript</span>
-        <span class="rail-find">
-          <input type="search" id="find" placeholder="Find…" autocomplete="off" spellcheck="false" title="Find in the transcript (ctrl+F). Enter for the next match, shift+Enter for the previous." />
-          <span class="rail-find-count" id="find-count"></span>
-        </span>
+      <!-- The Cut step's control column, beside the words it acts on. Hidden
+           in the other steps; on a narrow window it stacks over the words. -->
+      <div class="rail-side" id="rail-side" hidden>
+        <div class="rail-label">Controls</div>
+        <section class="deck" id="deck" hidden>
+          <div class="deck-now">
+            <b id="deck-kind"></b>
+            <span id="deck-time"></span>
+          </div>
+          <p class="deck-words" id="deck-words"></p>
+          <button type="button" class="deck-btn is-primary is-wide" id="deck-cut"><span id="deck-cut-label">Cut</span><kbd>X</kbd></button>
+          <div class="deck-row">
+            <button type="button" class="deck-btn" id="deck-play">Preview<kbd>P</kbd></button>
+            <button type="button" class="deck-btn" id="deck-clear">Clear<kbd>Esc</kbd></button>
+          </div>
+          <div class="deck-row">
+            <button type="button" class="deck-btn" id="deck-prev"><kbd>[</kbd>Previous cut</button>
+            <button type="button" class="deck-btn" id="deck-next">Next cut<kbd>]</kbd></button>
+          </div>
+          <p class="deck-tip" id="deck-tip"></p>
+        </section>
+        <div class="cut-foot" id="cut-foot" hidden>
+          <p class="cut-stats" id="cut-stats"></p>
+        </div>
       </div>
-      <!-- The Cut step's controls, beside the words they act on. -->
-      <section class="deck" id="deck" hidden>
-        <div class="deck-now">
-          <b id="deck-kind"></b>
-          <span id="deck-time"></span>
+      <div class="rail-main">
+        <div class="rail-head">
+          <span class="rail-label">Transcript</span>
+          <span class="rail-find">
+            <input type="search" id="find" placeholder="Find…" autocomplete="off" spellcheck="false" title="Find in the transcript (ctrl+F). Enter for the next match, shift+Enter for the previous." />
+            <span class="rail-find-count" id="find-count"></span>
+          </span>
         </div>
-        <p class="deck-words" id="deck-words"></p>
-        <div class="deck-row">
-          <button type="button" class="deck-btn is-primary" id="deck-cut"><span id="deck-cut-label">Cut</span><kbd>X</kbd></button>
-          <button type="button" class="deck-btn" id="deck-play">Preview<kbd>P</kbd></button>
-          <button type="button" class="deck-btn" id="deck-clear">Clear<kbd>Esc</kbd></button>
-        </div>
-        <div class="deck-row">
-          <button type="button" class="deck-btn" id="deck-prev"><kbd>[</kbd>Previous cut</button>
-          <button type="button" class="deck-btn" id="deck-next">Next cut<kbd>]</kbd></button>
-        </div>
-        <p class="deck-tip" id="deck-tip"></p>
-      </section>
-      <article class="transcript" id="transcript"></article>
-      <div class="cut-foot" id="cut-foot" hidden>
-        <p class="cut-stats" id="cut-stats"></p>
+        <article class="transcript" id="transcript"></article>
+        <div class="rail-foot" id="controls-hint"></div>
       </div>
-      <div class="rail-foot" id="controls-hint"></div>
     </aside>
     <section class="stagewell">
       <!-- Once a draft exists: the live stage, or the draft as it rendered. -->

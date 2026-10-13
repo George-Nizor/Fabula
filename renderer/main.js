@@ -33,7 +33,7 @@ const els = {
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
   deck: $("deck"), deckKind: $("deck-kind"), deckTime: $("deck-time"), deckWords: $("deck-words"), deckTip: $("deck-tip"),
   deckCut: $("deck-cut"), deckCutLabel: $("deck-cut-label"), deckPlay: $("deck-play"), deckClear: $("deck-clear"), deckPrev: $("deck-prev"), deckNext: $("deck-next"),
-  cutFoot: $("cut-foot"), cutStats: $("cut-stats"), keysWrap: $("insp-keys-wrap"), waveCuts: $("wave-cuts"),
+  railSide: $("rail-side"), cutFoot: $("cut-foot"), cutStats: $("cut-stats"), keysWrap: $("insp-keys-wrap"), waveCuts: $("wave-cuts"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
   goHome: $("go-home"),
@@ -1216,7 +1216,11 @@ function dockInRail(on) {
   for (const el of [els.inspApprove, els.keysWrap]) {
     if (!dockHomes.has(el)) dockHomes.set(el, { parent: el.parentElement, next: el.nextElementSibling });
     const home = dockHomes.get(el);
-    if (on && el.parentElement !== els.cutFoot) els.cutFoot.append(el);
+    if (on && el.parentElement !== els.cutFoot) {
+      els.cutFoot.append(el);
+      // The keys are worth reading the first time the column opens.
+      if (el === els.keysWrap && !el.dataset.opened) { el.open = true; el.dataset.opened = "1"; }
+    }
     else if (!on && el.parentElement !== home.parent) home.parent.insertBefore(el, home.next);
   }
 }
@@ -1243,6 +1247,7 @@ function renderProjectPanel() {
   document.body.classList.toggle("is-cutstep", cutStep);
   dockInRail(cutStep);
   els.cutFoot.hidden = !cutStep;
+  els.railSide.hidden = mode !== "cut";
   if (mode === "cut") {
     els.inspCutSummary.hidden = false;
     els.inspKeysCut.hidden = false;
@@ -2292,6 +2297,12 @@ function render() {
     rulerKey = "";
   }
   els.goHome.disabled = !state?.project;
+  // Look and Export are pages of their own and never reach the project
+  // panel: the Cut step's two-column rail is put away here on the way out.
+  if (mode !== "cut" || !review()) {
+    document.body.classList.remove("is-cutstep");
+    dockInRail(false);
+  }
   const editing = Boolean(review());
   els.toggleRail.hidden = !editing || !onStage();
   els.toggleInsp.hidden = !editing || !onStage();
