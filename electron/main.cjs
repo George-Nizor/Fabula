@@ -957,8 +957,12 @@ async function snapshotWindow(window) {
         // pointer would send it, so pointer capture and drags behave.
         if (step.mouse) {
           const events = (await run(step.mouse)) ?? [];
+          let down = false;
           for (const m of events) {
-            await contents.debugger.sendCommand("Input.dispatchMouseEvent", { type: m.type, x: m.x, y: m.y, button: "left", buttons: m.type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+            if (m.type === "mousePressed") down = true;
+            if (m.type === "mouseReleased") down = false;
+            const held = down || m.type === "mouseReleased";
+            await contents.debugger.sendCommand("Input.dispatchMouseEvent", { type: m.type, x: m.x, y: m.y, button: held ? "left" : "none", buttons: down ? 1 : 0, clickCount: held ? 1 : 0 });
             await wait(40);
           }
         }

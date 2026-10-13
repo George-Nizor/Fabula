@@ -748,7 +748,7 @@ els.laneCuts.addEventListener("pointermove", (event) => {
   const t = Math.min(Math.max(timeAtPointer(event.clientX), edgeDrag.lower), edgeDrag.upper);
   edgeDrag[edgeDrag.edge] = t;
   const block = els.laneCuts.querySelector(`[data-cut-index="${edgeDrag.index}"]`);
-  if (block) place(block, edgeDrag.start, edgeDrag.end, totalSeconds(), 0.15);
+  if (block) place(block, edgeDrag.start, edgeDrag.end, totalSeconds(), 0);
   els.deckTime.textContent = `${fmtEdge(edgeDrag.start)} – ${fmtEdge(edgeDrag.end)} · ${(edgeDrag.end - edgeDrag.start).toFixed(2)} s`;
   seek(t, { follow: false });
 });
@@ -1002,7 +1002,11 @@ function renderCutTimeline() {
     const block = document.createElement("div");
     block.className = `tl-block is-cutblock${cut.enabled ? "" : " is-kept"}${index === selectedCutIndex() ? " is-selected" : ""}`;
     block.title = cutTitle(cut);
-    place(block, cut.start, cut.end, total, 0.15);
+    // No minimum in percent: the lane is the whole recording's width times
+    // the zoom, so a percentage floor drew a filler several times its length
+    // close in, and its edges where the cut was not. The stylesheet keeps a
+    // sliver at least 2 px wide instead.
+    place(block, cut.start, cut.end, total, 0);
     block.dataset.seek = String(Math.max(cut.start - 0.6, 0));
     block.dataset.cutIndex = String(index);
     els.laneCuts.append(block);
