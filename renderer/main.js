@@ -32,7 +32,7 @@ const els = {
   inspHeading: $("insp-heading"), inspHeadingWrap: $("insp-heading-wrap"),
   assistantSheetTitle: $("assistant-sheet-title"), assistantSheetNote: $("assistant-sheet-note"),
   inspCut: $("insp-cut"), cutSummary: $("cut-summary"), cutText: $("cut-text"), cutBounds: $("cut-bounds"), cutStatus: $("cut-status"),
-  cutStartBack: $("cut-start-back"), cutStartFwd: $("cut-start-fwd"), cutEndBack: $("cut-end-back"), cutEndFwd: $("cut-end-fwd"),
+  cutHint: $("cut-hint"),
   cutHear: $("cut-hear"), cutToggle: $("cut-toggle"), cutClose: $("cut-close"),
   inspSelection: $("insp-selection"), selSummary: $("sel-summary"), selText: $("sel-text"), selCut: $("sel-cut"), selKeep: $("sel-keep"), selClear: $("sel-clear"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
@@ -552,6 +552,17 @@ function clearSelection() {
   renderSelection();
 }
 
+function pickWord(index, extend) {
+  if (index < 0) return;
+  const anchor = extend && selection ? selection.anchor ?? selection.from : index;
+  selection = { from: Math.min(anchor, index), to: Math.max(anchor, index), anchor };
+  selectedCut = null;
+  paintSelection();
+  renderSelection();
+  renderCutInspector();
+  renderCutTimeline();
+}
+
 function wordIndexAt(target) {
   const span = target instanceof HTMLElement ? target.closest(".word") : null;
   if (!span) return -1;
@@ -570,7 +581,7 @@ els.transcript.addEventListener("pointerdown", (event) => {
     els.transcript.classList.add("is-selecting");
     const at = wordIndexAt(document.elementFromPoint(e.clientX, e.clientY));
     if (at < 0) return;
-    selection = { from: Math.min(anchor, at), to: Math.max(anchor, at) };
+    selection = { from: Math.min(anchor, at), to: Math.max(anchor, at), anchor };
     paintSelection();
   };
   const up = () => {
@@ -605,14 +616,14 @@ els.selClear.addEventListener("click", clearSelection);
 // ---- Moving a cut ----
 //
 // Word edges are the aligner's guess, and a filler or a breath often wants a
-// tenth of a second more or less than the words allow. Clicking a cut (on the
-// timeline, or struck text) opens it here, and its edges move in time.
-// The cut is remembered by where it was as well as its index, so a cut list
-// the assistant rewrites underneath finds it again or lets it go.
+// tenth of a second more or less than the words allow. Opening a cut (struck
+// text, a block on the timeline, or [ and ]) brings the timeline in close
+// around it, and its edges drag in time. The cut is remembered by where it
+// was as well as its index, so a cut list the assistant rewrites underneath
+// finds it again or lets it go.
 
-const CUT_NUDGE_SECONDS = 0.02;
-const CUT_NUDGE_SHIFT_SECONDS = 0.1;
 const SKIP_LOOKAHEAD_SECONDS = 0.04;
+const EDGE_GRAB_PX = 8;
 let selectedCut = null; // { index, start, end }
 
 function currentCut() {
@@ -628,11 +639,23 @@ function currentCut() {
 }
 const selectedCutIndex = () => (currentCut() ? selectedCut.index : -1);
 
+// At "all" a filler is a sliver of a pixel or two; a cut opened for its edges
+// gets a window of a few seconds, with room either side to drag into.
+function frameCut(cut) {
+  const total = totalSeconds();
+  const visible = Math.min(Math.max((cut.end - cut.start) * 4, 6), total);
+  const v = view();
+  if (total / v.zoom <= visible * 1.5 && cut.start >= v.start && cut.end <= v.start + total / v.zoom) return;
+  v.zoom = Math.max(total / visible, 1);
+  v.start = (cut.start + cut.end) / 2 - visible / 2;
+  applyView();
+}
+
 function selectCut(index) {
   const cut = review()?.cuts?.[index];
   selectedCut = cut ? { index, start: cut.start, end: cut.end } : null;
-  if (selectedCut) { selection = null; paintSelection(); renderSelection(); }
-  els.cutStatus.textContent = "Each press moves an edge 0.02 s; hold shift for 0.1 s.";
+  if (selectedCut) { selection = null; paintSelection(); renderSelection(); frameCut(cut); }
+  els.cutStatus.textContent = "Drag its edges on the timeline.";
   renderCutInspector();
   renderCutTimeline();
 }
@@ -657,23 +680,71 @@ function renderCutInspector() {
   setLabel(els.cutToggle, cut.enabled ? "Keep the footage" : "Cut it again", cut.enabled ? "undo" : "scissors");
 }
 
-const moveCutEdge = (edge, direction) => async (event) => {
-  const cut = currentCut();
-  if (!cut) return;
-  const by = direction * (event.shiftKey ? CUT_NUDGE_SHIFT_SECONDS : CUT_NUDGE_SECONDS);
-  const result = await window.fabula.moveCut(selectedCut.index, { [edge]: cut[edge] + by });
-  if (!result.ok) { els.cutStatus.textContent = result.error; return; }
-  const moved = result.cut[edge];
-  els.cutStatus.textContent = Math.abs(moved - (cut[edge] + by)) > 0.001
-    ? `The ${edge} stops at ${fmtEdge(moved)}: ${edge === "start" ? "the cut before" : "the cut after"} or the ${edge === "start" ? "beginning" : "end"} of the recording is there.`
-    : `${edge === "start" ? "Start" : "End"} moved to ${fmtEdge(moved)}. Hear it to check.`;
-  selectedCut.start = result.cut.start;
-  selectedCut.end = result.cut.end;
+// Drag a cut's edge on the timeline. Over a block's end the pointer becomes a
+// resize arrow; the edge follows it, the picture shows the frame under it,
+// and the new edge is saved on release. It stops at the neighbouring cuts,
+// as the saved edge would.
+let edgeDrag = null;
+let swallowLaneClick = false;
+function edgeUnder(event) {
+  if (mode !== "cut") return null;
+  const block = event.target instanceof HTMLElement ? event.target.closest(".tl-block.is-cutblock") : null;
+  if (!block) return null;
+  const box = block.getBoundingClientRect();
+  const toStart = Math.abs(event.clientX - box.left);
+  const toEnd = Math.abs(event.clientX - box.right);
+  if (Math.min(toStart, toEnd) > EDGE_GRAB_PX) return null;
+  return { block, index: Number(block.dataset.cutIndex), edge: toStart <= toEnd ? "start" : "end" };
+}
+els.laneCuts.addEventListener("pointermove", (event) => {
+  if (edgeDrag) return;
+  els.laneCuts.parentElement.classList.toggle("is-edge", Boolean(edgeUnder(event)));
+});
+els.laneCuts.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const hit = edgeUnder(event);
+  if (!hit) return;
+  const cuts = review().cuts;
+  const cut = cuts[hit.index];
+  event.preventDefault();
+  event.stopPropagation();
+  if (selectedCutIndex() !== hit.index) { selectedCut = { index: hit.index, start: cut.start, end: cut.end }; renderCutInspector(); }
+  transport().pause();
+  edgeDrag = {
+    ...hit,
+    pointerId: event.pointerId,
+    lower: hit.edge === "start" ? (hit.index > 0 ? cuts[hit.index - 1].end : 0) : cut.start + 0.02,
+    upper: hit.edge === "start" ? cut.end - 0.02 : (hit.index + 1 < cuts.length ? cuts[hit.index + 1].start : totalSeconds()),
+    start: cut.start,
+    end: cut.end,
+  };
+  els.laneCuts.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-dragging-edge");
+});
+els.laneCuts.addEventListener("pointermove", (event) => {
+  if (!edgeDrag || event.pointerId !== edgeDrag.pointerId) return;
+  const t = Math.min(Math.max(timeAtPointer(event.clientX), edgeDrag.lower), edgeDrag.upper);
+  edgeDrag[edgeDrag.edge] = t;
+  const block = els.laneCuts.querySelector(`[data-cut-index="${edgeDrag.index}"]`);
+  if (block) place(block, edgeDrag.start, edgeDrag.end, totalSeconds(), 0.15);
+  els.cutBounds.textContent = `${fmtEdge(edgeDrag.start)} – ${fmtEdge(edgeDrag.end)} · ${(edgeDrag.end - edgeDrag.start).toFixed(2)} s`;
+  seek(t, { follow: false });
+});
+const endEdgeDrag = async (event) => {
+  if (!edgeDrag || event.pointerId !== edgeDrag.pointerId) return;
+  const drag = edgeDrag;
+  edgeDrag = null;
+  document.body.classList.remove("is-dragging-edge");
+  // The click this release makes is the drag's, not a pick of the block; if
+  // the pointer left the lane no click comes, so the flag goes after a turn.
+  swallowLaneClick = true;
+  setTimeout(() => { swallowLaneClick = false; }, 0);
+  const result = await window.fabula.moveCut(drag.index, { [drag.edge]: drag[drag.edge] });
+  els.cutStatus.textContent = result.ok ? "Saved. Hear it to check." : result.error;
+  if (result.ok) { selectedCut.start = result.cut.start; selectedCut.end = result.cut.end; }
 };
-els.cutStartBack.addEventListener("click", moveCutEdge("start", -1));
-els.cutStartFwd.addEventListener("click", moveCutEdge("start", 1));
-els.cutEndBack.addEventListener("click", moveCutEdge("end", -1));
-els.cutEndFwd.addEventListener("click", moveCutEdge("end", 1));
+els.laneCuts.addEventListener("pointerup", endEdgeDrag);
+els.laneCuts.addEventListener("pointercancel", endEdgeDrag);
 // Two seconds of run-up, then across the cut as the edit plays it.
 els.cutHear.addEventListener("click", () => {
   const cut = currentCut();
@@ -1047,6 +1118,7 @@ function renderProjectPanel() {
   renderMaking();
   if (mode === "cut") {
     els.inspCutSummary.hidden = false;
+    els.cutHint.hidden = false;
     els.inspKeysCut.hidden = false;
     els.inspKeysScenes.hidden = true;
     els.approveCut.disabled = Boolean(state?.progress && !(typeof state.progress.detail === "string" && state.progress.detail.startsWith("failed:")));
@@ -1056,11 +1128,12 @@ function renderProjectPanel() {
     els.sumShots.textContent = r.shotPlan ? `alternating ${Math.round(r.shotPlan.zoom * 100)}%` : "off";
     els.sumFraming.textContent = describeFraming(r.framing);
     els.sumClean.textContent = { none: "not rendered", stale: "out of date", current: "up to date" }[cleanState(state?.export)];
-    els.inspEmpty.textContent = "Click a word to jump. Click struck text to keep it. Drag across words to cut. Click a cut on the timeline to move its edges.";
+    els.inspEmpty.textContent = "";
     renderSelection();
     renderCutInspector();
   } else {
     els.inspCut.hidden = true;
+    els.cutHint.hidden = true;
     els.inspCutSummary.hidden = true;
     els.inspKeysCut.hidden = true;
     els.inspKeysScenes.hidden = mode !== "scenes";
@@ -2296,18 +2369,23 @@ els.transcript.addEventListener("click", (event) => {
   if (!(target instanceof HTMLElement)) return;
   if (target.dataset.insert !== undefined) { openInsert(target.dataset.insert); return; }
   if (mode === "cut" && target.dataset.cutIndex !== undefined) {
+    // Struck text opens its cut: the edges, Keep the footage, Hear it.
     const index = Number(target.dataset.cutIndex);
-    window.fabula.setCut(index, !review().cuts[index].enabled);
     selectCut(index);
+    seek(Math.max(review().cuts[index].start - 0.6, 0));
     return;
   }
   if (target.dataset.start !== undefined) {
+    // A word is picked as well as played: X (or the inspector) cuts it, and
+    // shift-click reaches from the last word picked to this one.
+    if (mode === "cut") pickWord(wordIndexAt(target), event.shiftKey);
     seek(Number(target.dataset.start));
-    els.video.play();
+    if (!event.shiftKey) els.video.play();
   }
 });
 
 els.timeline.addEventListener("click", (event) => {
+  if (swallowLaneClick) { swallowLaneClick = false; return; }
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   if (target.dataset.insert !== undefined) { openInsert(target.dataset.insert); return; }
@@ -2804,7 +2882,7 @@ document.addEventListener("keydown", (event) => {
     setZoom(view().zoom * (event.key === "-" ? 0.5 : 2), els.video.currentTime);
   } else if ((event.key === "[" || event.key === "]") && mode === "cut") {
     const cut = nearestCut(event.key === "]" ? 1 : -1);
-    if (cut) seek(Math.max(cut.start - 0.6, 0));
+    if (cut) { seek(Math.max(cut.start - 0.6, 0)); selectCut(review().cuts.indexOf(cut)); }
   } else if ((event.key === "[" || event.key === "]") && mode === "scenes" && compose()) {
     // Scene to scene from the keyboard: the next card or title after the
     // playhead (or before it), opened in the inspector.
@@ -2814,11 +2892,16 @@ document.addEventListener("keydown", (event) => {
       ? cards.find(({ scene }) => scene.start > now + 0.05)
       : [...cards].reverse().find(({ scene }) => scene.start < now - 0.05);
     if (hit) { event.preventDefault(); openInspector(hit.index); }
-  } else if ((event.key === "Delete" || event.key === "Backspace") && mode === "cut" && selection) {
+  } else if ((event.key === "x" || event.key === "X" || event.key === "Delete" || event.key === "Backspace") && mode === "cut" && (selection || currentCut())) {
+    // Cut what is picked, or keep it if it is all struck already; with a cut
+    // open instead, flip it.
     event.preventDefault();
-    els.selCut.click();
+    if (selection) (els.selCut.hidden ? els.selKeep : els.selCut).click();
+    else els.cutToggle.click();
   } else if (event.key === "Escape" && selection) {
     clearSelection();
+  } else if (event.key === "Escape" && mode === "cut" && currentCut()) {
+    els.cutClose.click();
   } else if (event.key === "Escape" && (selectedScene !== null || selectedInsert !== null)) {
     closeInspector();
   }

@@ -1446,8 +1446,25 @@ body.is-scrubbing .tl-lane, body.is-scrubbing .tl-ruler { cursor: ew-resize; }
 
 .tl-block.is-cutblock.is-kept { background: transparent; border: 1.5px dotted var(--accent-text); }
 
-/* The cut open in the inspector, whose edges are being moved. */
-.tl-block.is-cutblock.is-selected { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 2; }
+/* The cut open in the inspector: its edges carry grips and drag in time. */
+.tl-block.is-cutblock.is-selected { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 2; overflow: visible; }
+.tl-block.is-cutblock.is-selected::before,
+.tl-block.is-cutblock.is-selected::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+  pointer-events: none;
+}
+.tl-block.is-cutblock.is-selected::before { left: -2px; }
+.tl-block.is-cutblock.is-selected::after { right: -2px; }
+.tl-lane.is-edge, body.is-dragging-edge .tl-lane { cursor: ew-resize; }
+
+.rail-hint { margin: 0; padding: 2px 14px 8px; font-size: var(--t-xs); line-height: 1.4; color: var(--dim); }
+.rail-hint kbd { font-size: inherit; }
 
 .tl-block.is-screenblock {
   border-radius: 4px;

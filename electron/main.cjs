@@ -928,7 +928,7 @@ async function snapshotWindow(window) {
     }
     // A script of steps, when one is given: FABULA_SNAPSHOT_SCRIPT names a
     // JSON list of { size: [w, h], run: js, wait: ms, shot: name, print:
-    // label, key: "Tab", shift, media: [{ name, value }] }; each key is optional and they apply in
+    // label, key: "Tab", shift, media: [{ name, value }], mouse: js }; each key is optional and they apply in
     // that order (media straight after size). It is how
     // any view of the window is photographed without a new env var per view.
     if (process.env.FABULA_SNAPSHOT_SCRIPT) {
@@ -945,6 +945,16 @@ async function snapshotWindow(window) {
         if (step.key) {
           for (const type of ["keyDown", "keyUp"]) {
             await contents.debugger.sendCommand("Input.dispatchKeyEvent", { type, key: step.key, code: step.key, windowsVirtualKeyCode: step.key === "Tab" ? 9 : 0, modifiers: step.shift ? 8 : 0 });
+          }
+        }
+        // Real mouse input: a script that returns [{ type, x, y }] in page
+        // pixels (mousePressed, mouseMoved, mouseReleased), sent as the
+        // pointer would send it, so pointer capture and drags behave.
+        if (step.mouse) {
+          const events = (await run(step.mouse)) ?? [];
+          for (const m of events) {
+            await contents.debugger.sendCommand("Input.dispatchMouseEvent", { type: m.type, x: m.x, y: m.y, button: "left", buttons: m.type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+            await wait(40);
           }
         }
         if (step.wait) await wait(step.wait);

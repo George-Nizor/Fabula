@@ -297,6 +297,7 @@
           <span class="rail-find-count" id="find-count"></span>
         </span>
       </div>
+      <p class="rail-hint" id="cut-hint" hidden>Click a word and press <kbd>X</kbd> to cut it · shift-click to take more · click struck text to adjust its cut on the timeline</p>
       <article class="transcript" id="transcript"></article>
       <div class="rail-foot" id="controls-hint"></div>
     </aside>
@@ -376,16 +377,8 @@
         <div class="insp-section" id="insp-cut" hidden>
           <div class="insp-kv"><span>Cut</span><b id="cut-summary"></b></div>
           <p class="insp-selected" id="cut-text"></p>
-          <div class="insp-kv"><span>From</span><b id="cut-bounds"></b></div>
-          <div class="insp-actions is-nudge">
-            <span class="nudge-label">Start</span>
-            <button type="button" class="insp-mini is-nudge" id="cut-start-back" title="Start earlier (shift: 0.1 s)">−</button>
-            <button type="button" class="insp-mini is-nudge" id="cut-start-fwd" title="Start later (shift: 0.1 s)">+</button>
-            <span class="nudge-label">End</span>
-            <button type="button" class="insp-mini is-nudge" id="cut-end-back" title="End earlier (shift: 0.1 s)">−</button>
-            <button type="button" class="insp-mini is-nudge" id="cut-end-fwd" title="End later (shift: 0.1 s)">+</button>
-          </div>
-          <p class="insp-status" id="cut-status">Each press moves an edge 0.02 s; hold shift for 0.1 s.</p>
+          <div class="insp-kv"><span>Time</span><b id="cut-bounds"></b></div>
+          <p class="insp-status" id="cut-status"></p>
           <div class="insp-actions">
             <button type="button" class="insp-mini is-strong" id="cut-hear" data-icon="play">Hear it</button>
             <button type="button" class="insp-mini" id="cut-toggle"></button>
@@ -407,7 +400,7 @@
           <span><kbd>ctrl</kbd> + wheel zoom the timeline</span>
           <span><kbd>ctrl</kbd><kbd>F</kbd> find in the transcript</span>
           <span><kbd>ctrl</kbd><kbd>1</kbd>…<kbd>4</kbd> the steps</span>
-          <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut</span>
+          <span id="insp-keys-cut"><kbd>[</kbd><kbd>]</kbd> previous · next cut, opened · <kbd>X</kbd> cut the picked words, or flip the open cut · <kbd>shift</kbd>-click pick more</span>
           <span id="insp-keys-scenes" hidden><kbd>[</kbd><kbd>]</kbd> previous · next scene</span>
         </div>
         </details>
