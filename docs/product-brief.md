@@ -1,5 +1,15 @@
 # Fabula — product brief
 
+## Shorts belong to their film (2026-10-13, 0.3.2)
+
+A short cut out of a film (`derivedFrom` in its project.json) is listed under the film, indented
+with a Short badge, in Projects and on Home; a short made from scratch, or one whose film was
+removed, stands at the top level as a project of its own. The film's Shorts card lists what has
+been made from it, each with Open, and marks the one just made. The masthead names the open
+project; a short's names its film too, which goes back to it in a click. A short's Cut step shows
+its moment with a few seconds either side and folds the rest of the recording into a line above and
+below, and it opens with the timeline on the moment. The short inherits the film's waveform.
+
 ## Filler cuts follow the sound; a cut's edges move in time (2026-10-13, 0.3.2)
 
 WhisperX aligns "um" and "uh" late, often 100–300 ms inside the sound, so a filler cut on the

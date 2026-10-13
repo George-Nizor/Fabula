@@ -34,6 +34,7 @@ const els = {
   deck: $("deck"), deckKind: $("deck-kind"), deckTime: $("deck-time"), deckWords: $("deck-words"), deckTip: $("deck-tip"),
   deckCut: $("deck-cut"), deckCutLabel: $("deck-cut-label"), deckPlay: $("deck-play"), deckClear: $("deck-clear"), deckPrev: $("deck-prev"), deckNext: $("deck-next"),
   railSide: $("rail-side"), cutFoot: $("cut-foot"), cutStats: $("cut-stats"), keysWrap: $("insp-keys-wrap"), waveCuts: $("wave-cuts"),
+  crumb: $("crumb"), crumbParent: $("crumb-parent"), crumbSep: $("crumb-sep"), crumbBadge: $("crumb-badge"), crumbTitle: $("crumb-title"),
   home: $("home"), homeNew: $("home-new"), homeProjectsTitle: $("home-projects-title"), homeProjectsList: $("home-projects-list"),
   homeProjectsEmpty: $("home-projects-empty"), homeStatus: $("home-status"), homeRoot: $("home-root"), homeRootChange: $("home-root-change"), homeRootDefault: $("home-root-default"),
   goHome: $("go-home"),
@@ -459,12 +460,24 @@ function renderProgress() {
 
 // ---- Transcript ----
 
+// A short cut out of a film carries the whole recording with all but its
+// moment struck. Its Cut step shows the moment, a few seconds either side,
+// and folds the rest of the film into one line above and one below.
+const SHORT_MARGIN_SECONDS = 6;
+function shortWindow() {
+  if (!state?.derivedFrom) return null;
+  const r = review();
+  const kept = (r?.words ?? []).filter((word) => !wordStruck(word));
+  if (!kept.length) return null;
+  return { start: Math.max(kept[0].start - SHORT_MARGIN_SECONDS, 0), end: Math.min(kept.at(-1).end + SHORT_MARGIN_SECONDS, r.duration), keptStart: kept[0].start, keptEnd: kept.at(-1).end };
+}
+
 function renderCutTranscript() {
   const r = review();
   // Every state push re-renders the window, and a job's progress pushes one
   // every second or so. The transcript only changes when its words or cuts
   // do; rebuilding three thousand spans each time was a hitch per push.
-  const key = `cut|${r.words.length}:${r.words[0]?.start ?? ""}:${r.words.at(-1)?.end ?? ""}|${r.cuts.map((c) => `${c.start}-${c.end}-${c.enabled ? 1 : 0}`).join(",")}`;
+  const key = `cut|${state?.project}|${r.words.length}:${r.words[0]?.start ?? ""}:${r.words.at(-1)?.end ?? ""}|${r.cuts.map((c) => `${c.start}-${c.end}-${c.enabled ? 1 : 0}`).join(",")}`;
   if (els.transcript.dataset.key === key && wordSpans.length) {
     paintSelection();
     return;
@@ -515,8 +528,20 @@ function renderCutTranscript() {
     head.dataset.start = String(at);
     els.transcript.append(head, " ");
   };
+  const short = shortWindow();
+  const fold = (text, at) => {
+    const line = make("span", "short-fold", esc(text));
+    line.dataset.start = String(at);
+    els.transcript.append(line, " ");
+  };
+  if (short && short.start > 0) fold(`${fmt(short.start, false)} of the film before this short, not in it`, short.start);
   let previous = null;
   for (const word of r.words) {
+    if (short && (word.end < short.start || word.start > short.end)) {
+      // Outside the short: its pauses go with its words.
+      while (chipAt < chips.length && r.cuts[chips[chipAt]].start < word.start) chipAt += 1;
+      continue;
+    }
     emitChipsBefore(word.start);
     const gap = previous ? word.start - previous.end : Infinity;
     if (!previous || gap >= 1.2 || (gap >= 0.6 && /[.?!]["”’]?$/.test(previous.text))) paragraph(word.start);
@@ -537,7 +562,12 @@ function renderCutTranscript() {
     wordSpans.push({ word, span });
     els.transcript.append(span, " ");
   }
-  emitChipsBefore(Infinity);
+  if (short) {
+    emitChipsBefore(short.end);
+    if (short.end < r.duration - 0.5) fold(`${fmt(r.duration - short.end, false)} of the film after this short, not in it`, short.end);
+  } else {
+    emitChipsBefore(Infinity);
+  }
   if (selection && selection.to >= wordSpans.length) selection = null;
   paintSelection();
   renderDeck();
@@ -1721,6 +1751,7 @@ const CAPTION_FILES = {
   both: "Captions burned in, and written as final.srt and final.vtt.",
 };
 let exportFlash = null; // { text, isError } from the last action on the page
+let justMadeShort = null; // the short made a moment ago, marked in the Shorts card
 
 function make(tag, className = "", html) {
   const node = document.createElement(tag);
@@ -1976,7 +2007,7 @@ async function makeShort(clip, format) {
     // The film stays open. The short is a project of its own and it is the
     // person's to open when they are ready for it.
     clipResult = { ...clipResult, clips: clipResult.clips.filter((c) => c.index !== clip.index) };
-    exportFlash = { text: `“${made.title}” created — ${made.seconds}s, ${made.format}. Open it from Projects, then refresh its clean cut.` };
+    justMadeShort = made.project;
   } else {
     exportFlash = { text: made.error, isError: true };
   }
@@ -1989,14 +2020,33 @@ function shortsCard(e, busy) {
   const short = (state?.formats ?? []).filter((format) => format.shortForm);
   const target = short[0]?.id ?? "vertical";
   if (state?.format?.shortForm) {
-    card.append(make("p", "field-note", "This is already a short. Shorts are cut out of a long film."));
+    const parent = state.derivedFrom ? projectNamed(state.derivedFrom) : null;
+    card.append(make("p", "field-note", parent ? `This is a short from ${esc(parent.title)}.` : "This is already a short. Shorts are cut out of a long film."));
+    if (parent) {
+      const row = make("div", "export-actions");
+      row.append(actionButton(`Open ${parent.title}`, () => window.fabula.switchProject(parent.name), { small: true, icon: "open" }));
+      card.append(row);
+    }
     return card;
+  }
+  // The shorts already made from this film, each a click away.
+  const made = shortsOf(state.project);
+  if (made.length) {
+    const list = make("ul", "made-shorts");
+    for (const short of made) {
+      const item = make("li", `made-short${short.name === justMadeShort ? " is-new" : ""}`);
+      item.append(make("div", "made-short-text", `<b>${esc(shortTitle(short))}</b><span>${short.spanSeconds ? `${Math.round(short.spanSeconds)} s · ` : ""}${esc(short.stageLabel)}${short.name === justMadeShort ? " · just made" : ""}</span>`));
+      item.append(actionButton("Open", () => window.fabula.switchProject(short.name), { small: true, primary: short.name === justMadeShort, icon: "open" }));
+      list.append(item);
+    }
+    card.append(make("div", "made-shorts-head", `Made from this film`));
+    card.append(list);
   }
   if (!e.have.cleanTranscript) {
     card.append(make("p", "field-note", "Needs the clean cut's transcript: a short is chosen on the words, so the film has to be cut first."));
     return card;
   }
-  card.append(make("p", "export-status", "Moments in this film that could stand on their own, cut into projects of their own — same recording, same cut, framed and composed for a tall frame."));
+  card.append(make("p", "export-status", "Find moments that stand on their own. Each one you make becomes a short under this film, ready to open and make into a video."));
   const row = make("div", "export-actions");
   row.append(actionButton(clipFinding ? "Reading the transcript…" : (clipResult ? "Look again" : "Find shorts"), () => findShorts(target), {
     primary: !clipResult, disabled: busy || Boolean(clipFinding), icon: "phone",
@@ -2033,7 +2083,7 @@ function shortsCard(e, busy) {
     list.append(item);
   }
   card.append(list);
-  card.append(make("p", "field-note", "Each one becomes a project you compose separately. The assistant can do the same with suggest_clips and create_short, and will argue with the shortlist."));
+
   return card;
 }
 
@@ -2418,8 +2468,17 @@ function render() {
     views.cut = { start: 0, zoom: 1 };
     views.scenes = { start: 0, zoom: 1 };
     rulerKey = "";
+    // A short opens on its moment: the timeline around it, the playhead at
+    // its first word, rather than at the top of a recording it is not.
+    const short = review() ? shortWindow() : null;
+    if (short) {
+      const total = review().duration;
+      views.cut = { start: short.start, zoom: Math.max(total / (short.end - short.start), 1) };
+      requestAnimationFrame(() => { if (mode === "cut") seek(short.keptStart, { follow: false }); });
+    }
   }
   els.goHome.disabled = !state?.project;
+  renderCrumb();
   // Look and Export are pages of their own and never reach the project
   // panel: the Cut step's two-column rail is put away here on the way out.
   if (mode !== "cut" || !review()) {
@@ -3344,21 +3403,92 @@ document.addEventListener("drop", (event) => {
 // Every staged folder under the projects root is a project; the main process
 // lists them with the state, so the list is as live as everything else.
 
-function projectRow(project, { actions }) {
-  const row = make("li", `project-row${project.current ? " is-current" : ""}${project.videoPresent ? "" : " is-missing"}`);
+// A short cut out of a film belongs to it: it is listed under the film, not
+// beside it. A short made from scratch, or one whose film was removed, is a
+// project of its own and stands at the top level.
+function projectTree(projects) {
+  const names = new Set(projects.map((p) => p.name));
+  const childrenOf = new Map();
+  for (const p of projects) {
+    if (p.derivedFrom && names.has(p.derivedFrom)) {
+      if (!childrenOf.has(p.derivedFrom)) childrenOf.set(p.derivedFrom, []);
+      childrenOf.get(p.derivedFrom).push(p);
+    }
+  }
+  return projects
+    .filter((p) => !(p.derivedFrom && names.has(p.derivedFrom)))
+    .map((p) => ({ project: p, shorts: childrenOf.get(p.name) ?? [] }));
+}
+const shortsOf = (name) => (state?.projects ?? []).filter((p) => p.derivedFrom === name);
+const projectNamed = (name) => (state?.projects ?? []).find((p) => p.name === name) ?? null;
+// The open project in the masthead; a short cut out of a film names the film
+// and goes back to it in one click.
+function renderCrumb() {
+  const open = Boolean(state?.project && review());
+  els.crumb.hidden = !open;
+  if (!open) return;
+  const parent = state.derivedFrom ? projectNamed(state.derivedFrom) : null;
+  els.crumbParent.hidden = !parent;
+  els.crumbSep.hidden = !parent;
+  els.crumbBadge.hidden = !state.derivedFrom && !state.format?.shortForm;
+  if (parent) {
+    els.crumbParent.textContent = parent.title;
+    els.crumbParent.title = `Back to ${parent.title}`;
+    els.crumbParent.dataset.name = parent.name;
+  }
+  const me = projectNamed(state.project);
+  els.crumbTitle.textContent = parent && me ? shortTitle(me, parent) : state.title ?? state.project;
+  els.crumbTitle.title = state.title ?? "";
+}
+els.crumbParent.addEventListener("click", () => {
+  if (els.crumbParent.dataset.name) window.fabula.switchProject(els.crumbParent.dataset.name);
+});
+
+// A short is titled "<film> — <its opening words>"; under its film, the film's
+// name is said once already.
+function shortTitle(short, parent = projectNamed(short.derivedFrom)) {
+  const prefix = parent ? `${parent.title} — ` : "";
+  return prefix && short.title.startsWith(prefix) ? short.title.slice(prefix.length) : short.title;
+}
+
+function projectList(projects) {
+  const items = [];
+  for (const { project, shorts } of projectTree(projects)) {
+    const row = projectRow(project, { actions: true, shortCount: shorts.length });
+    if (shorts.length) {
+      const sub = make("ul", "project-children");
+      for (const short of shorts) sub.append(projectRow(short, { actions: true, child: true, parent: project }));
+      row.append(sub);
+    }
+    items.push(row);
+  }
+  return items;
+}
+
+function projectRow(project, { actions, child = false, parent = null, shortCount = 0 }) {
+  const row = make("li", `project-row${child ? " is-child" : ""}${project.current ? " is-current" : ""}${project.videoPresent ? "" : " is-missing"}`);
   const open = make("button", "project-open");
   open.type = "button";
   open.title = project.current ? "This project is open" : `Open ${project.title}`;
-  const meta = [
-    `<span class="stage">${esc(project.stageLabel)}</span>`,
-    // The shape earns a place in the list: a vertical project and the film it
-    // came out of sit next to each other and are otherwise hard to tell apart.
-    project.shortForm ? `<span class="stage is-short">${esc(project.formatLabel)}</span>` : "",
-    project.derivedFrom ? `from ${esc(project.derivedFrom)}` : "",
-    esc(project.videoName) + (project.videoPresent ? "" : " (recording not found)"),
-    project.modifiedAt ? esc(fmtWhen(project.modifiedAt)) : "",
-  ].filter(Boolean).join(" · ");
-  open.innerHTML = `<b>${esc(project.title)}</b><span class="project-meta">${meta}</span>`;
+  const orphan = project.derivedFrom && !child && !projectNamed(project.derivedFrom);
+  const meta = (child
+    ? [
+      `<span class="stage">${esc(project.stageLabel)}</span>`,
+      project.spanSeconds ? `${Math.round(project.spanSeconds)} s` : "",
+      esc(project.formatLabel),
+      project.modifiedAt ? esc(fmtWhen(project.modifiedAt)) : "",
+    ]
+    : [
+      `<span class="stage">${esc(project.stageLabel)}</span>`,
+      // A short of its own is marked as one; the shape is otherwise hard to tell from the name.
+      project.shortForm ? `<span class="stage is-short">${esc(project.formatLabel)}</span>` : "",
+      orphan ? `short from ${esc(project.derivedFrom)} (removed)` : "",
+      shortCount ? `${shortCount} short${shortCount === 1 ? "" : "s"}` : "",
+      esc(project.videoName) + (project.videoPresent ? "" : " (recording not found)"),
+      project.modifiedAt ? esc(fmtWhen(project.modifiedAt)) : "",
+    ]).filter(Boolean).join(" · ");
+  const title = child ? shortTitle(project, parent) : project.title;
+  open.innerHTML = `${child ? '<span class="project-badge">Short</span>' : ""}<b>${esc(title)}</b><span class="project-meta">${meta}</span>`;
   open.addEventListener("click", async () => {
     if (project.current) { els.projects.close(); return; }
     const result = await window.fabula.switchProject(project.name);
@@ -3402,7 +3532,7 @@ function renderWhere(pathEl, defaultEl) {
 
 function renderProjectsDialog() {
   const projects = state?.projects ?? [];
-  els.projectsList.replaceChildren(...projects.map((project) => projectRow(project, { actions: true })));
+  els.projectsList.replaceChildren(...projectList(projects));
   if (projects.length === 0) els.projectsList.append(make("li", "projects-empty", "No projects yet."));
   els.projectsCloseProject.hidden = !state?.project;
   renderWhere(els.projectsRoot, els.projectsRootDefault);
@@ -3426,7 +3556,7 @@ function renderInstall() {
 function renderHome() {
   const projects = state?.projects ?? [];
   els.homeProjectsTitle.textContent = "Projects";
-  els.homeProjectsList.replaceChildren(...projects.map((project) => projectRow(project, { actions: true })));
+  els.homeProjectsList.replaceChildren(...projectList(projects));
   els.homeProjectsEmpty.hidden = projects.length > 0;
   renderWhere(els.homeRoot, els.homeRootDefault);
 }

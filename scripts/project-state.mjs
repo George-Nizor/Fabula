@@ -509,6 +509,8 @@ export function describeProject(dir, { videoPresent = (file) => fs.existsSync(fi
     shortForm: format.shortForm,
     // Where this one came from, when it was cut out of a longer film.
     derivedFrom: typeof meta.derivedFrom === "string" ? meta.derivedFrom : null,
+    // A short cut out of a film: how long the moment is.
+    spanSeconds: Number.isFinite(meta.sourceSpan?.seconds) ? meta.sourceSpan.seconds : null,
     video,
     videoName: path.basename(video),
     videoPresent: present,

@@ -194,6 +194,7 @@ body.win32 .topbar { padding-right: 156px; }
   .panel-toggles { margin-left: auto; }
   .progress-detail { display: none; }
   .progress { max-width: 30vw; }
+  .crumb-parent, .crumb-sep { display: none; }
   .stagebtn { padding: 0.28rem 0.8rem; }
 }
 @media (max-width: 1080px) {
@@ -644,6 +645,35 @@ fieldset.choice legend { padding: 0; margin-bottom: 6px; }
 .project-row.is-current { background: var(--accent-wash); box-shadow: 2px 3px 0 var(--accent-deep); }
 
 .project-row.is-missing .project-meta { color: var(--cut); }
+
+/* A film's shorts sit inside its row, under it: a sub-list, indented and
+   lighter, each a project of its own to open. */
+.project-row:has(> .project-children) { flex-wrap: wrap; }
+.project-children {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px 10px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 2px solid var(--line-soft);
+  background: var(--paper);
+}
+.project-row.is-child { box-shadow: none; border-width: 2px; background: var(--card); }
+.project-row.is-child .project-open { padding: 7px 12px; }
+.project-row.is-child .project-open b { font-size: var(--t-base); }
+.project-row.is-child.is-current { background: var(--accent-wash); }
+.project-badge {
+  align-self: flex-start;
+  margin-bottom: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--accent-text);
+  border: 1.5px solid var(--accent-text);
+}
 
 .project-open {
   flex: 1;
@@ -2163,3 +2193,45 @@ body.draft-showing .stagewell .videoframe { visibility: hidden; }
 .rail-foot:empty { display: none; }
 .insp-keys-wrap > summary { cursor: pointer; font-size: var(--t-sm); font-weight: 600; color: var(--ink-soft); }
 .insp-keys-wrap[open] > summary { margin-bottom: 6px; }
+
+/* The masthead's project: its name, and for a short the film it came from. */
+.crumb { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 34vw; font-size: var(--t-sm); }
+.crumb-parent {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14vw;
+}
+.crumb-parent:hover { color: var(--accent-text); background: var(--card-hover); }
+.crumb-sep { color: var(--dim); }
+.crumb-badge { padding: 0 6px; border-radius: 999px; font-size: var(--t-xs); font-weight: 700; color: var(--accent-text); border: 1.5px solid var(--accent-text); flex: none; }
+.crumb-title { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The shorts made from a film, on its Export page. */
+.made-shorts-head { margin: 4px 0 6px; font-size: var(--t-sm); font-weight: 650; color: var(--dim); }
+.made-shorts { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.made-short { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 2px solid var(--line-soft); border-radius: 10px; }
+.made-short.is-new { border-color: var(--accent-text); background: var(--accent-wash); }
+.made-short-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.made-short-text b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.made-short-text span { font-size: var(--t-sm); color: var(--dim); }
+
+/* In a short's Cut step, the film around the moment, folded to a line. */
+.short-fold {
+  display: block;
+  margin: 6px 0 10px;
+  padding: 6px 10px;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  font-size: var(--t-sm);
+  color: var(--dim);
+  cursor: pointer;
+}
+.short-fold:hover { color: var(--accent-text); border-color: var(--accent-text); }

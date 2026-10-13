@@ -103,6 +103,9 @@ export function createShort(parentDir, { fromWordId, toWordId, title, format = "
     compose.audio = { voice: { loudness: -14, ...(clean && clean !== "off" ? { clean } : {}) } };
   }
   fs.writeFileSync(path.join(dir, "compose.json"), JSON.stringify(compose, null, 2));
+  // The same recording, so the same waveform under the Cut step's cuts.
+  const waveform = path.join(parentDir, "waveform.json");
+  if (fs.existsSync(waveform)) fs.copyFileSync(waveform, path.join(dir, "waveform.json"));
 
   writeProjectTitle(dir, shown);
   writeProjectFormat(dir, shape.id);

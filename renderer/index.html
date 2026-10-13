@@ -17,12 +17,19 @@
 </head>
 <body>
   <header class="topbar" id="topbar">
-    <!-- The mark is the way home: every project is one click from here, and
-         the open one is named in the window title and the inspector only. -->
+    <!-- The mark is the way home: every project is one click from here. -->
     <button type="button" class="brand ii-hover" id="go-home" title="All projects (Ctrl+W)">
       <span class="brand-mark" id="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">Fabula</span>
     </button>
+    <!-- The open project, by name; a short cut out of a film says so and is
+         one click from it. -->
+    <div class="crumb" id="crumb" hidden>
+      <button type="button" class="crumb-parent" id="crumb-parent" hidden></button>
+      <span class="crumb-sep" id="crumb-sep" aria-hidden="true" hidden>›</span>
+      <span class="crumb-badge" id="crumb-badge" hidden>Short</span>
+      <span class="crumb-title" id="crumb-title"></span>
+    </div>
     <nav class="stages" id="stages" hidden>
       <button type="button" class="stagebtn is-active" id="tab-cut"><span class="stepnum" data-step-icon="scissors"></span>Cut</button>
       <button type="button" class="stagebtn" id="tab-look"><span class="stepnum" data-step-icon="palette"></span>Look</button>

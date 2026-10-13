@@ -508,13 +508,14 @@ async function removeProject(window, name) {
   const dir = path.join(mediaRoot(), name);
   const project = core.projectState.describeProject(dir);
   if (!project) return { ok: false, error: `There is no project called “${name}”.` };
+  const shorts = listProjects().filter((p) => p.derivedFrom === name).length;
   const running = readJson(path.join(dir, "progress.json"));
   const busy = running && !running.finishedAt && !(typeof running.detail === "string" && running.detail.startsWith("failed:"));
   const choice = await dialog.showMessageBox(window, {
     type: "warning",
     title: `Remove ${name}`,
     message: `Move the project “${name}” to the recycle bin?`,
-    detail: `Its transcripts, cuts, scenes and renders (${project.stageLabel}) go to the recycle bin. The recording ${project.videoName} stays where it is.${busy ? "\n\nA job appears to be running on this project; its output would be lost." : ""}`,
+    detail: `Its transcripts, cuts, scenes and renders (${project.stageLabel}) go to the recycle bin. The recording ${project.videoName} stays where it is.${shorts ? `\n\nIts ${shorts} short${shorts === 1 ? "" : "s"} stay${shorts === 1 ? "s" : ""}, as projects of ${shorts === 1 ? "its" : "their"} own.` : ""}${busy ? "\n\nA job appears to be running on this project; its output would be lost." : ""}`,
     buttons: ["Move to recycle bin", "Keep"],
     defaultId: 1,
     cancelId: 1,
