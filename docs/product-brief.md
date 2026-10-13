@@ -6,7 +6,7 @@ WhisperX aligns "um" and "uh" late, often 100–300 ms inside the sound, so a fi
 word's timestamps left its loudest part in. The cut pass now reads the recording's loudness every
 10 ms and moves each filler cut's edges out to where the sound starts and stops, never into the
 neighbouring words (`fillerSoundSpan` in `core/cut-engine.mjs`). Pauses are unchanged. Found on the
-first real project: all 30 filler cuts were late. The Cut step keeps everything on the left: a control panel above the
+first real project: all 30 filler cuts were late. The Cut step keeps everything on the left, in two columns on a wide window (stacked under 1500 px): a control column beside the
 transcript (what is selected, then Cut/Restore `X`, Preview `P`, Clear `Esc`, Previous/Next cut
 `[` `]`, each button wearing its key), the step's totals and Make it into a video below it; the
 inspector steps aside until a video is being made. Clicking a word selects it, shift-click a range.
