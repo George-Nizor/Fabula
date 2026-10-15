@@ -30,6 +30,7 @@
   --accent-text: light-dark(#7d2e3f, #ed7088);
   --good: light-dark(#21763c, #67d283);
   --bad: light-dark(#a14206, #f28c5c);
+  --warn: light-dark(#8a6500, #e2b33c);
 }
 * { box-sizing: border-box; font-variation-settings: "FLAR" 40; }
 html, body { margin: 0; height: 100%; }
@@ -49,19 +50,19 @@ h1 { font-size: 28px; line-height: 1.2; margin: 0 0 10px; }
 li.is-good .mark-dot { background: var(--good); }
 li.is-bad .mark-dot { background: var(--bad); }
 li.is-busy .mark-dot { background: var(--accent); }
+li.is-warn .mark-dot { background: var(--warn); }
 .progress { margin: 0 0 18px; }
 .bar { height: 12px; border-radius: 999px; background: var(--field); border: 2px solid var(--outline); overflow: hidden; }
 .fill { height: 100%; width: 0; background: var(--accent); transition: width 400ms ease; }
-.step { margin: 10px 0 8px; font-weight: 650; color: var(--ink); }
+.step { margin: 10px 0 2px; font-weight: 650; color: var(--ink); }
+.detail { margin: 0 0 8px; min-height: 1.5em; color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+.downloads { margin: 0 0 22px; padding-left: 20px; color: var(--dim); }
+.downloads li { margin: 2px 0; }
+.downloads .what { color: var(--ink); font-weight: 600; }
 .projects { margin: 0 0 22px; padding: 0; border: none; }
 .projects legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
-.projects .option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; margin-bottom: 8px; border: 2px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; }
-.projects .option:has(input:checked) { border-color: var(--outline); }
-.projects input { margin: 4px 0 0; accent-color: var(--accent); }
-.projects .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.projects .what { font-weight: 600; }
-.projects .folder { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
-.projects .why, .projects .note { color: var(--dim); font-size: 13px; }
+.projects .folder { margin: 0; font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+.projects .note { color: var(--dim); font-size: 13px; }
 .projects .note { margin: 4px 2px 0; }
 button.link { min-height: 0; padding: 0 2px; border: none; background: none; box-shadow: none; color: var(--accent-text); font: 600 13px/1.5 var(--ui); text-decoration: underline; }
 button.link:not(:disabled):hover { background: none; }

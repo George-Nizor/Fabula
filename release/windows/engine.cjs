@@ -1,94 +1,94 @@
 "use strict";
 
-// What the Windows bootstrap knows about the engine in WSL, as pure functions: where things are
-// from either side, what the setup script's lines mean, and what a remembered engine may say.
-// No Electron and no I/O here, so the tests run it as it is.
+// What the Windows bootstrap knows about the engine, as pure functions: where the engine home is,
+// what the setup script's lines mean, what engine.json may say, where the projects go by default,
+// and the script switch. No Electron and no I/O here, so the tests run it as it is.
 
-const DISTRO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/;
+const path = require("node:path");
 
-// A path in the distribution as Windows reaches it, through the \\wsl.localhost share.
-function uncPath(distro, posixPath) {
-  if (!DISTRO_RE.test(String(distro))) throw new Error("That is not a WSL distribution name.");
-  if (typeof posixPath !== "string" || !posixPath.startsWith("/")) throw new Error("A WSL path is absolute.");
-  return `\\\\wsl.localhost\\${distro}${posixPath.replace(/\//g, "\\")}`;
+// engine.json's format, as scripts/setup-windows.mjs writes it. The editor opens only on an
+// engine set up by a setup of this version; a higher one makes every install run the setup again.
+const SETUP_VERSION = 1;
+const SCRIPT_FLAG = "--fabula-script";
+const MODELS = new Set(["large-v3", "large-v3-turbo", "medium", "small", "base", "tiny"]);
+
+// The engine home: FABULA_ENGINE_HOME, else %LOCALAPPDATA%\Fabula\engine (scripts/host.cjs agrees).
+function engineHome(env, fallbackLocalAppData) {
+  if (env.FABULA_ENGINE_HOME) return path.win32.resolve(env.FABULA_ENGINE_HOME);
+  const local = env.LOCALAPPDATA || fallbackLocalAppData;
+  if (!local) throw new Error("LOCALAPPDATA is not set.");
+  return path.win32.join(local, "Fabula", "engine");
 }
 
-// A Windows path as the distribution reaches it, through its /mnt/<drive> mounts.
-function toWslPath(windowsPath) {
-  const match = /^([a-zA-Z]):[\\/](.*)$/.exec(String(windowsPath));
-  if (!match) throw new Error(`${windowsPath} is not on a drive WSL mounts.`);
-  return `/mnt/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
+// `Fabula.exe --fabula-script <file> [args…]` runs <file> as the Electron main instead of the
+// editor: the headless renders (scripts/export-compose.cjs, scripts/frame.cjs). The script sees
+// process.argv as it would under `electron <file> args…`. Null when the switch is absent.
+function parseScriptSwitch(argv, cwd = process.cwd()) {
+  const at = argv.indexOf(SCRIPT_FLAG);
+  if (at < 0) return null;
+  const file = argv[at + 1];
+  if (!file || file.startsWith("--")) throw new Error(`${SCRIPT_FLAG} needs a script file after it.`);
+  const resolved = path.win32.isAbsolute(file) || path.posix.isAbsolute(file) ? file : path.resolve(cwd, file);
+  return { file: resolved, argv: [argv[0], resolved, ...argv.slice(at + 2)] };
 }
 
-// wsl.exe answers in UTF-16LE when it speaks for itself (an error, the distribution list) and
-// passes a Linux program's UTF-8 through untouched. NUL bytes are the tell.
-function decodeWslOutput(buffer) {
-  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(String(buffer ?? ""));
-  const text = bytes.includes(0) ? bytes.toString("utf16le") : bytes.toString("utf8");
-  return text.replace(/^﻿/, "").replace(/\0/g, "");
-}
-
-// The probe the bootstrap runs in the default distribution prints its name and the home folder.
-function parseProbe(text) {
-  const [distro, home] = String(text).split(/\r?\n/).map((line) => line.trim());
-  if (!DISTRO_RE.test(distro || "")) throw new Error("WSL answered, but not with a distribution name. Is a Linux distribution installed?");
-  if (!home || !home.startsWith("/")) throw new Error("WSL answered without a home folder.");
-  return { distro, home };
-}
-
-// One line of scripts/setup-engine.sh's output: a step starting, the engine ready, or a line for
-// the log.
+// One line of scripts/setup-windows.mjs's output: a step starting, download progress, the engine
+// ready, the setup stopping, or a line for the log.
 function parseLine(line) {
   const text = String(line).replace(/\r$/, "");
   let match = /^STEP (\d+) (\d+) (.+)$/.exec(text);
   if (match) return { type: "step", n: Number(match[1]), total: Number(match[2]), label: match[3] };
-  match = /^READY (\/.+)$/.exec(text);
-  if (match) return { type: "ready", root: match[1] };
+  match = /^PROGRESS (\d{1,3}) (.+)$/.exec(text);
+  if (match) return { type: "progress", percent: Math.min(100, Number(match[1])), text: match[2] };
+  match = /^READY (.+)$/.exec(text);
+  if (match) return { type: "ready", root: match[1].trim() };
+  match = /^FAIL (.+)$/.exec(text);
+  if (match) return { type: "failed", text: match[1] };
   return { type: "log", text };
 }
 
-// What engine.json may hold: where the engine was set up. Anything else is treated as no engine.
+// engine.json as the bootstrap trusts it: a setup of this version that finished. Anything else
+// (missing, malformed, an older setup) means the setup runs.
 function validState(state) {
-  if (!state || typeof state !== "object") return null;
-  const { distro, home, root } = state;
-  if (!DISTRO_RE.test(String(distro || ""))) return null;
-  if (typeof home !== "string" || !home.startsWith("/")) return null;
-  if (typeof root !== "string" || !root.startsWith("/") || root.includes("..")) return null;
-  return { distro, home, root };
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+  if (state.setupVersion !== SETUP_VERSION) return null;
+  if (state.gpu !== "cuda" && state.gpu !== "cpu") return null;
+  if (!MODELS.has(state.model)) return null;
+  if (typeof state.readyAt !== "string" || Number.isNaN(Date.parse(state.readyAt))) return null;
+  return state;
 }
 
-// A version's folder in the engine, from Windows.
-function versionDir(state, version) {
-  if (!VERSION_RE.test(String(version))) throw new Error("That is not a version.");
-  return uncPath(state.distro, `${state.root}/versions/${version}`);
+// Whether an engine was set up before, by any setup version: then the setup is an update and
+// starts by itself, leaving the projects where they are.
+function wasSetUp(state) {
+  return Boolean(state && typeof state === "object" && Number.isInteger(state.setupVersion));
 }
 
-// The command that runs the setup inside the distribution. A login shell, so whatever Node or
-// tools the person's profile puts on PATH are there to be found. -e hands the line to that shell
-// as it is; `--` would have the distribution's shell read it first.
-// A first setup also says where the projects go (projectsRoot, as WSL sees it); without one they
-// stay under the engine's own folder.
-function setupCommand({ distro, script, tarball, version, projectsRoot = null }) {
-  const quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
-  const projects = projectsRoot ? ` --projects-root ${quote(projectsRoot)}` : "";
-  return {
-    command: "wsl.exe",
-    args: ["-d", distro, "-e", "bash", "-lc", `bash ${quote(script)} --version ${quote(version)} --tarball ${quote(tarball)}${projects}`],
-  };
+const defaultProjectsRoot = (videos) => path.win32.join(videos, "Fabula");
+
+// The projects folder chosen on the setup screen: a full path on a drive, not the top of one.
+function projectsRootFor(folder) {
+  if (typeof folder !== "string" || !folder) throw new Error("Choose a folder for the projects.");
+  if (/[\x00-\x1f\x7f]/.test(folder)) throw new Error("The projects folder path has characters that cannot be used.");
+  if (!/^[A-Za-z]:[\\/]/.test(folder)) throw new Error("Choose a folder on one of this PC's drives.");
+  const normal = path.win32.normalize(folder).replace(/\\+$/, "");
+  if (/^[A-Za-z]:$/.test(normal)) throw new Error("Choose a folder rather than the top of a drive.");
+  return normal;
 }
 
-// Where the first setup puts the projects, from the choice on the setup screen: a folder on a
-// Windows drive (shown in Explorer, deletes go to the Recycle Bin, renders cross into WSL) as WSL
-// sees it, or null for the engine's own projects folder inside WSL (faster, but only reachable
-// through \\wsl.localhost, which has no Recycle Bin).
-function projectsRootFor(choice) {
-  if (!choice || choice.kind === "wsl") return null;
-  if (choice.kind !== "windows" || typeof choice.folder !== "string" || !choice.folder) throw new Error("Choose a folder for the projects.");
-  if (/[\x00-\x1f\x7f]/.test(choice.folder)) throw new Error("The projects folder path has characters that cannot be used.");
-  const posix = toWslPath(choice.folder).replace(/\/+$/, "");
-  if (/^\/mnt\/[a-z]$/.test(posix)) throw new Error("Choose a folder rather than the top of a drive.");
-  return posix;
+// The arguments for the setup, run by Fabula.exe as Node (ELECTRON_RUN_AS_NODE=1).
+function setupArgs({ script, version, projectsRoot = null }) {
+  return [script, "--version", version, ...(projectsRoot ? ["--projects-root", projectsRoot] : [])];
 }
 
-module.exports = { decodeWslOutput, parseLine, parseProbe, projectsRootFor, setupCommand, toWslPath, uncPath, validState, versionDir };
+// nvidia-smi's one-line answer, for the setup screen.
+function parseGpu(text) {
+  const first = String(text ?? "").split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  if (!first) return null;
+  const [name, driver] = first.split(",").map((part) => part.trim());
+  return name && /^\d+(\.\d+)*$/.test(driver || "") ? { name, driver } : null;
+}
+
+module.exports = {
+  SETUP_VERSION, SCRIPT_FLAG, defaultProjectsRoot, engineHome, parseGpu, parseLine, parseScriptSwitch, projectsRootFor, setupArgs, validState, wasSetUp,
+};

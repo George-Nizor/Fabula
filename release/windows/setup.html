@@ -12,36 +12,32 @@
     <span class="name">Fabula</span>
   </header>
   <main>
-    <h1 id="title">Fabula runs in WSL</h1>
-    <p id="lede" class="lede">Its transcription, its renders and its assistant are Linux programs, so Fabula keeps them in
-      your Windows Subsystem for Linux. The first setup downloads about 7 GB (WhisperX on CUDA, ffmpeg,
-      and what the renders need) and takes 10–30 minutes. Updates reuse all of it.</p>
+    <h1 id="title">Set up Fabula</h1>
+    <p id="lede" class="lede">Before Fabula opens for the first time, it downloads the programs it uses to transcribe and
+      render your videos. This takes 10 to 30 minutes, and updates reuse all of it.</p>
+
+    <ul class="downloads" id="downloads">
+      <li><span class="what">ffmpeg</span>, which reads and renders the video: about 200 MB</li>
+      <li><span class="what">Python and WhisperX</span>, which transcribe it: several GB</li>
+      <li><span class="what">The speech model</span>: about 3 GB with an NVIDIA graphics card, about 0.5 GB without one</li>
+    </ul>
 
     <ul class="checks">
-      <li id="check-wsl"><span class="mark-dot"></span><span class="what">Windows Subsystem for Linux</span><span class="state" id="state-wsl">Checking…</span></li>
-      <li id="check-distro"><span class="mark-dot"></span><span class="what">Distribution</span><span class="state" id="state-distro">—</span></li>
-      <li id="check-engine"><span class="mark-dot"></span><span class="what">Fabula's engine</span><span class="state" id="state-engine">—</span></li>
+      <li id="check-gpu"><span class="mark-dot"></span><span class="what">Graphics card</span><span class="state" id="state-gpu">Checking…</span></li>
+      <li id="check-space"><span class="mark-dot"></span><span class="what">Free space</span><span class="state" id="state-space">Checking…</span></li>
+      <li id="check-engine"><span class="mark-dot"></span><span class="what">Fabula's engine</span><span class="state" id="state-engine">Not set up</span></li>
     </ul>
 
     <fieldset id="projects" class="projects" hidden>
       <legend>Where your projects go</legend>
-      <label class="option">
-        <input type="radio" name="projects" value="windows" checked />
-        <span class="text"><span class="what">A folder on Windows</span>
-          <span class="folder"><span id="projects-folder"></span> <button type="button" class="link" id="projects-change">Change…</button></span>
-          <span class="why">Easy to find in Explorer and to back up, and a removed project goes to the Recycle Bin. Renders write across into WSL, a little slower.</span></span>
-      </label>
-      <label class="option">
-        <input type="radio" name="projects" value="wsl" />
-        <span class="text"><span class="what">Inside WSL, beside the engine</span>
-          <span class="why">The fastest renders. Reached only through \\wsl.localhost, and a removed project is deleted for good.</span></span>
-      </label>
-      <p class="note">Your recordings are never copied, wherever this is. You can move the projects later from the editor.</p>
+      <p class="folder"><span id="projects-folder"></span> <button type="button" class="link" id="projects-change">Change…</button></p>
+      <p class="note">Your recordings are never copied. You can move the projects later from the editor.</p>
     </fieldset>
 
     <section id="progress" class="progress" hidden>
       <div class="bar"><div class="fill" id="fill"></div></div>
       <p class="step" id="step">Starting…</p>
+      <p class="detail" id="detail"></p>
       <details id="log-wrap">
         <summary>What it is doing</summary>
         <pre id="log"></pre>
@@ -51,7 +47,6 @@
     <p class="message" id="message" hidden></p>
 
     <footer class="actions">
-      <button type="button" class="ghost" id="learn" hidden>How to install WSL</button>
       <button type="button" class="ghost" id="recheck" hidden>Check again</button>
       <button type="button" class="primary" id="start" disabled>Set up Fabula</button>
     </footer>

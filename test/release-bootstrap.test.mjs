@@ -2,60 +2,77 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
-// The Windows bootstrap's pure half (release/windows/engine.cjs): where things are from either
-// side of WSL, what the setup script's lines mean, what a remembered engine may say.
+// The Windows bootstrap's pure half (release/windows/engine.cjs): the script switch, the setup's
+// lines, what engine.json may say, and where the projects go.
 const engine = createRequire(import.meta.url)("../release/windows/engine.cjs");
 
-test("paths cross between Windows and WSL both ways", () => {
-  assert.equal(engine.uncPath("Ubuntu", "/home/me/.local/share/fabula"), "\\\\wsl.localhost\\Ubuntu\\home\\me\\.local\\share\\fabula");
-  assert.equal(engine.toWslPath("C:\\Users\\George\\AppData\\Local\\Instrumenta\\setup-engine.sh"), "/mnt/c/Users/George/AppData/Local/Instrumenta/setup-engine.sh");
-  assert.throws(() => engine.uncPath("bad name", "/x"), /distribution name/);
-  assert.throws(() => engine.uncPath("Ubuntu", "relative"), /absolute/);
-  assert.throws(() => engine.toWslPath("\\\\server\\share\\x"), /not on a drive/);
+test("--fabula-script runs a file as the Electron main, with its arguments after it", () => {
+  const argv = ["C:\\Fabula\\Fabula.exe", "--fabula-script", "C:\\Fabula\\resources\\app\\scripts\\export-compose.cjs", "--from=2", "--fresh", "C:\\Videos\\Fabula\\talk"];
+  const parsed = engine.parseScriptSwitch(argv);
+  assert.equal(parsed.file, "C:\\Fabula\\resources\\app\\scripts\\export-compose.cjs");
+  // As under `electron <file> args…`: export-compose reads argv.slice(2), frame.cjs argv.slice(1).
+  assert.deepEqual(parsed.argv, ["C:\\Fabula\\Fabula.exe", "C:\\Fabula\\resources\\app\\scripts\\export-compose.cjs", "--from=2", "--fresh", "C:\\Videos\\Fabula\\talk"]);
+  assert.equal(engine.parseScriptSwitch(["Fabula.exe"]), null);
+  assert.equal(engine.parseScriptSwitch(["Fabula.exe", "--instrumenta-launch-check", "x"]), null);
+  assert.throws(() => engine.parseScriptSwitch(["Fabula.exe", "--fabula-script"]), /needs a script/);
+  assert.throws(() => engine.parseScriptSwitch(["Fabula.exe", "--fabula-script", "--fresh"]), /needs a script/);
+  assert.equal(engine.parseScriptSwitch(["Fabula.exe", "--fabula-script", "/abs/frame.cjs"]).file, "/abs/frame.cjs");
+  assert.equal(engine.parseScriptSwitch(["Fabula.exe", "--fabula-script", "frame.cjs"], "/work").file, "/work/frame.cjs");
+  assert.equal(engine.SCRIPT_FLAG, "--fabula-script");
 });
 
-test("wsl.exe's own UTF-16 and a Linux program's UTF-8 both read as text", () => {
-  assert.equal(engine.decodeWslOutput(Buffer.from("Ubuntu\n/home/me\n", "utf8")), "Ubuntu\n/home/me\n");
-  assert.equal(engine.decodeWslOutput(Buffer.from("\uFEFFNo installed distributions", "utf16le")), "No installed distributions");
-  assert.deepEqual(engine.parseProbe("Ubuntu\r\n/home/me\r\n"), { distro: "Ubuntu", home: "/home/me" });
-  assert.throws(() => engine.parseProbe("\n\n"), /distribution name/);
+test("the setup's lines are steps, progress, the end, a failure, or the log", () => {
+  assert.deepEqual(engine.parseLine("STEP 4 8 Installing Python and WhisperX (several GB, once)"), { type: "step", n: 4, total: 8, label: "Installing Python and WhisperX (several GB, once)" });
+  assert.deepEqual(engine.parseLine("PROGRESS 42 Downloading ffmpeg: 81 of 193 MB"), { type: "progress", percent: 42, text: "Downloading ffmpeg: 81 of 193 MB" });
+  assert.deepEqual(engine.parseLine("READY C:\\Users\\Jo\\AppData\\Local\\Fabula\\engine\r"), { type: "ready", root: "C:\\Users\\Jo\\AppData\\Local\\Fabula\\engine" });
+  assert.deepEqual(engine.parseLine("FAIL There is not enough free space."), { type: "failed", text: "There is not enough free space." });
+  assert.deepEqual(engine.parseLine("NVENC: available"), { type: "log", text: "NVENC: available" });
+  assert.deepEqual(engine.parseLine("PROGRESS soon"), { type: "log", text: "PROGRESS soon" });
 });
 
-test("the setup script's lines are steps, the end, or the log", () => {
-  assert.deepEqual(engine.parseLine("STEP 3 8 Installing Fabula's packages"), { type: "step", n: 3, total: 8, label: "Installing Fabula's packages" });
-  assert.deepEqual(engine.parseLine("READY /home/me/.local/share/fabula\r"), { type: "ready", root: "/home/me/.local/share/fabula" });
-  assert.deepEqual(engine.parseLine("downloading ffmpeg (~120 MB)"), { type: "log", text: "downloading ffmpeg (~120 MB)" });
-});
-
-test("a remembered engine is trusted only when it is well formed", () => {
-  const state = { distro: "Ubuntu", home: "/home/me", root: "/home/me/.local/share/fabula" };
+test("engine.json opens the editor only when this setup version finished it", () => {
+  const state = { setupVersion: engine.SETUP_VERSION, version: "0.4.0", gpu: "cuda", model: "large-v3", readyAt: "2026-10-15T12:00:00.000Z" };
   assert.deepEqual(engine.validState(state), state);
-  assert.equal(engine.validState({ ...state, root: "/home/me/../../etc" }), null);
-  assert.equal(engine.validState({ ...state, distro: "a b" }), null);
+  assert.deepEqual(engine.validState({ ...state, gpu: "cpu", model: "small" }), { ...state, gpu: "cpu", model: "small" });
+  assert.equal(engine.validState({ ...state, setupVersion: engine.SETUP_VERSION + 1 }), null);
+  assert.equal(engine.validState({ ...state, setupVersion: 0 }), null);
+  assert.equal(engine.validState({ ...state, gpu: "rocm" }), null);
+  assert.equal(engine.validState({ ...state, model: "../x" }), null);
+  assert.equal(engine.validState({ ...state, readyAt: "soon" }), null);
   assert.equal(engine.validState(null), null);
-  assert.equal(engine.versionDir(state, "0.2.0"), "\\\\wsl.localhost\\Ubuntu\\home\\me\\.local\\share\\fabula\\versions\\0.2.0");
-  assert.throws(() => engine.versionDir(state, "../x"), /not a version/);
+  assert.equal(engine.validState([]), null);
+  // An older setup is a rerun, which keeps the projects where they are.
+  assert.equal(engine.wasSetUp({ ...state, setupVersion: 0 }), true);
+  assert.equal(engine.wasSetUp(null), false);
+  assert.equal(engine.wasSetUp({}), false);
 });
 
-test("the setup runs in a login shell of the chosen distribution, its arguments quoted", () => {
-  const { command, args } = engine.setupCommand({ distro: "Ubuntu", script: "/mnt/c/x/setup-engine.sh", tarball: "/mnt/c/it's/f.tar.gz", version: "0.2.0" });
-  assert.equal(command, "wsl.exe");
-  assert.deepEqual(args.slice(0, 5), ["-d", "Ubuntu", "-e", "bash", "-lc"]);
-  assert.equal(args[5], "bash '/mnt/c/x/setup-engine.sh' --version '0.2.0' --tarball '/mnt/c/it'\\''s/f.tar.gz'");
+test("the engine home is %LOCALAPPDATA%\\Fabula\\engine unless FABULA_ENGINE_HOME says otherwise", () => {
+  assert.equal(engine.engineHome({ LOCALAPPDATA: "C:\\Users\\Jo\\AppData\\Local" }), "C:\\Users\\Jo\\AppData\\Local\\Fabula\\engine");
+  assert.equal(engine.engineHome({}, "C:\\Users\\Jo\\AppData\\Local"), "C:\\Users\\Jo\\AppData\\Local\\Fabula\\engine");
+  assert.equal(engine.engineHome({ FABULA_ENGINE_HOME: "D:\\dev\\engine-test\\", LOCALAPPDATA: "C:\\x" }), "D:\\dev\\engine-test");
+  assert.throws(() => engine.engineHome({}), /LOCALAPPDATA/);
 });
 
-test("a first setup can name the projects folder, quoted like the rest", () => {
-  const { args } = engine.setupCommand({ distro: "Ubuntu", script: "/s.sh", tarball: "/t.tar.gz", version: "0.2.0", projectsRoot: "/mnt/c/Users/Jo's/Videos/Fabula" });
-  assert.equal(args[5], "bash '/s.sh' --version '0.2.0' --tarball '/t.tar.gz' --projects-root '/mnt/c/Users/Jo'\\''s/Videos/Fabula'");
-  assert.doesNotMatch(engine.setupCommand({ distro: "Ubuntu", script: "/s.sh", tarball: "/t.tar.gz", version: "0.2.0" }).args[5], /projects-root/);
+test("the projects go to a Fabula folder in Videos by default, or a folder on a drive", () => {
+  assert.equal(engine.defaultProjectsRoot("C:\\Users\\Jo\\Videos"), "C:\\Users\\Jo\\Videos\\Fabula");
+  assert.equal(engine.projectsRootFor("C:\\Users\\Jo\\Videos\\Fabula\\"), "C:\\Users\\Jo\\Videos\\Fabula");
+  assert.equal(engine.projectsRootFor("E:/Video Storage/Fabula"), "E:\\Video Storage\\Fabula");
+  assert.throws(() => engine.projectsRootFor("D:\\"), /top of a drive/);
+  assert.throws(() => engine.projectsRootFor("\\\\nas\\videos"), /drives/);
+  assert.throws(() => engine.projectsRootFor("/mnt/c/Users"), /drives/);
+  assert.throws(() => engine.projectsRootFor(""), /Choose a folder/);
+  assert.throws(() => engine.projectsRootFor(null), /Choose a folder/);
+  assert.throws(() => engine.projectsRootFor("C:\\a\nb"), /characters/);
 });
 
-test("the projects choice becomes a folder as WSL sees it, or the engine's own", () => {
-  assert.equal(engine.projectsRootFor({ kind: "windows", folder: "C:\\Users\\George\\Videos\\Fabula\\" }), "/mnt/c/Users/George/Videos/Fabula");
-  assert.equal(engine.projectsRootFor({ kind: "wsl" }), null);
-  assert.equal(engine.projectsRootFor(null), null);
-  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "D:\\" }), /top of a drive/);
-  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "\\\\nas\\videos" }), /not on a drive/);
-  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "" }), /Choose a folder/);
-  assert.throws(() => engine.projectsRootFor({ kind: "windows", folder: "C:\\a\nb" }), /characters/);
+test("the setup runs the script with the version, and a folder only on a first setup", () => {
+  assert.deepEqual(engine.setupArgs({ script: "C:\\app\\scripts\\setup-windows.mjs", version: "0.4.0" }), ["C:\\app\\scripts\\setup-windows.mjs", "--version", "0.4.0"]);
+  assert.deepEqual(engine.setupArgs({ script: "s.mjs", version: "0.4.0", projectsRoot: "C:\\Users\\Jo's\\Videos\\Fabula" }), ["s.mjs", "--version", "0.4.0", "--projects-root", "C:\\Users\\Jo's\\Videos\\Fabula"]);
+});
+
+test("nvidia-smi's answer names the card, or there is none", () => {
+  assert.deepEqual(engine.parseGpu("NVIDIA GeForce RTX 4080 SUPER, 617.14\r\n"), { name: "NVIDIA GeForce RTX 4080 SUPER", driver: "617.14" });
+  assert.equal(engine.parseGpu(""), null);
+  assert.equal(engine.parseGpu("No devices were found"), null);
 });

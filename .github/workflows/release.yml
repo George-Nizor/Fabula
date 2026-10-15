@@ -3,11 +3,11 @@ name: release
 # Publishes Fabula for Windows when a v<version> tag is pushed: the bundle Instrumenta installs and
 # keeps up to date (managed-bundle), and the instrumenta-release.json that describes it.
 #
-# The bundle is Electron's Windows runtime with the bootstrap as its app (release/windows) and the
-# engine it sets up in the person's WSL: this version's code and scripts/setup-engine.sh
-# (scripts/package-release.mjs builds it). The editor then runs from that engine, as a
-# developer's checkout does. Run by hand (workflow_dispatch) it builds and tests everything and
-# publishes nothing.
+# The bundle is Electron's Windows runtime (Fabula.exe) with Fabula itself as its app: the code, its
+# production node_modules and the bootstrap (release/windows) as the main, built by
+# scripts/package-release.mjs. The first start sets up the engine on Windows
+# (scripts/setup-windows.mjs: ffmpeg, Python and WhisperX, the models); no WSL is involved. Run by
+# hand (workflow_dispatch) it builds and tests everything and publishes nothing.
 
 on:
   push:
@@ -58,6 +58,23 @@ jobs:
 
       - name: Bundle
         run: node scripts/package-release.mjs --out .release
+
+      # What ships in resources\app: the code and production packages, never Electron itself.
+      - name: Check the bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - ".release/Fabula-$VERSION-windows-x64.zip" <<'PY'
+          import sys, zipfile
+          names = zipfile.ZipFile(sys.argv[1]).namelist()
+          need = ["Fabula.exe", "resources/app/package.json", "resources/app/bootstrap.cjs", "resources/app/electron/main.cjs",
+                  "resources/app/scripts/setup-windows.mjs", "resources/app/node_modules/@modelcontextprotocol/sdk/package.json"]
+          missing = [n for n in need if n not in names]
+          bad = [n for n in names if n.startswith("resources/app/node_modules/electron/") or n.startswith("resources/app/test/")]
+          if missing or bad:
+              sys.exit(f"missing: {missing}; should not ship: {bad[:5]}")
+          print(f"{len(names)} files in the bundle")
+          PY
 
       - name: Release manifest
         env:
