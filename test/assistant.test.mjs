@@ -6,8 +6,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ROOT, buildLaunch, selection, readPreferences, savePreferences } from "../scripts/assistant.mjs";
+import { createRequire } from "node:module";
+import { ROOT, buildLaunch, selection, readPreferences, savePreferences, acquireLock, releaseLock } from "../scripts/assistant.mjs";
 import { INVARIANTS } from "../core/assistant-brief.mjs";
+const { findAgentCli, mergeEnv } = createRequire(import.meta.url)("../scripts/agent-cli.cjs");
 
 test("model IDs remain literal arguments; provider effort mappings and default inheritance", () => {
   const model = 'custom-model-$(touch unwanted)';
@@ -119,3 +121,77 @@ for (const provider of ["codex", "claude"]) {
     } finally { await client.close(); }
   });
 }
+
+test("under Fabula.exe the MCP server is started as Node, by either CLI", () => {
+  const runner = { command: "C:\\Fabula\\Fabula.exe", env: { ELECTRON_RUN_AS_NODE: "1" } };
+  const claude = buildLaunch({ provider: "claude", model: "", effort: "", persona: "farmer" }, "C:\\app", runner);
+  const config = JSON.parse(claude.args[claude.args.indexOf("--mcp-config") + 1]).mcpServers.fabula;
+  assert.equal(config.command, "C:\\Fabula\\Fabula.exe");
+  assert.deepEqual(config.env, { FABULA_PERSONA: "farmer", ELECTRON_RUN_AS_NODE: "1" });
+  const codex = buildLaunch({ provider: "codex", model: "", effort: "", persona: "farmer" }, "C:\\app", runner);
+  assert.ok(codex.args.includes(`mcp_servers.fabula.command=${JSON.stringify("C:\\Fabula\\Fabula.exe")}`));
+  assert.ok(codex.args.includes('mcp_servers.fabula.env={FABULA_PERSONA="farmer", ELECTRON_RUN_AS_NODE="1"}'));
+  // A bare path is a plain node, as before.
+  const plain = buildLaunch({ provider: "claude", model: "", effort: "" }, "/w", "/usr/bin/node");
+  assert.deepEqual(JSON.parse(plain.args[plain.args.indexOf("--mcp-config") + 1]).mcpServers.fabula.env, { FABULA_PERSONA: "editor" });
+});
+
+test("on Windows each CLI is found as a real program, never a .cmd shim", () => {
+  const W = (...parts) => parts.join("\\");
+  const npm = W("C:", "Users", "G", "AppData", "Roaming", "npm");
+  const env = { USERPROFILE: W("C:", "Users", "G"), APPDATA: W("C:", "Users", "G", "AppData", "Roaming"), Path: `C:\\Windows;${npm}` };
+  const has = (...files) => { const set = new Set(files.map((f) => f.toLowerCase())); return (f) => set.has(f.toLowerCase()); };
+  const node = { command: "C:\\Fabula\\Fabula.exe", env: { ELECTRON_RUN_AS_NODE: "1" } };
+  const find = (provider, exists, extra = {}) => findAgentCli(provider, { platform: "win32", env: { ...env, ...extra }, exists, homedir: "C:\\nobody", arch: "x64", node });
+
+  // Linux keeps the bare name, resolved by the login shell's PATH.
+  assert.deepEqual(findAgentCli("claude", { platform: "linux" }), { command: "claude", args: [], env: {}, source: "PATH" });
+
+  // Claude Code: the override, the native installer, PATH, then npm's package.
+  const native = W("C:", "Users", "G", ".local", "bin", "claude.exe");
+  assert.equal(find("claude", has("D:\\c.exe", native), { FABULA_CLAUDE_EXE: "D:\\c.exe" }).command, "D:\\c.exe");
+  assert.equal(find("claude", has(native, W("C:", "Windows", "claude.exe"))).command, native);
+  assert.equal(find("claude", has(W("C:", "Windows", "claude.exe"))).command, W("C:", "Windows", "claude.exe"));
+  const pkg = W(npm, "node_modules", "@anthropic-ai", "claude-code");
+  assert.equal(find("claude", has(W(npm, "claude.cmd"), W(pkg, "bin", "claude.exe"))).command, W(pkg, "bin", "claude.exe"));
+  const viaCli = find("claude", has(W(npm, "claude.cmd"), W(pkg, "cli.js")));
+  assert.deepEqual([viaCli.command, viaCli.args, viaCli.env], [node.command, [W(pkg, "cli.js")], node.env], "cli.js runs on this Node");
+  assert.equal(find("claude", has(W(npm, "claude.cmd"))), null, "a shim with nothing behind it is not a CLI");
+
+  // Codex: every layout @openai/codex has shipped, with its ripgrep first on PATH.
+  const codexPkg = W(npm, "node_modules", "@openai", "codex");
+  const old = find("codex", has(W(npm, "codex.cmd"), W(codexPkg, "bin", "codex-x86_64-pc-windows-msvc.exe"), W(codexPkg, "node_modules", "@vscode", "ripgrep", "bin", "rg.exe")));
+  assert.equal(old.command, W(codexPkg, "bin", "codex-x86_64-pc-windows-msvc.exe"));
+  assert.equal(old.env.CODEX_MANAGED_BY_NPM, "1");
+  assert.ok(old.env.PATH.startsWith(W(codexPkg, "node_modules", "@vscode", "ripgrep", "bin") + ";C:\\Windows;"));
+  const vendor = W(codexPkg, "vendor", "x86_64-pc-windows-msvc");
+  const vendored = find("codex", has(W(npm, "codex.cmd"), W(vendor, "codex", "codex.exe"), W(vendor, "path", "rg.exe")));
+  assert.equal(vendored.command, W(vendor, "codex", "codex.exe"));
+  assert.ok(vendored.env.PATH.startsWith(W(vendor, "path") + ";"));
+  const split = W(codexPkg, "node_modules", "@openai", "codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "codex", "codex.exe");
+  assert.equal(find("codex", has(W(npm, "codex.cmd"), split, W(vendor, "codex", "codex.exe"))).command, split, "the platform package first");
+  assert.equal(find("codex", has(W("C:", "Windows", "codex.exe"))).command, W("C:", "Windows", "codex.exe"));
+  assert.equal(find("codex", has("D:\\x.exe"), { FABULA_CODEX_EXE: "D:\\x.exe" }).command, "D:\\x.exe");
+  assert.equal(find("codex", has(W(npm, "codex.cmd"))), null);
+
+  // One PATH key, whatever its case.
+  assert.deepEqual(mergeEnv({ Path: "a", X: "1" }, { PATH: "b;a" }), { PATH: "b;a", X: "1" });
+});
+
+test("the Windows session lock admits one live session and clears a dead one's", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fabula-lock-"));
+  const file = path.join(dir, "home", "assistant-session.lock");
+  try {
+    assert.equal(acquireLock(file, 100, () => true), true);
+    assert.equal(fs.readFileSync(file, "utf8").trim(), "100");
+    assert.equal(acquireLock(file, 200, () => true), false, "a live holder keeps it");
+    assert.equal(acquireLock(file, 200, () => false), true, "a dead holder's lock is stale");
+    releaseLock(file, 100);
+    assert.ok(fs.existsSync(file), "only the holder releases it");
+    releaseLock(file, 200);
+    assert.ok(!fs.existsSync(file));
+    fs.writeFileSync(file, "garbage");
+    assert.equal(acquireLock(file, 300, () => true), true, "an unreadable lock is stale");
+    releaseLock(file, 300);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

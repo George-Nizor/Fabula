@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 const { AssistantSession, sessionCommand, choiceArgs } = createRequire(import.meta.url)("../electron/assistant-session.cjs");
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
@@ -18,6 +19,16 @@ test("the window's choice becomes plain argv, never a shell string", () => {
   const win = sessionCommand({ platform: "win32", repo: "/w/Fabula", distro: "Ubuntu", cols: 132, rows: 43, args: ["--provider", "claude"] });
   assert.equal(win.command, "wsl.exe");
   assert.deepEqual(win.args, ["--distribution", "Ubuntu", "--cd", "/w/Fabula", "-e", "python3", "scripts/pty-bridge.py", "132", "43", "bash", "-l", "scripts/assistant-run.sh", "--provider", "claude"]);
+  // Native Windows: the venv's python runs the ConPTY bridge, which runs Fabula.exe as Node on assistant.mjs.
+  const native = sessionCommand({ platform: "win32", repo: "C:\\Fabula\\resources\\app", cols: 132, rows: 43, args: ["--provider", "codex"], extra: ["--dry-run"],
+    python: "C:\\E\\venv-whisperx\\Scripts\\python.exe", execPath: "C:\\Fabula\\Fabula.exe", env: { PATH: "C:\\x", ELECTRON_RUN_AS_NODE: "0" } });
+  assert.equal(native.command, "C:\\E\\venv-whisperx\\Scripts\\python.exe");
+  assert.deepEqual(native.args, ["C:\\Fabula\\resources\\app\\scripts\\pty-bridge-win.py", "132", "43", "C:\\Fabula\\Fabula.exe",
+    "C:\\Fabula\\resources\\app\\scripts\\assistant.mjs", "--provider", "codex", "--dry-run"]);
+  assert.equal(native.cwd, "C:\\Fabula\\resources\\app");
+  assert.deepEqual(native.env, { PATH: "C:\\x", ELECTRON_RUN_AS_NODE: "1" }, "the chain runs Fabula.exe as Node");
+  assert.equal(sessionCommand({ platform: "win32", repo: "C:\\F", cols: 1, rows: 1, args: [], python: "p", execPath: "e", env: {} }).args.slice(1, 3).join("x"), "20x5");
+  assert.equal(win.env, undefined, "the WSL route keeps the window's environment");
   const linux = sessionCommand({ platform: "linux", repo: "/w/Fabula", cols: 80, rows: 24, args: [] });
   assert.equal(linux.command, "python3");
   assert.equal(linux.cwd, "/w/Fabula");
@@ -48,4 +59,28 @@ test("the bridge gives the command a real terminal, relays both ways, and resize
   assert.match(output, /got:hello there/, "input reached the command");
   assert.match(output, /20 72/, "the resize was applied");
   assert.ok(!output.includes("7777"), "the control sequence never reached the command");
+});
+
+test("the Windows bridge strips the resize sequence even when it arrives in pieces", () => {
+  const script = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("bridge", sys.argv[1])
+bridge = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bridge)
+cases = [b"plain", b"a\\x1b]7777;80;24\\x07b", b"tail\\x1b]77", b"x\\x1b]7777;90", b"\\x1b]7777;bad\\x07ok", b"esc\\x1b[A"]
+out = []
+for case in cases:
+    text, sizes, pending = bridge.split_controls(case)
+    out.append([text.decode(), sizes, pending.decode()])
+print(json.dumps(out))`;
+  const result = spawnSync("python3", ["-c", script, path.join(ROOT, "scripts", "pty-bridge-win.py")], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [
+    ["plain", [], ""],
+    ["ab", [[80, 24]], ""],
+    ["tail", [], "\x1b]77"],
+    ["x", [], "\x1b]7777;90"],
+    ["ok", [], ""],
+    ["esc\x1b[A", [], ""],
+  ]);
 });

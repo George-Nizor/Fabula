@@ -23,7 +23,6 @@ import sys
 import threading
 import time
 
-from winpty import PTY, Backend
 
 CTRL_START = b"\x1b]7777;"
 CTRL_END = b"\x07"
@@ -84,6 +83,8 @@ def main():
     env = dict(os.environ)
     env["COLORTERM"] = "truecolor"
     block = "\0".join(f"{key}={value}" for key, value in env.items()) + "\0"
+
+    from winpty import PTY, Backend  # here, so split_controls is testable anywhere
 
     pty = PTY(cols, rows, backend=Backend.ConPTY)
     try:

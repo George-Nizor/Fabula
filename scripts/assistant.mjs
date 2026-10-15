@@ -13,7 +13,11 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 // Where the choice is kept (scripts/settings.cjs): the engine's home when
 // installed, so updates keep it; beside the code in a checkout. A choice an
 // older version kept beside its code is read once and carried over.
-const settings = createRequire(import.meta.url)("./settings.cjs");
+const require = createRequire(import.meta.url);
+const settings = require("./settings.cjs");
+const host = require("./host.cjs");
+const { findAgentCli, mergeEnv, installHint } = require("./agent-cli.cjs");
+const WINDOWS = process.platform === "win32";
 const PREFS = settings.assistantPreferencesFile();
 if (PREFS !== settings.CHECKOUT_PREFERENCES && !fs.existsSync(PREFS) && fs.existsSync(settings.CHECKOUT_PREFERENCES)) {
   try { fs.copyFileSync(settings.CHECKOUT_PREFERENCES, PREFS); fs.chmodSync(PREFS, 0o600); } catch { /* the defaults apply */ }
@@ -102,21 +106,27 @@ export function personaPrompt(persona) {
   return `${PERSONAS[id].brief}\n\nCall adopt_persona with persona "${id}" first, before status, and read what it returns.`;
 }
 
-export function buildLaunch(options, root = ROOT, node = process.execPath) {
+// `node` is how the MCP server is run: this runtime (host.nodeRunner()), so
+// under Fabula.exe the server gets ELECTRON_RUN_AS_NODE=1 and runs as Node.
+// A bare path is taken as a plain node.
+export function buildLaunch(options, root = ROOT, node = host.nodeRunner()) {
+  const runner = typeof node === "string" ? { command: node, env: {} } : node;
   const { provider, model, effort } = selection(options.provider, options.model, options.effort);
   if (options.task !== undefined && options.task !== "" && !Object.hasOwn(TASKS, options.task)) throw new Error(`Unknown task ${options.task}.`);
   const persona = validatePersona(options.persona);
   const prompt = `${personaPrompt(persona)}\n\n${PROMPT} ${options.task && TASKS[options.task] ? TASKS[options.task] : IDLE}`;
   const server = path.join(root, "mcp", "server.mjs");
+  const serverEnv = { FABULA_PERSONA: persona, ...runner.env };
+  const toml = Object.entries(serverEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(", ");
   const args = [];
   if (provider === "codex") {
     // Session-only overrides work without installing/editing user-level MCP configuration.
     args.push("--cd", root,
-      "-c", `mcp_servers.fabula.command=${JSON.stringify(node)}`,
+      "-c", `mcp_servers.fabula.command=${JSON.stringify(runner.command)}`,
       "-c", `mcp_servers.fabula.args=${JSON.stringify([server])}`,
       "-c", `mcp_servers.fabula.cwd=${JSON.stringify(root)}`,
       "-c", "mcp_servers.fabula.enabled=true",
-      "-c", `mcp_servers.fabula.env={FABULA_PERSONA=${JSON.stringify(persona)}}`,
+      "-c", `mcp_servers.fabula.env={${toml}}`,
       "-c", "mcp_servers.fabula.tool_timeout_sec=60");
     if (effort) args.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
   } else {
@@ -127,7 +137,7 @@ export function buildLaunch(options, root = ROOT, node = process.execPath) {
     // film made while the person watches the Making panel never stalls on a
     // permission prompt in a pane they are not looking at. --allowedTools
     // takes a list, so an option must follow it before the prompt does.
-    args.push("--mcp-config", JSON.stringify({ mcpServers: { fabula: { command: node, args: [server], env: { FABULA_PERSONA: persona } } } }),
+    args.push("--mcp-config", JSON.stringify({ mcpServers: { fabula: { command: runner.command, args: [server], env: serverEnv } } }),
       "--allowedTools", "mcp__fabula",
       "--strict-mcp-config", "--append-system-prompt", INVARIANTS);
     if (effort) args.push("--effort", effort);
@@ -164,6 +174,7 @@ export function savePreferences(previous, chosen, file = PREFS) {
   const persona = validatePersona(chosen.persona ?? previous.persona);
   const next = { provider, persona, profiles: { ...previous.profiles, [provider]: { model, effort } } };
   const temp = `${file}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(temp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
   fs.renameSync(temp, file);
 }
@@ -174,7 +185,7 @@ async function main() {
     saved: { type: "boolean" }, "dry-run": { type: "boolean" }, help: { type: "boolean" },
   } });
   if (values.help) {
-    console.log(`Fabula assistant — run in a WSL/Linux terminal\n
+    console.log(`Fabula assistant — run in a terminal (Linux, WSL or Windows)\n
 npm run assistant                            Choose provider, model and effort
 npm run assistant -- --saved                  Use the last choices
 npm run assistant -- --provider codex         Use that provider's saved choices
@@ -190,7 +201,7 @@ Exact model IDs are passed unchanged; the provider checks account availability.
 Use /model in the agent session to see its available models.
 Exit the current assistant before switching provider, then run this command again.
 The window's Ask assistant box queues messages for the session; tell it to listen first.
-Preferences are local to this checkout; no account/global configuration is changed.`);
+Preferences are kept in the engine's home (or beside a checkout); no account/global configuration is changed.`);
     return;
   }
   const prefs = readPreferences();
@@ -216,24 +227,76 @@ Preferences are local to this checkout; no account/global configuration is chang
   const chosen = { ...selection(provider, model, effort), persona: validatePersona(values.persona ?? prefs.persona) };
   const launch = buildLaunch({ ...chosen, task: values.task ?? "" });
   if (values["dry-run"]) { console.log(JSON.stringify({ ...chosen, ...launch }, null, 2)); return; }
-  if (process.platform !== "linux") throw new Error("Run npm run assistant in WSL/Linux, alongside Fabula's local media tools.");
+  if (process.platform !== "linux" && !WINDOWS) throw new Error("The assistant runs on Linux, in WSL, or on Windows.");
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("The assistant needs an interactive terminal. Use --dry-run to inspect settings.");
-  for (const executable of [provider, "flock"]) {
-    const check = spawnSync(executable, ["--help"], { stdio: "ignore" });
-    if (check.error || check.status !== 0) throw new Error(`Cannot run ${executable}. Install it in WSL/Linux and check it is on PATH.`);
+  const cli = findAgentCli(provider);
+  if (!cli) throw new Error(installHint(provider));
+  // The CLI and what it starts run as themselves: ELECTRON_RUN_AS_NODE, which
+  // runs this script under Fabula.exe, would turn a render's Fabula.exe into a
+  // bare Node. The MCP server gets it back in its own config (buildLaunch), and
+  // a CLI that is itself a Node script gets it in cli.env.
+  const base = { ...process.env };
+  delete base.ELECTRON_RUN_AS_NODE;
+  const env = mergeEnv(base, cli.env);
+  const check = spawnSync(cli.command, [...cli.args, "--version"], { stdio: "ignore", env, windowsHide: true });
+  if (check.error || check.status !== 0) throw new Error(`${installHint(provider)} (${cli.command})`);
+  if (!WINDOWS) {
+    const flock = spawnSync("flock", ["--help"], { stdio: "ignore" });
+    if (flock.error || flock.status !== 0) throw new Error("Cannot run flock. Install it (util-linux) and check it is on PATH.");
   }
   savePreferences(prefs, chosen);
   console.log(`Starting ${provider} | model: ${chosen.model || "CLI default"} | effort: ${chosen.effort || "CLI default"} | persona: ${chosen.persona}`);
   console.log("Use your subscription login. Review the CLI's active model before editing. Exit this session before switching providers.");
-  // flock is held by the child for the session lifetime and automatically released on exit/crash.
-  // It protects cooperating launchers, not sessions launched manually outside this command.
-  const result = spawnSync("flock", ["--nonblock", "--conflict-exit-code", "73",
-    path.join(ROOT, ".assistant-session.lock"), launch.command, ...launch.args], {
-    cwd: launch.cwd, stdio: "inherit",
-  });
+  // One session at a time. It protects cooperating launchers, not sessions launched manually outside this command.
+  let result;
+  if (WINDOWS) {
+    // No flock on Windows: a lockfile naming this process, which waits for
+    // the CLI. A lock whose process has gone (a crash, the pane's stop) is stale.
+    const lock = path.join(host.engineHome() ?? ROOT, "assistant-session.lock");
+    if (!acquireLock(lock)) throw new Error("Another Fabula assistant is already running. Exit it before starting a new session.");
+    try {
+      result = spawnSync(cli.command, [...cli.args, ...launch.args], { cwd: launch.cwd, stdio: "inherit", env });
+    } finally { releaseLock(lock); }
+  } else {
+    // flock is held by the child for the session lifetime and automatically released on exit/crash.
+    result = spawnSync("flock", ["--nonblock", "--conflict-exit-code", "73",
+      path.join(ROOT, ".assistant-session.lock"), cli.command, ...cli.args, ...launch.args], {
+      cwd: launch.cwd, stdio: "inherit", env,
+    });
+    if (result.status === 73) throw new Error("Another Fabula assistant is already running. Exit it before starting a new session.");
+  }
   if (result.error) throw result.error;
-  if (result.status === 73) throw new Error("Another Fabula assistant is already running. Exit it before starting a new session.");
   process.exitCode = result.status ?? (result.signal === "SIGINT" ? 130 : 1);
+}
+
+function processAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; }
+}
+
+// Takes the session lock for `pid`: true when taken, false when a live
+// process holds it. A lock naming a process that has gone is cleared.
+export function acquireLock(file, pid = process.pid, alive = processAlive) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      fs.writeFileSync(file, `${pid}\n`, { flag: "wx" });
+      return true;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    let holder = NaN;
+    try { holder = Number.parseInt(fs.readFileSync(file, "utf8"), 10); } catch { /* removed meanwhile */ }
+    if (Number.isInteger(holder) && holder > 0 && holder !== pid && alive(holder)) return false;
+    try { fs.unlinkSync(file); } catch { /* removed meanwhile */ }
+  }
+  return false;
+}
+
+// Gives the lock up, only if it is still this process's.
+export function releaseLock(file, pid = process.pid) {
+  try {
+    if (Number.parseInt(fs.readFileSync(file, "utf8"), 10) === pid) fs.unlinkSync(file);
+  } catch { /* already gone */ }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
