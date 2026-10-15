@@ -567,6 +567,29 @@ function settingsStep(home, requested) {
   return root;
 }
 
+// Fabula 0.3 kept its projects in WSL. The first Windows setup on a machine
+// that had it brings them across (scripts/migrate-wsl.mjs: copied, never
+// moved; paths rewritten; nothing already here overwritten), with the brands
+// and the assistant choice, and records that it did, so a later setup never
+// brings back a project the person has since deleted here.
+async function bringOverFromWsl(home, projectsRoot) {
+  const file = path.join(home, "settings.json");
+  const settings = readJson(file) ?? {};
+  if (settings.broughtOverFromWsl) return;
+  let from = null;
+  const migration = await import(pathToFileURL(path.join(host.CODE_ROOT, "scripts", "migrate-wsl.mjs")).href);
+  try { from = migration.findWslProjects(); } catch { from = null; }
+  if (!from) { out("no projects from an earlier Fabula in WSL"); return; }
+  out(`bringing projects over from ${from}`);
+  const count = await migration.migrate({ from, to: projectsRoot, say: (line) => out(line.startsWith("COPY ") ? `copied ${line.slice(5)}` : line.startsWith("SKIP ") ? `kept ${line.slice(5)}` : line) });
+  const prefs = path.join(path.dirname(from), "assistant-preferences.json");
+  const mine = path.join(home, "assistant-preferences.json");
+  if (!fs.existsSync(mine) && fs.existsSync(prefs)) {
+    try { fs.copyFileSync(prefs, mine); out("assistant choice carried over"); } catch { /* the defaults apply */ }
+  }
+  writeJson(file, { ...(readJson(file) ?? {}), broughtOverFromWsl: { from, projects: count, at: new Date().toISOString() } });
+}
+
 // The whole engine, once, on a second of tone: the speech model, the VAD and the alignment model
 // all load from disk with the network refused, on the device the pipeline will use.
 async function checkStep(home, kind) {
@@ -629,6 +652,7 @@ async function main() {
 
   step(7, "Choosing the projects folder");
   const projectsRoot = settingsStep(home, args.projectsRoot);
+  await bringOverFromWsl(home, projectsRoot);
 
   step(8, "Checking the engine");
   await checkStep(home, kind);
