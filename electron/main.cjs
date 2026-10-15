@@ -8,6 +8,7 @@ const { app, BrowserWindow, session, ipcMain, dialog, Menu, screen, shell, proto
 const { AssistantSession, choiceArgs, EFFORTS: ASSISTANT_EFFORTS } = require("./assistant-session.cjs");
 const motionProtocol = require("./motion-protocol.cjs");
 const settings = require("../scripts/settings.cjs");
+const host = require("../scripts/host.cjs");
 
 // Motion scenes run in sandboxed frames that can load nothing but this
 // scheme; it has to be declared before the app is ready.
@@ -103,9 +104,13 @@ const WSL_PREFIX = (() => {
 })();
 const WSL_DISTRO = WSL_PREFIX ? WSL_PREFIX.slice(WSL_PREFIX.lastIndexOf("\\") + 1) : null;
 const REPO = path.join(__dirname, "..");
+// The engine is in WSL only for a checkout opened from a \\wsl.localhost
+// share (the old developer route). An installed Fabula on Windows runs its
+// engine here, natively, the way a Linux checkout does.
+const VIA_WSL = process.platform === "win32" && Boolean(WSL_PREFIX);
 
 function toPosixPath(localPath) {
-  if (process.platform !== "win32") return localPath;
+  if (!VIA_WSL) return localPath;
   let match = /^([a-zA-Z]):[\\/](.*)$/.exec(localPath);
   if (match) return `/mnt/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
   match = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+\\(.*)$/i.exec(localPath);
@@ -376,7 +381,7 @@ function readExport(dir) {
       canMakeKit: have.cleanMap && fs.existsSync(paths.cleanTranscript),
       kit: readKit(dir),
       faceSetup: faceSetup(),
-      bridge: process.platform === "win32" ? (WSL_DISTRO ? `WSL (${WSL_DISTRO})` : null) : "local",
+      bridge: VIA_WSL ? `WSL (${WSL_DISTRO})` : "local",
     };
   } catch {
     return null;
@@ -455,7 +460,7 @@ function startRender(kind, options = {}) {
     // The film's size and quality, from the Export page's choices only.
     if ([2160, 1440, 1080, 720, 540].includes(options.size)) allowed.size = options.size;
     if (["high", "balanced", "small"].includes(options.quality)) allowed.quality = options.quality;
-    if (process.platform === "win32") {
+    if (VIA_WSL) {
       const root = toPosixPath(REPO);
       const posixDir = toPosixPath(dir);
       if (!root || !posixDir || !WSL_DISTRO) throw new Error("Renders run in WSL, and this window cannot reach it from where it is installed.");
@@ -464,7 +469,11 @@ function startRender(kind, options = {}) {
       core.pipeline.startJob(dir, spec.stage, spec.label, job.command, job.args, { cwd: undefined });
     } else {
       const spec = ps.jobSpec(kind, dir, allowed);
-      ps.launchJob(dir, spec, { node: process.execPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, electron: process.execPath });
+      // The window's own runtime is the node. A Linux checkout's electron
+      // also runs the render with the script as its app; on Windows the
+      // installed Fabula.exe runs it through its script switch, which the
+      // host chooses (scripts/host.cjs electronArgs).
+      ps.launchJob(dir, spec, { node: process.execPath, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" }, ...(process.platform === "win32" ? {} : { electron: process.execPath }) });
     }
     return { ok: true };
   } catch (error) {
@@ -593,6 +602,11 @@ function describeProjectsRoot() {
 // engine its jobs run in. Installed, those are the Windows bundle and FABULA_HOME in WSL; from a
 // checkout, both are the checkout (the program is its Electron runtime).
 function describeInstall() {
+  // Natively on Windows: the installed bundle draws the window, and the
+  // engine home (ffmpeg, WhisperX, the models) is beside it in LOCALAPPDATA.
+  if (process.platform === "win32" && !VIA_WSL) {
+    return { program: path.dirname(process.execPath), engine: host.engineHome(), engineIn: null, checkout: false };
+  }
   const engineProjects = settings.engineProjectsRoot();
   const engine = engineProjects ? toLocalPath(path.posix.dirname(engineProjects)) : REPO;
   return {
@@ -1456,7 +1470,7 @@ app.whenReady().then(() => {
       // way it starts every job — through wsl.exe — with the paths spelled
       // as WSL sees them; elsewhere it runs it directly.
       const media = (args) => {
-        if (process.platform !== "win32") return execFileSync(core.pipeline.FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
+        if (!VIA_WSL) return execFileSync(core.pipeline.FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
         const root = toPosixPath(REPO);
         if (!root || !WSL_DISTRO) throw new Error("the clip cannot be re-encoded from where this window is installed: ffmpeg lives in WSL");
         const posix = (arg) => (path.isAbsolute(arg) && /^[A-Za-z]:\\|^\\\\/.test(arg) ? toPosixPath(arg) ?? arg : arg);
@@ -1464,8 +1478,8 @@ app.whenReady().then(() => {
       };
       const probeSeconds = (file) => {
         try {
-          const out = process.platform !== "win32"
-            ? execFileSync(core.pipeline.FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString()
+          const out = !VIA_WSL
+            ? execFileSync(core.pipeline.FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { windowsHide: true }).toString()
             : execFileSync("wsl.exe", ["-d", WSL_DISTRO, "-e", `${toPosixPath(REPO)}/tools/ffmpeg/ffprobe`, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", toPosixPath(file) ?? file]).toString();
           const seconds = Number.parseFloat(out);
           return Number.isFinite(seconds) ? seconds : null;

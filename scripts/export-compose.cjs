@@ -39,14 +39,14 @@ const PARALLEL_ENCODES = 4;
 const CAPTURE_WINDOWS = 3;
 const STAGE = "render_final";
 
-// Same WSL reality as the capture spike: both flags must be on the CLI —
-// zygote-forked renderers die on this kernel before this file runs.
-if (!app.commandLine.hasSwitch("no-zygote")) {
+// On Linux (and in WSL) both flags must be on the CLI: zygote-forked
+// renderers die on that kernel before this file runs. Windows has no zygote.
+if (process.platform === "linux" && !app.commandLine.hasSwitch("no-zygote")) {
   console.error("Run with: npx electron --no-sandbox --no-zygote scripts/export-compose.cjs <project-dir>");
   app.exit(2);
 }
 app.commandLine.appendSwitch("disable-gpu");
-if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
   app.commandLine.appendSwitch("ozone-platform", "headless");
 }
 
