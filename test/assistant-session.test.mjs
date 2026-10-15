@@ -19,15 +19,16 @@ test("the window's choice becomes plain argv, never a shell string", () => {
   const win = sessionCommand({ platform: "win32", repo: "/w/Fabula", distro: "Ubuntu", cols: 132, rows: 43, args: ["--provider", "claude"] });
   assert.equal(win.command, "wsl.exe");
   assert.deepEqual(win.args, ["--distribution", "Ubuntu", "--cd", "/w/Fabula", "-e", "python3", "scripts/pty-bridge.py", "132", "43", "bash", "-l", "scripts/assistant-run.sh", "--provider", "claude"]);
-  // Native Windows: the venv's python runs the ConPTY bridge, which runs Fabula.exe as Node on assistant.mjs.
+  // Native Windows: Fabula.exe runs assistant.mjs as Node over pipes, with the pane's size;
+  // assistant.mjs runs the CLI inside the ConPTY bridge (a GUI exe cannot attach to a console).
   const native = sessionCommand({ platform: "win32", repo: "C:\\Fabula\\resources\\app", cols: 132, rows: 43, args: ["--provider", "codex"], extra: ["--dry-run"],
     python: "C:\\E\\venv-whisperx\\Scripts\\python.exe", execPath: "C:\\Fabula\\Fabula.exe", env: { PATH: "C:\\x", ELECTRON_RUN_AS_NODE: "0" } });
-  assert.equal(native.command, "C:\\E\\venv-whisperx\\Scripts\\python.exe");
-  assert.deepEqual(native.args, ["C:\\Fabula\\resources\\app\\scripts\\pty-bridge-win.py", "132", "43", "C:\\Fabula\\Fabula.exe",
-    "C:\\Fabula\\resources\\app\\scripts\\assistant.mjs", "--provider", "codex", "--dry-run"]);
+  assert.equal(native.command, "C:\\Fabula\\Fabula.exe");
+  assert.deepEqual(native.args, ["C:\\Fabula\\resources\\app\\scripts\\assistant.mjs", "--provider", "codex", "--dry-run"]);
   assert.equal(native.cwd, "C:\\Fabula\\resources\\app");
-  assert.deepEqual(native.env, { PATH: "C:\\x", ELECTRON_RUN_AS_NODE: "1" }, "the chain runs Fabula.exe as Node");
-  assert.equal(sessionCommand({ platform: "win32", repo: "C:\\F", cols: 1, rows: 1, args: [], python: "p", execPath: "e", env: {} }).args.slice(1, 3).join("x"), "20x5");
+  assert.deepEqual(native.env, { PATH: "C:\\x", ELECTRON_RUN_AS_NODE: "1", FABULA_PTY_COLS: "132", FABULA_PTY_ROWS: "43" }, "Fabula.exe runs as Node and knows the pane's size");
+  const tiny = sessionCommand({ platform: "win32", repo: "C:\\F", cols: 1, rows: 1, args: [], python: "p", execPath: "e", env: {} });
+  assert.equal(`${tiny.env.FABULA_PTY_COLS}x${tiny.env.FABULA_PTY_ROWS}`, "20x5");
   assert.equal(win.env, undefined, "the WSL route keeps the window's environment");
   const linux = sessionCommand({ platform: "linux", repo: "/w/Fabula", cols: 80, rows: 24, args: [] });
   assert.equal(linux.command, "python3");

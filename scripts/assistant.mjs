@@ -228,7 +228,10 @@ Preferences are kept in the engine's home (or beside a checkout); no account/glo
   const launch = buildLaunch({ ...chosen, task: values.task ?? "" });
   if (values["dry-run"]) { console.log(JSON.stringify({ ...chosen, ...launch }, null, 2)); return; }
   if (process.platform !== "linux" && !WINDOWS) throw new Error("The assistant runs on Linux, in WSL, or on Windows.");
-  if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("The assistant needs an interactive terminal. Use --dry-run to inspect settings.");
+  // The window's pane on Windows: this runs on pipes, and the CLI gets its
+  // terminal from the pseudo-console bridge below (FABULA_PTY_COLS/ROWS).
+  const paneBridge = WINDOWS && Boolean(process.env.FABULA_PTY_COLS);
+  if (!paneBridge && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error("The assistant needs an interactive terminal. Use --dry-run to inspect settings.");
   const cli = findAgentCli(provider);
   if (!cli) throw new Error(installHint(provider));
   // The CLI and what it starts run as themselves: ELECTRON_RUN_AS_NODE, which
@@ -245,8 +248,10 @@ Preferences are kept in the engine's home (or beside a checkout); no account/glo
     if (flock.error || flock.status !== 0) throw new Error("Cannot run flock. Install it (util-linux) and check it is on PATH.");
   }
   savePreferences(prefs, chosen);
-  console.log(`Starting ${provider} | model: ${chosen.model || "CLI default"} | effort: ${chosen.effort || "CLI default"} | persona: ${chosen.persona}`);
-  console.log("Use your subscription login. Review the CLI's active model before editing. Exit this session before switching providers.");
+  // A terminal on the far side of a pipe wants CRLF to start a line.
+  const line = (text) => process.stdout.write(`${text}${paneBridge ? "\r\n" : "\n"}`);
+  line(`Starting ${provider} | model: ${chosen.model || "CLI default"} | effort: ${chosen.effort || "CLI default"} | persona: ${chosen.persona}`);
+  line("Use your subscription login. Review the CLI's active model before editing. Exit this session before switching providers.");
   // One session at a time. It protects cooperating launchers, not sessions launched manually outside this command.
   let result;
   if (WINDOWS) {
@@ -255,7 +260,10 @@ Preferences are kept in the engine's home (or beside a checkout); no account/glo
     const lock = path.join(host.engineHome() ?? ROOT, "assistant-session.lock");
     if (!acquireLock(lock)) throw new Error("Another Fabula assistant is already running. Exit it before starting a new session.");
     try {
-      result = spawnSync(cli.command, [...cli.args, ...launch.args], { cwd: launch.cwd, stdio: "inherit", env });
+      result = paneBridge
+        ? spawnSync(host.python(), [path.join(ROOT, "scripts", "pty-bridge-win.py"), process.env.FABULA_PTY_COLS, process.env.FABULA_PTY_ROWS ?? "40", cli.command, ...cli.args, ...launch.args],
+          { cwd: launch.cwd, stdio: "inherit", env, windowsHide: true })
+        : spawnSync(cli.command, [...cli.args, ...launch.args], { cwd: launch.cwd, stdio: "inherit", env });
     } finally { releaseLock(lock); }
   } else {
     // flock is held by the child for the session lifetime and automatically released on exit/crash.

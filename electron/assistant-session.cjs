@@ -50,12 +50,16 @@ function sessionCommand({ platform = process.platform, repo, distro, cols, rows,
   if (platform === "win32" && !distro) {
     if (!repo) throw new Error("This window does not know where Fabula's code is.");
     const scripts = path.win32.join(repo, "scripts");
+    // Fabula.exe runs assistant.mjs as Node over plain pipes, and assistant.mjs
+    // runs the CLI inside the pseudo-console (pty-bridge-win.py, on `python`).
+    // Not the other way round: Fabula.exe is a GUI program, and a GUI program
+    // never attaches to a console, so inside the bridge its output went nowhere.
+    void python;
     return {
-      command: python ?? host.python(),
-      args: [path.win32.join(scripts, "pty-bridge-win.py"), ...size, execPath, path.win32.join(scripts, "assistant.mjs"), ...args, ...extra],
+      command: execPath,
+      args: [path.win32.join(scripts, "assistant.mjs"), ...args, ...extra],
       cwd: repo,
-      // Fabula.exe runs assistant.mjs as Node; the bridge hands its environment on.
-      env: { ...(env ?? host.venvEnv()), ELECTRON_RUN_AS_NODE: "1" },
+      env: { ...(env ?? host.venvEnv()), ELECTRON_RUN_AS_NODE: "1", FABULA_PTY_COLS: size[0], FABULA_PTY_ROWS: size[1] },
     };
   }
   const bridge = ["python3", "scripts/pty-bridge.py", ...size, "bash", "-l", "scripts/assistant-run.sh", ...args, ...extra];
