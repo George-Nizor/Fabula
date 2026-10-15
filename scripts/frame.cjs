@@ -32,6 +32,20 @@ if (!app.commandLine.hasSwitch("no-zygote")) {
 // line as well when there may be no reachable display: by the time this file
 // runs, Chromium has already chosen its platform.
 app.commandLine.appendSwitch("disable-gpu");
+// A frame is laid out and captured at the stage's own pixels. Windows applies
+// the display's scaling (125%, 175%) to offscreen windows too, which laid every
+// card out at the wrong size; one CSS pixel is one captured pixel everywhere.
+app.commandLine.appendSwitch("force-device-scale-factor", "1");
+
+// Windows clamps a new window to the screen's work area, offscreen or not: a
+// 1080×1920 vertical stage on a 1440-tall display came up 1380 tall, and
+// everything anchored to the bottom of the frame rose up it. Set after
+// creation, the size holds. Elsewhere this changes nothing.
+function fullSize(window, width, height) {
+  const [w, h] = window.getContentSize();
+  if (w !== width || h !== height) window.setContentSize(width, height);
+}
+
 if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
   app.commandLine.appendSwitch("ozone-platform", "headless");
 }
@@ -103,6 +117,7 @@ async function motionSheet() {
   const width = Math.max(Math.min(Number(flag("width") ?? (count > 1 ? 640 : 1280)), 1920), 320);
   const height = Math.round(width * stage.height / stage.width);
   const win = new BrowserWindow({ show: false, width, height, frame: false, webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false } });
+  fullSize(win, width, height);
   await win.loadFile(path.join(REPO_ROOT, "renderer", "export.html"));
   const contents = win.webContents;
   if (!contents.isPainting()) contents.startPainting();
@@ -286,6 +301,7 @@ async function main() {
     show: false, width, height, frame: false,
     webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false },
   });
+  fullSize(win, width, height);
   await win.loadFile(path.join(REPO_ROOT, "renderer", "export.html"));
   const contents = win.webContents;
   if (!contents.isPainting()) contents.startPainting();

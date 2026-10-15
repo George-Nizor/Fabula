@@ -46,6 +46,20 @@ if (process.platform === "linux" && !app.commandLine.hasSwitch("no-zygote")) {
   app.exit(2);
 }
 app.commandLine.appendSwitch("disable-gpu");
+// A frame is laid out and captured at the stage's own pixels. Windows applies
+// the display's scaling (125%, 175%) to offscreen windows too, which laid every
+// card out at the wrong size; one CSS pixel is one captured pixel everywhere.
+app.commandLine.appendSwitch("force-device-scale-factor", "1");
+
+// Windows clamps a new window to the screen's work area, offscreen or not: a
+// 1080×1920 vertical stage on a 1440-tall display came up 1380 tall, and
+// everything anchored to the bottom of the frame rose up it. Set after
+// creation, the size holds. Elsewhere this changes nothing.
+function fullSize(window, width, height) {
+  const [w, h] = window.getContentSize();
+  if (w !== width || h !== height) window.setContentSize(width, height);
+}
+
 if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
   app.commandLine.appendSwitch("ozone-platform", "headless");
 }
@@ -320,10 +334,15 @@ async function main() {
         show: false,
         width: stage.width,
         height: stage.height,
+        // Windows clamps a window to the screen unless told: a 1920-tall
+        // vertical stage on a 1440-tall display was laid out short, and
+        // everything anchored to the bottom rose up the frame.
+       
         frame: false,
         transparent: true,
         webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false },
       });
+      fullSize(window, stage.width, stage.height);
       const watchdog = setTimeout(() => {
         console.error("load watchdog fired: renderer never became ready");
         app.exit(3);

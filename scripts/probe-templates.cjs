@@ -25,6 +25,20 @@ const T = Number(flag("t", 2.5));
 const PRESET = flag("preset", "studio");
 
 app.commandLine.appendSwitch("disable-gpu");
+// A frame is laid out and captured at the stage's own pixels. Windows applies
+// the display's scaling (125%, 175%) to offscreen windows too, which laid every
+// card out at the wrong size; one CSS pixel is one captured pixel everywhere.
+app.commandLine.appendSwitch("force-device-scale-factor", "1");
+
+// Windows clamps a new window to the screen's work area, offscreen or not: a
+// 1080×1920 vertical stage on a 1440-tall display came up 1380 tall, and
+// everything anchored to the bottom of the frame rose up it. Set after
+// creation, the size holds. Elsewhere this changes nothing.
+function fullSize(window, width, height) {
+  const [w, h] = window.getContentSize();
+  if (w !== width || h !== height) window.setContentSize(width, height);
+}
+
 if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) app.commandLine.appendSwitch("ozone-platform", "headless");
 
 async function main() {
@@ -39,6 +53,7 @@ async function main() {
   for (const format of formats.FORMAT_IDS) {
     const stage = formats.FORMATS[format].stage;
     const win = new BrowserWindow({ show: false, width: stage.width / 2, height: stage.height / 2, frame: false, webPreferences: { offscreen: true, sandbox: true, backgroundThrottling: false } });
+    fullSize(win, stage.width / 2, stage.height / 2);
     await win.loadFile(path.join(REPO, "renderer", "export.html"));
     const c = win.webContents;
     if (!c.isPainting()) c.startPainting();
