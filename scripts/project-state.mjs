@@ -9,6 +9,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 const host = createRequire(import.meta.url)("./host.cjs");
+import { hostPath } from "./host-path.mjs";
 import { flattenWords } from "../core/cut-engine.mjs";
 import { resolveFormat, ceilingOf, validateFormat } from "../core/formats.mjs";
 import { motionLibsOf } from "../core/motion.mjs";
