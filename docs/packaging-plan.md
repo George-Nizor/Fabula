@@ -45,7 +45,7 @@ These assumptions break on another machine:
    - Pin ffmpeg, Node, whisperx, torch and ctranslate2 with checksums. Fix the python path.
    - Add a Setup check screen: WSL, engine, GPU, disk, and each AI CLI installed and signed in,
      each with its fix.
-3. **A native Windows engine.** No WSL: WhisperX, ffmpeg, headless renders and the CLIs all run
+3. **A native Windows engine** (built 2026-10-15, `docs/windows-native.md`). No WSL: WhisperX, ffmpeg, headless renders and the CLIs all run
    on Windows. This removes the admin-and-reboot WSL install and a class of path and memory
    problems. It is a port of the job launching, path mapping and terminal bridge.
 4. **A Linux release.** The engine is already Linux, so this is mostly packaging.

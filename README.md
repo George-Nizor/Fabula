@@ -23,10 +23,10 @@ The window follows the system's dark or light; the control at the top right pins
 
 ## Run it
 
-Fabula 0.3.2. **Fabula is a Windows app that needs WSL.** Its window runs on Windows; its
-transcription (WhisperX on CUDA), its renders (ffmpeg, a headless Electron) and its assistant's
-sessions are Linux programs, and WSL is where they run. macOS is not supported, and on Linux Fabula
-runs only from a source checkout, for development: there is no Linux release.
+Fabula 0.4.0. **Fabula is a Windows app.** Everything runs on Windows: the window, transcription
+(WhisperX, on an NVIDIA GPU or the CPU), renders (ffmpeg and Fabula itself, headless) and the
+assistant's sessions (Claude Code or Codex). It needs no WSL from 0.4.0. macOS is not supported, and
+on Linux Fabula runs only from a source checkout, for development: there is no Linux release.
 
 To develop, you need Node 22 or newer, and Claude Code or Codex installed and signed in for the
 assistant.
@@ -234,15 +234,14 @@ narration. The storyboard is shown as the treatment, but not yet as a page to ap
 
 **Installed from a release.** The launcher installs Fabula for Windows like any other app and keeps
 it up to date. The release is Electron's Windows runtime with a bootstrap as its app
-(`release/windows/`); the editor itself runs in WSL. The first time a version starts, the bootstrap
-sets up Fabula's engine in the default WSL distribution (`scripts/setup-engine.sh`, no sudo): the
-version's code under `~/.local/share/fabula/versions/`, Node when the distribution has no Node 22,
-ffmpeg, the Chromium libraries renders need, WhisperX on CUDA, and the thumbnail kit's face
-analyser. That is about 7.5 GB once, and an update reuses it. The first setup asks where the projects go: a folder on Windows
-(`Videos\Fabula` suggested; shown in Explorer, removals go to the Recycle Bin, renders a little
-slower) or `~/.local/share/fabula/projects` inside WSL (fastest, but only reached through
-`\\wsl.localhost`). **Change…** moves them later. You need WSL with a Linux distribution, and
-Claude Code or Codex installed there.
+(`release/windows/`), and the editor's code is inside it. The first time it starts, the bootstrap
+sets up Fabula's engine in `%LOCALAPPDATA%\Fabula\engine` (`scripts/setup-windows.mjs`, no
+administrator prompt): pinned ffmpeg and uv, Python 3.12 with WhisperX (the CUDA build of torch on
+an NVIDIA GPU, the CPU build otherwise), and the speech model, large-v3 on a GPU or small on a CPU.
+That is about 12 GB once, and an update reuses it. Projects go in `Videos\Fabula`. If an earlier
+Fabula kept projects in WSL, the first setup copies them across, with the brands and the assistant
+choice, and leaves WSL as it was. The assistant needs Claude Code (`irm https://claude.ai/install.ps1
+| iex`) or Codex installed on Windows and signed in. Design and history: `docs/windows-native.md`.
 `scripts/package-release.mjs` builds the bundle and `.github/workflows/release.yml` publishes it on
 a `v<version>` tag.
 

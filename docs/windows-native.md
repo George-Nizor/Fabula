@@ -45,6 +45,23 @@ current.
 for a checkout opened from a `\\wsl.localhost` share. That is the developer route, and it stays
 while the WSL install exists. A native install never touches WSL.
 
+## Status (2026-10-15)
+
+Phases 1 to 3 are built and checked on the owner's machine (RTX 4080 SUPER, display at 175%):
+
+- Jobs, ffmpeg with NVENC, WhisperX large-v3 on CUDA, clean renders and film renders all run natively.
+- The packaged Fabula.exe opens the editor from its bundle and renders a draft through `--fabula-script`.
+- The assistant runs `assistant.mjs` on Fabula.exe over pipes, and the CLI runs inside the ConPTY bridge.
+- The first setup copies the projects across from WSL. Every clean cut stays current, because `identityPath` compares the two path spellings as one.
+
+Three Windows-only render bugs were found and fixed on the way:
+
+- Offscreen windows took the display's scaling. `--force-device-scale-factor=1` fixes it.
+- Windows clamped a new window to the screen. The content size is set again after creation (`fullSize`).
+- A GUI exe cannot attach to a console, which is why the CLI, not Fabula.exe, runs in the pseudo-console.
+
+Outstanding: the thumbnail kit's face analyser has no Windows setup yet. The kit runs without face ranking and says so.
+
 ## Phases
 
 1. **Core.** The host module, binary names, `whisperEnv`, `ELECTRON_RUN_AS_NODE` carried to every
