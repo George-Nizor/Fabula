@@ -20,7 +20,11 @@ const os = require("node:os");
 const path = require("node:path");
 
 const CODE_ROOT = path.join(__dirname, "..");
-const IS_WINDOWS = process.platform === "win32";
+// Windows, natively: the code is on a Windows disk and runs here. A checkout
+// opened from a \\wsl.localhost share is also on Windows, but its engine is
+// in WSL (the old developer route), so it is not native.
+const WSL_ROUTE = process.platform === "win32" && /^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(CODE_ROOT);
+const IS_WINDOWS = process.platform === "win32" && !WSL_ROUTE;
 const exe = (name) => (IS_WINDOWS ? `${name}.exe` : name);
 
 // The engine home: shared tools, venvs, models and settings.
@@ -121,5 +125,5 @@ function electronArgs(script, args = [], env = process.env) {
 }
 
 module.exports = {
-  CODE_ROOT, IS_WINDOWS, exe, engineHome, toolsRoot, ffmpeg, ffprobe, whisperx, python, venvProgram, venvEnv, nodeRunner, electronRunner, electronArgs,
+  CODE_ROOT, IS_WINDOWS, WSL_ROUTE, exe, engineHome, toolsRoot, ffmpeg, ffprobe, whisperx, python, venvProgram, venvEnv, nodeRunner, electronRunner, electronArgs,
 };

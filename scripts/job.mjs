@@ -22,7 +22,7 @@ import { editorialCuts } from "../core/story-engine.mjs";
 import { normalizeCuts } from "../core/cut-engine.mjs";
 import { ceilingOf } from "../core/formats.mjs";
 import { spawnSync } from "node:child_process";
-import { readProjectMeta } from "./project-state.mjs";
+import { readProjectMeta, stagedVideo } from "./project-state.mjs";
 import { makeThumbnailKit } from "./thumbnail-kit.mjs";
 import {
   REPO_ROOT,
@@ -62,8 +62,11 @@ function sourceVideo() {
     const file = path.join(dir, raw);
     return { path: file, source: { path: file, bytes: fs.statSync(file).size } };
   }
+  // stagedVideo reads source.json the way this host opens it (a WSL path
+  // from an older project becomes a drive path on Windows).
+  const file = stagedVideo(dir);
   const source = readJson(path.join(dir, "source.json"));
-  return { path: source.path, source: { path: source.path, bytes: source.bytes ?? fs.statSync(source.path).size } };
+  return { path: file, source: { path: file, bytes: source.bytes ?? fs.statSync(file).size } };
 }
 
 const say = (text) => console.log(`[${new Date().toISOString()}] ${text}`);

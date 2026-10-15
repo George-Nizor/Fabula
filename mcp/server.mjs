@@ -18,9 +18,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createRequire as hostRequire } from "node:module";
+const host = hostRequire(import.meta.url)("../scripts/host.cjs");
 import {
   REPO_ROOT,
   FFMPEG,
+  FFPROBE,
   probeDuration,
   measureLoudness,
   probeDimensions,
@@ -122,7 +125,8 @@ const MOVES_POINTER = new Set([...POINTER_TOOLS, "create_short"]);
 let adoptedPersona = null; // adopt_persona in this session; status reports it
 // Jobs are launched from the shared specs (scripts/project-state.mjs), the
 // same ones the window uses, so the two never drift in arguments.
-const RUNNER = { node: process.execPath };
+// Fabula.exe as node on Windows needs ELECTRON_RUN_AS_NODE carried to the job.
+const RUNNER = (() => { const run = host.nodeRunner(); return { node: run.command, nodeEnv: run.env }; })();
 const DEFAULT_WAIT_SECONDS = 25;
 // Under the minute most MCP clients allow one request; a longer job is
 // waited for by calling again.
@@ -134,11 +138,13 @@ const MAX_WAIT_SECONDS = 50;
 function runFrame(dir, args) {
   return new Promise((resolve, reject) => {
     const spec = jobSpec("final", dir, {});
-    const child = spawn(spec.program === "electron" ? electronBinary() : spec.program,
-      // ozone-platform has to be a real argument: by the time the script can
-      // appendSwitch it, Chromium has already chosen a platform and died.
-      ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", path.join(REPO_ROOT, "scripts", "frame.cjs"), dir, ...args],
-      { env: frameEnv(spec), stdio: ["ignore", "pipe", "pipe"] });
+    // The host says how (scripts/host.cjs): on Linux the headless switches
+    // are real arguments (by the time the script could appendSwitch them,
+    // Chromium has chosen a platform and died); a packaged Fabula.exe takes
+    // the script through its switch.
+    const launch = host.electronArgs(path.join(REPO_ROOT, "scripts", "frame.cjs"), [dir, ...args]);
+    const child = spawn(launch.command, launch.args,
+      { env: frameEnv(spec), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk) => { out += chunk; });
@@ -160,14 +166,6 @@ function frameEnv(spec) {
   const env = { ...process.env, ...(spec.env ?? {}) };
   delete env.ELECTRON_RUN_AS_NODE;
   return env;
-}
-
-// The Electron the pipeline runs. The real binary under dist/, not the
-// .bin shim: the shim re-enters node to find it, and a Chromium started
-// that way from a stdio server dies on this host.
-function electronBinary() {
-  const dist = path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
-  return fs.existsSync(dist) ? dist : "electron";
 }
 
 function currentProjectDir() {
@@ -2512,7 +2510,7 @@ server.registerTool("film_sheet", {
   const { execFileSync } = await import("node:child_process");
   const videoSeconds = (() => {
     try {
-      const got = Number.parseFloat(execFileSync(FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "csv=p=0", video]).toString());
+      const got = Number.parseFloat(execFileSync(FFPROBE, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "csv=p=0", video]).toString());
       return Number.isFinite(got) ? got : duration;
     } catch { return duration; }
   })();
@@ -2528,7 +2526,7 @@ server.registerTool("film_sheet", {
     "-vf", `select='isnan(prev_selected_t)+gte(t-prev_selected_t\,${every - 0.02})',scale=${width}:-2,tile=${cols}x${rows}:padding=4:color=0x0b0e12`, "-fps_mode", "passthrough", "-frames:v", "1", out], { stdio: ["ignore", "ignore", "pipe"] });
   const audio = (() => {
     try {
-      const probe = execFileSync(FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", video]).toString().trim();
+      const probe = execFileSync(FFPROBE, ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", video]).toString().trim();
       return probe || "none";
     } catch { return "unknown"; }
   })();

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
   flattenWords,
@@ -28,9 +29,12 @@ import { cutIdentity, cleanIdentity, CLEAN_VERSION } from "../core/clean-identit
 import { frameSpans, cleanGraph } from "../core/clean-graph.mjs";
 
 export const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const FFMPEG = path.join(REPO_ROOT, "tools", "ffmpeg", "ffmpeg");
-export const FFPROBE = path.join(REPO_ROOT, "tools", "ffmpeg", "ffprobe");
-const WHISPERX = path.join(REPO_ROOT, ".venv-whisperx", "bin", "whisperx");
+// The engine's programs, wherever this machine keeps them (scripts/host.cjs):
+// the engine home on Windows, beside the code in a Linux checkout.
+const host = createRequire(import.meta.url)("./host.cjs");
+export const FFMPEG = host.ffmpeg();
+export const FFPROBE = host.ffprobe();
+const WHISPERX = host.whisperx();
 
 // The clean cut is delivered at stage resolution and a review-friendly frame
 // rate: a 3440x1440 60fps master would otherwise cost four times the encode
@@ -216,16 +220,19 @@ export function videoEncoderArgs(role, gop = CLEAN_GOP, { quality: tier = "high"
 
 // faster-whisper's ctranslate2 loads CUDA from the wheels inside the venv,
 // not from a system install this machine does not have; whisperx also expects
-// an ffmpeg on PATH. Both are supplied here so callers need no environment.
-function whisperEnv() {
-  const nv = path.join(REPO_ROOT, ".venv-whisperx", "lib", "python3.12", "site-packages", "nvidia");
-  const libs = ["cublas", "cudnn", "cuda_runtime", "cufft", "nvjitlink"]
-    .map((name) => path.join(nv, name, "lib"));
-  return {
-    ...process.env,
-    LD_LIBRARY_PATH: [libs.join(":"), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
-    PATH: [path.join(REPO_ROOT, "tools", "ffmpeg"), process.env.PATH].join(":"),
-  };
+// an ffmpeg on PATH, and on Windows the models stay in the engine home. All
+// of it comes from the host (scripts/host.cjs), so callers need no environment.
+const whisperEnv = () => host.venvEnv();
+
+// The speech model and its precision: large-v3 in float16 on a CUDA GPU, the
+// small model in int8 on a CPU. The Windows setup records which in the engine
+// home's engine.json; a checkout without one has the GPU this was built on.
+export function speechModel() {
+  const home = host.engineHome();
+  let engine = null;
+  try { engine = home ? JSON.parse(fs.readFileSync(path.join(home, "engine.json"), "utf8")) : null; } catch { engine = null; }
+  const cpu = engine?.gpu === "cpu";
+  return { model: typeof engine?.model === "string" ? engine.model : cpu ? "small" : "large-v3", computeType: cpu ? "int8" : "float16", device: cpu ? "cpu" : "cuda" };
 }
 
 // WhisperX large-v3 on CUDA, word timestamps, JSON out — the brief's
@@ -236,10 +243,12 @@ function whisperEnv() {
 export function transcribe(videoPath, outPath, options = {}) {
   const outDir = path.dirname(outPath);
   fs.mkdirSync(outDir, { recursive: true });
+  const speech = speechModel();
   const result = spawnSync(WHISPERX, [
     videoPath,
-    "--model", "large-v3",
-    "--compute_type", "float16",
+    "--model", speech.model,
+    "--compute_type", speech.computeType,
+    "--device", speech.device,
     "--output_format", "json",
     "--output_dir", outDir,
     "--language", "en",
@@ -414,8 +423,12 @@ export function startJob(dir, stage, label, command, args, options = {}) {
   // A headless Electron started from inside another Electron would run as
   // bare node and die on its first Chromium flag; the frame tool strips the
   // same variable.
-  const env = { ...process.env, ...(options.env ?? {}) };
+  // The variable is cleared first and then the job's own env applies, so a
+  // node job run by an Electron (Fabula.exe as node) keeps the
+  // ELECTRON_RUN_AS_NODE it asked for.
+  const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
+  Object.assign(env, options.env ?? {});
   const child = spawn(command, args, {
     detached: true,
     // A detached process gets a console of its own on Windows, and wsl.exe

@@ -1465,7 +1465,7 @@ app.whenReady().then(() => {
       const probeSeconds = (file) => {
         try {
           const out = process.platform !== "win32"
-            ? execFileSync(core.pipeline.FFMPEG.replace(/ffmpeg$/, "ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString()
+            ? execFileSync(core.pipeline.FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString()
             : execFileSync("wsl.exe", ["-d", WSL_DISTRO, "-e", `${toPosixPath(REPO)}/tools/ffmpeg/ffprobe`, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", toPosixPath(file) ?? file]).toString();
           const seconds = Number.parseFloat(out);
           return Number.isFinite(seconds) ? seconds : null;

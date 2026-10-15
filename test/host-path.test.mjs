@@ -11,3 +11,9 @@ test("a Windows path becomes the path the pipeline host opens; a POSIX one passe
   assert.equal(hostPath("  D:\\  "), "/mnt/d");
   assert.equal(hostPath(""), "");
 });
+
+test("natively on Windows a drive path passes through and a WSL spelling becomes a drive path", () => {
+  assert.equal(hostPath("E:\\Music\\calm.mp3", "win32"), "E:\\Music\\calm.mp3");
+  assert.equal(hostPath("/mnt/e/Music/beds/calm.mp3", "win32"), "E:\\Music\\beds\\calm.mp3");
+  assert.equal(hostPath("/mnt/d", "win32"), "D:\\");
+});

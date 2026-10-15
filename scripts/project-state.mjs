@@ -7,6 +7,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
+const host = createRequire(import.meta.url)("./host.cjs");
 import { flattenWords } from "../core/cut-engine.mjs";
 import { resolveFormat, ceilingOf, validateFormat } from "../core/formats.mjs";
 import { motionLibsOf } from "../core/motion.mjs";
@@ -84,11 +86,15 @@ export function stagedVideo(dir) {
   const raw = fs.readdirSync(dir).find((name) => /^raw\.(mp4|mov|mkv|webm|m4v)$/i.test(name));
   if (raw) return path.join(dir, raw);
   try {
-    return readJson(path.join(dir, "source.json")).path ?? null;
+    return nativePath(readJson(path.join(dir, "source.json")).path ?? null);
   } catch {
     return null;
   }
 }
+
+// Natively on Windows a project brought over from the WSL engine may still say
+// /mnt/e/...; it names E:\... (scripts/host-path.mjs). Elsewhere as written.
+const nativePath = (file) => (file && host.IS_WINDOWS ? hostPath(file, "win32") : file);
 
 // The footage as an identity: where it is and how big. Enough to notice a
 // swapped recording without hashing nineteen gigabytes.
@@ -97,7 +103,7 @@ export function sourceRecord(dir) {
   if (!video) return null;
   try {
     const source = readJson(path.join(dir, "source.json"));
-    if (source.path === video && source.bytes) return { path: source.path, bytes: source.bytes };
+    if (nativePath(source.path) === video && source.bytes) return { path: video, bytes: source.bytes };
   } catch { /* staged copy */ }
   try {
     return { path: video, bytes: fs.statSync(video).size };
@@ -411,7 +417,11 @@ export function jobSpec(kind, dir, options = {}) {
   if (kind === "motion") return { stage: "motion_film", label: "Making the motion film's clock", program: "node", args: [job, "motion_film", dir] };
   if (kind === "kit") return { stage: "thumbnail_kit", label: "Making the thumbnail kit", program: "node", args: [job, "thumbnail_kit", dir] };
   if (kind === "final") {
-    const args = ["--no-sandbox", "--no-zygote", "--ozone-platform=headless", join(root, "scripts", "export-compose.cjs")];
+    // The script and its own arguments, kept apart from the runtime's flags:
+    // a Linux Electron needs its headless switches, a packaged Fabula.exe a
+    // script switch instead (scripts/host.cjs electronArgs, at launch).
+    const script = join(root, "scripts", "export-compose.cjs");
+    const args = [];
     if (options.from !== undefined || options.to !== undefined) {
       if (!options.out) throw new Error("a preview span needs an output path");
       args.push(`--from=${options.from ?? 0}`, `--to=${options.to}`, `--out=${options.out}`);
@@ -424,14 +434,20 @@ export function jobSpec(kind, dir, options = {}) {
       if (typeof options.quality === "string") args.push(`--quality=${options.quality}`);
     }
     args.push(dir);
+    // Through wsl.exe (a checkout on a WSL share) or on Linux, the render is
+    // a Linux Electron: headless switches first, and the Chromium libraries
+    // the engine fetched. Natively on Windows, neither.
+    const linux = root !== REPO_ROOT || process.platform !== "win32";
     return {
       stage: "render_final",
       label: options.out ? "Rendering a preview span" : options.draft ? "Rendering a draft" : "Rendering the film",
       program: "electron",
-      args,
-      env: {
+      script,
+      scriptArgs: args,
+      args: [...(linux ? ["--no-sandbox", "--no-zygote", "--ozone-platform=headless"] : []), script, ...args],
+      env: linux ? {
         LD_LIBRARY_PATH: [join(root, "tools", "wsl-libs", "usr", "lib", "x86_64-linux-gnu"), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
-      },
+      } : {},
     };
   }
   throw new Error(`unknown job kind ${kind}`);
@@ -441,11 +457,17 @@ export function jobSpec(kind, dir, options = {}) {
 // (the Electron binary as node inside the app, process.execPath in the
 // server); `electron` is the headless renderer for the film.
 export function launchJob(dir, spec, runner = {}) {
-  const node = runner.node ?? process.execPath;
-  const electron = runner.electron ?? path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
-  const command = spec.program === "electron" ? electron : node;
-  const env = { ...(spec.env ?? {}), ...(spec.program === "node" ? runner.nodeEnv ?? {} : {}) };
-  return startJob(dir, spec.stage, spec.label, command, spec.args, { env });
+  if (spec.program === "electron") {
+    // A caller that names its Electron runs the spec's args as they are (a
+    // Linux checkout's window, its own electron). Otherwise the host decides:
+    // the packaged Fabula.exe through its script switch, or the checkout's.
+    const launch = runner.electron ? { command: runner.electron, args: spec.args } : host.electronArgs(spec.script, spec.scriptArgs);
+    return startJob(dir, spec.stage, spec.label, launch.command, launch.args, { env: spec.env ?? {} });
+  }
+  const fallback = host.nodeRunner();
+  const node = runner.node ?? fallback.command;
+  const env = { ...(spec.env ?? {}), ...(runner.nodeEnv ?? (runner.node ? {} : fallback.env)) };
+  return startJob(dir, spec.stage, spec.label, node, spec.args, { env });
 }
 
 // The same spec as one line for a login shell on the pipeline host, for a

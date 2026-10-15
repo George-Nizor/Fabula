@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cutIdentity, cleanIdentity, CLEAN_VERSION } from "../core/clean-identity.mjs";
+import { identityPath, cutIdentity, cleanIdentity, CLEAN_VERSION } from "../core/clean-identity.mjs";
 
 const source = { path: "/mnt/e/take.mkv", bytes: 123 };
 const keeps = [{ start: 0, end: 4.12345 }, { start: 6.5, end: 10 }];
@@ -22,4 +22,14 @@ test("the clean identity adds framing and delivery, and carries the version", ()
   assert.notEqual(cleanIdentity({ ...base, framing: reframed }), a);
   assert.notEqual(cleanIdentity({ ...base, fps: 25 }), a);
   assert.notEqual(cleanIdentity({ ...base, ceiling: { width: 1280, height: 720 } }), a);
+});
+
+test("a recording keeps its identity when its path moves from WSL's spelling to Windows'", () => {
+  assert.equal(identityPath("E:\\Video Storage\\take.mkv"), "/mnt/e/Video Storage/take.mkv");
+  assert.equal(identityPath("/mnt/e/Video Storage/take.mkv"), "/mnt/e/Video Storage/take.mkv");
+  const keeps = [{ start: 1, end: 2 }];
+  assert.equal(
+    cutIdentity({ source: { path: "E:\\Video Storage\\take.mkv", bytes: 9 }, keeps }),
+    cutIdentity({ source: { path: "/mnt/e/Video Storage/take.mkv", bytes: 9 }, keeps }),
+  );
 });

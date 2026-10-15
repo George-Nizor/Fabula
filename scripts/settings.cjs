@@ -9,7 +9,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SETTINGS_FILE = path.join(__dirname, "..", "fabula.settings.json");
+const host = require("./host.cjs");
+
+// Natively on Windows the settings live in the engine home, which every
+// version shares (the code is the installed bundle, replaced on update).
+// Elsewhere beside the code, carried forward by setup-engine.sh.
+const NATIVE_WINDOWS = host.IS_WINDOWS;
+const SETTINGS_FILE = NATIVE_WINDOWS && host.engineHome()
+  ? path.join(host.engineHome(), "settings.json")
+  : path.join(__dirname, "..", "fabula.settings.json");
 const ENGINE_HOME_FILE = path.join(__dirname, "..", ".engine-home");
 
 // An installed engine (scripts/setup-engine.sh) runs Fabula from a folder per version, replaced
@@ -18,6 +26,8 @@ const ENGINE_HOME_FILE = path.join(__dirname, "..", ".engine-home");
 // <home>/projects. A checkout has no .engine-home and keeps media/ beside it. As the pipeline sees
 // it (POSIX), or null.
 function engineProjectsRoot(file = ENGINE_HOME_FILE) {
+  // On Windows the default projects folder is the person's Videos\Fabula.
+  if (NATIVE_WINDOWS && file === ENGINE_HOME_FILE) return path.join(require("node:os").homedir(), "Videos", "Fabula");
   try {
     const home = fs.readFileSync(file, "utf8").trim();
     if (!home.startsWith("/") || /[\x00-\x1f\\]/.test(home)) return null;
@@ -36,8 +46,16 @@ function readSettings(file = SETTINGS_FILE) {
   }
 }
 
-// A projects root as the pipeline sees it: absolute, POSIX, printable.
+// A projects root as the pipeline sees it: absolute and printable; a drive
+// path on Windows (C:\Users\me\Videos\Fabula), POSIX elsewhere.
 function validateProjectsRoot(value) {
+  if (NATIVE_WINDOWS) {
+    if (typeof value !== "string" || !/^[A-Za-z]:[\\/]/.test(value)) {
+      throw new Error("The projects folder must be a full Windows path, such as C:\\Users\\me\\Videos\\Fabula.");
+    }
+    if (/[\x00-\x1f\x7f]/.test(value)) throw new Error("The projects folder path has characters that cannot be used.");
+    return path.win32.normalize(value).replace(/[\\/]+$/, "") || value;
+  }
   if (typeof value !== "string" || !value.startsWith("/") || value.length < 2) {
     throw new Error("The projects folder must be an absolute path as WSL sees it, such as /mnt/c/Users/me/Videos/Fabula.");
   }
@@ -96,6 +114,7 @@ function writeMusicRoot(value, file = SETTINGS_FILE) {
 // code. As the pipeline sees it (POSIX for an engine).
 const CHECKOUT_PREFERENCES = path.join(__dirname, "..", ".assistant-preferences.json");
 function assistantPreferencesFile(file = ENGINE_HOME_FILE) {
+  if (NATIVE_WINDOWS && file === ENGINE_HOME_FILE && host.engineHome()) return path.join(host.engineHome(), "assistant-preferences.json");
   const projects = engineProjectsRoot(file);
   return projects ? path.posix.join(path.posix.dirname(projects), "assistant-preferences.json") : CHECKOUT_PREFERENCES;
 }
